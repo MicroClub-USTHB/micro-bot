@@ -15,7 +15,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # preprocess_* verifies traineddata before parsing anything, so every test that pulls in
     # the tessdata fixture needs the models even if it never OCRs; keep -m "not ocr" honest.
     # Same for the embedder tokenizer: keep -m "not tokenizer" free of the 33 MB download,
-    # and for the ONNX model and BM25 stopwords: keep -m "not embedder" free of 313 MB.
+    # and for the ONNX model and BM25 stopwords: keep -m "not embedder" free of 313 MB,
+    # and -m "not reranker" free of the 341 MB reranker.
     for item in items:
         fixtures = getattr(item, "fixturenames", ())
         if "tessdata_dir" in fixtures:
@@ -24,6 +25,8 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.tokenizer)
         if "onnx_path" in fixtures or "real_bm25_dir" in fixtures:
             item.add_marker(pytest.mark.embedder)
+        if "reranker_dir" in fixtures:
+            item.add_marker(pytest.mark.reranker)
 
 
 @pytest.fixture(autouse=True)
@@ -90,6 +93,23 @@ def onnx_path() -> Path:
             pytrace=False,
         )
     return path
+
+
+@pytest.fixture(scope="session")
+def reranker_dir() -> Path:
+    """Pinned default reranker (gte int8 + tokenizer). Fails (never skips) when missing."""
+    from mcclub_rag.retrieval.registry import DEFAULT_RERANKER, RERANKERS
+
+    spec = RERANKERS[DEFAULT_RERANKER]
+    root = _models_dir() / "reranker"
+    directory = root / spec.slug
+    if not (directory / spec.onnx_file).is_file() or not (directory / "tokenizer.json").is_file():
+        pytest.fail(
+            f"Reranker model missing in {directory}. Run:\n"
+            f"  uv run python scripts/download_models.py --only reranker --dest {root}",
+            pytrace=False,
+        )
+    return directory
 
 
 @pytest.fixture(scope="session")

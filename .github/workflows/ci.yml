@@ -60,10 +60,10 @@ jobs:
         run: uv sync --locked
 
       - name: Tests that run without model files
-        run: uv run pytest -m "not ocr and not tokenizer and not embedder"
+        run: uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"
 
   test-ocr:
-    name: Tests (needs tessdata / tokenizer / embedder)
+    name: Tests (needs tessdata / tokenizer / embedder / reranker)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -110,5 +110,16 @@ jobs:
           uv run python scripts/download_models.py --only embedder --dest models/embedder
           uv run python scripts/download_models.py --only bm25 --dest models/bm25
 
-      - name: Tests that need tessdata, the tokenizer or the embedder
-        run: uv run pytest -m "ocr or tokenizer or embedder"
+      - name: Cache reranker (gte int8 + tokenizer)
+        uses: actions/cache@v4
+        with:
+          path: models/reranker
+          key: reranker-${{ hashFiles('src/mcclub_rag/retrieval/registry.py') }}
+
+      - name: Download reranker (pinned revision, sha256-verified)
+        env:
+          HF_HUB_OFFLINE: "0"
+        run: uv run python scripts/download_models.py --only reranker --dest models/reranker
+
+      - name: Tests that need tessdata, the tokenizer, the embedder or the reranker
+        run: uv run pytest -m "ocr or tokenizer or embedder or reranker"

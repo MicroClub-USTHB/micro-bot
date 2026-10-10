@@ -54,4 +54,5 @@ markers = [
     "ocr: needs Tesseract traineddata (ara, fra, eng) under TESSDATA_PREFIX (auto-applied to tests using the tessdata_dir fixture)",
     "tokenizer: needs the embedder tokenizer.json (auto-applied to tests using the tokenizer_path fixture)",
     "embedder: needs the embedder ONNX model and BM25 stopwords (auto-applied to tests using the onnx_path or real_bm25_dir fixtures)",
+    "reranker: needs the reranker ONNX model under MODELS_DIR/reranker (auto-applied to tests using the reranker_dir fixture)",
 ]
