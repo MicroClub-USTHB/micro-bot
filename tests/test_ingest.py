@@ -79,6 +79,7 @@ ERROR_TRIGGERS = {
     errors.UrlNotAllowed: "tests.test_url_guard:test_internal_addresses_rejected",
     errors.OcrConfigError: "tests.test_preprocess_file:test_missing_tessdata_fails_fast",
     errors.TokenizerConfigError: "tests.test_tokens:test_missing_tokenizer_raises_with_instruction",
+    errors.EmbedderConfigError: "tests.test_embed:test_missing_stopword_file_fails",
 }
 
 # Pipeline errors whose triggering tests land with later tasks of specs/ingest-pipeline/tasks.md.
@@ -87,7 +88,6 @@ PENDING_TRIGGERS = {
     errors.IndexUnavailable,
     errors.IndexStale,
     errors.EmbeddingError,
-    errors.EmbedderConfigError,
 }
 
 
