@@ -68,13 +68,13 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     `chunk_document` with a short header (same header rule); repeats collapsed; header off.
   - _Requirements: 4.2_
 
-- [ ] 3. Hybrid search in `src/mcclub_rag/retrieval/search.py`
-- [ ] 3.1 `Candidate`, `visibility_filter`, `dedupe`
+- [x] 3. Hybrid search in `src/mcclub_rag/retrieval/search.py`
+- [x] 3.1 `Candidate`, `visibility_filter`, `dedupe`
   - `tests/test_search.py`: public filter matches only `public`; member filter matches both;
     unknown role -> `ValueError`; `dedupe` keeps newest `ingested_at` per `(doc_id, index)`, tie
     goes to better fused rank, output keeps fused order.
   - _Requirements: 2.2, 3.1_
-- [ ] 3.2 `HybridSearch.search`
+- [x] 3.2 `HybridSearch.search`
   - One `query_points` on the alias: dense + bm25 prefetch (`prefetch_limit`, filter on each),
     `RrfQuery(Rrf(k, weights))` or `FusionQuery(DBSF)`, `query_filter`, `limit=top_k`, payload
     fields only; payload -> `Candidate`; then `dedupe`. Qdrant errors through `store.guard`.
@@ -83,15 +83,15 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     a member); `top_k` respected; two versions of a doc during a replacement give one candidate
     per index; unequal weights are passed (spy client); a closed client -> `IndexUnavailable`.
   - _Requirements: 2.1, 2.2, 2.3, 2.5, 3.1, 3.2, 8.1, 11.3_
-- [ ] 3.3 `HybridSearch.neighbours`
+- [x] 3.3 `HybridSearch.neighbours`
   - One `scroll` for `index ± 1` of each hit's `(doc_id, content_hash)`, with the visibility
     filter.
   - Tests: neighbours of a middle chunk found; first/last chunk only one side; a neighbour of
     another version is not used; filter applied.
   - _Requirements: 7.1, 7.2_
 
-- [ ] 4. Reranker
-- [ ] 4.1 `OnnxReranker` and `get_reranker` in `retrieval/rerank.py`
+- [x] 4. Reranker
+- [x] 4.1 `OnnxReranker` and `get_reranker` in `retrieval/rerank.py`
   - sha256 checks via `embed._check_file` (group `reranker`) -> `RerankerConfigError`;
     `no_padding()`, `enable_truncation(max_length, strategy="only_second")`; one `session.run` per
     pair; `token_type_ids` only if declared; sigmoid; onnxruntime errors -> `RerankError`;
@@ -101,12 +101,12 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     per pair with batch size 1; inputs filtered to the declared ones; scores in (0, 1) and
     monotonic in the logit; error mapping; truncation keeps the whole query.
   - _Requirements: 1.3, 4.1, 4.2, 4.3, 4.4, 4.5, 8.2_
-- [ ] 4.2 Real-model tests (`reranker` marker) in `tests/test_rerank_model.py`
+- [x] 4.2 Real-model tests (`reranker` marker) in `tests/test_rerank_model.py`
   - gte ranks a relevant passage above an unrelated one for an Arabic, a French and an English
     query; a pair scores identically alone and after scoring 5 other pairs; 30 x ~384-token
     pairs score in under 10 s.
   - _Requirements: 4.1, 4.3, 4.4, 9.1_
-- [ ] 4.3 Benchmark script `eval/bench_rerank.py`
+- [x] 4.3 Benchmark script `eval/bench_rerank.py`
   - Port the spec's probe: latency per thread count, batched vs batch-1 timings and score drift,
     RSS; reads the model from the registry and `MODELS_DIR`. No test (manual tool), but ruff-clean.
   - _Requirements: 9.2_
