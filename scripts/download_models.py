@@ -2,13 +2,14 @@
 
 Currently: Tesseract traineddata for ara/fra/eng (pinned to tag 4.1.0), the embedder
 (``tokenizer.json`` plus the int8 ONNX model, pinned revision) and the BM25 stopword lists,
-all verified by SHA-256. The embedder and BM25 pins live in ``mcclub_rag.retrieval.registry``.
-The reranker weights can be added as a further ``--only`` target.
+the BM25 stopword lists and the reranker (``RERANK_MODEL``, default gte), all verified by
+SHA-256. The embedder, BM25 and reranker pins live in ``mcclub_rag.retrieval.registry``.
 
     uv run python scripts/download_models.py --only tessdata --dest models/tessdata
     uv run python scripts/download_models.py --only tokenizer --dest models/embedder
     uv run python scripts/download_models.py --only embedder --dest models/embedder
     uv run python scripts/download_models.py --only bm25 --dest models/bm25
+    uv run python scripts/download_models.py --only reranker --dest models/reranker [--model NAME]
 """
 
 from __future__ import annotations
@@ -26,8 +27,11 @@ import httpx
 from mcclub_rag.retrieval.registry import (
     BM25_FILES,
     BM25_REVISION,
+    DEFAULT_RERANKER,
     GRANITE_R2,
+    RERANKERS,
     EmbedderSpec,
+    RerankerSpec,
     bm25_url,
 )
 
@@ -189,6 +193,27 @@ def download_bm25(
     return [dest / name for name in pins]
 
 
+def download_reranker(
+    dest: Path,
+    *,
+    client: httpx.Client | None = None,
+    spec: RerankerSpec = RERANKERS[DEFAULT_RERANKER],
+) -> list[Path]:
+    """Fetch a reranker's ``tokenizer.json`` and ONNX model into ``dest/<slug>/`` (repo layout)."""
+    root = dest / spec.slug
+    files = [("tokenizer.json", spec.tokenizer_sha256), (spec.onnx_file, spec.onnx_sha256)]
+    http = client or httpx.Client(follow_redirects=True, timeout=600)
+    try:
+        for name, expected in files:
+            label = f"reranker {name}"
+            _ensure_file(http, spec.url(name), root / name, expected, label)
+    finally:
+        if client is None:
+            http.close()
+    print(f"reranker: {spec.repo}@{spec.revision[:8]}")
+    return [root / name for name, _ in files]
+
+
 def _models_dir() -> Path:
     return Path(os.environ.get("MODELS_DIR", "/app/models"))
 
@@ -198,19 +223,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--only",
         action="append",
-        choices=["tessdata", "tokenizer", "embedder", "bm25"],
+        choices=["tessdata", "tokenizer", "embedder", "bm25", "reranker"],
         help="asset group to download (repeatable); default: all",
     )
     parser.add_argument(
         "--dest",
         type=Path,
         help="target directory when downloading a single group "
-        "(default: $MODELS_DIR/tessdata, $MODELS_DIR/embedder, $MODELS_DIR/bm25)",
+        "(default: $MODELS_DIR/tessdata, $MODELS_DIR/embedder, $MODELS_DIR/bm25, "
+        "$MODELS_DIR/reranker)",
+    )
+    parser.add_argument(
+        "--model",
+        choices=sorted(RERANKERS),
+        default=os.environ.get("RERANK_MODEL") or DEFAULT_RERANKER,
+        help="reranker to download (default: $RERANK_MODEL or gte)",
     )
     parser.add_argument("--variant", choices=["fast", "best"], default="fast")
     args = parser.parse_args(argv)
 
-    targets = set(args.only or ["tessdata", "embedder", "bm25"])
+    targets = set(args.only or ["tessdata", "embedder", "bm25", "reranker"])
     if args.dest and len(targets) > 1:
         parser.error("--dest needs exactly one --only group")
     try:
@@ -222,6 +254,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             download_embedder(args.dest or _models_dir() / "embedder")
         if "bm25" in targets:
             download_bm25(args.dest or _models_dir() / "bm25")
+        if "reranker" in targets:
+            download_reranker(args.dest or _models_dir() / "reranker", spec=RERANKERS[args.model])
     except (DownloadError, httpx.HTTPError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
