@@ -13,13 +13,16 @@ OCR_LANGUAGES = ("ara", "fra", "eng")
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     # preprocess_* verifies traineddata before parsing anything, so every test that pulls in
     # the tessdata fixture needs the models even if it never OCRs; keep -m "not ocr" honest.
-    # Same for the embedder tokenizer: keep -m "not tokenizer" free of the 33 MB download.
+    # Same for the embedder tokenizer: keep -m "not tokenizer" free of the 33 MB download,
+    # and for the ONNX model and BM25 stopwords: keep -m "not embedder" free of 313 MB.
     for item in items:
         fixtures = getattr(item, "fixturenames", ())
         if "tessdata_dir" in fixtures:
             item.add_marker(pytest.mark.ocr)
         if "tokenizer_path" in fixtures:
             item.add_marker(pytest.mark.tokenizer)
+        if "onnx_path" in fixtures or "real_bm25_dir" in fixtures:
+            item.add_marker(pytest.mark.embedder)
 
 
 def _tessdata_dir() -> Path:
@@ -57,6 +60,42 @@ def tokenizer_path() -> Path:
             pytrace=False,
         )
     return path
+
+
+def _models_dir() -> Path:
+    env = os.environ.get("MODELS_DIR")
+    return Path(env) if env else REPO / "models"
+
+
+@pytest.fixture(scope="session")
+def onnx_path() -> Path:
+    """Pinned embedder ONNX model (and its tokenizer). Fails (never skips) when missing."""
+    from mcclub_rag.retrieval.registry import GRANITE_R2
+
+    directory = _models_dir() / "embedder"
+    path = directory / GRANITE_R2.onnx_file
+    if not path.is_file() or not (directory / "tokenizer.json").is_file():
+        pytest.fail(
+            f"Embedder ONNX model missing at {path}. Run:\n"
+            f"  uv run python scripts/download_models.py --only embedder --dest {directory}",
+            pytrace=False,
+        )
+    return path
+
+
+@pytest.fixture(scope="session")
+def real_bm25_dir() -> Path:
+    """Pinned BM25 stopword lists. Fails (never skips) when missing."""
+    from mcclub_rag.retrieval.registry import BM25_FILES
+
+    directory = _models_dir() / "bm25"
+    if not all((directory / name).is_file() for name in BM25_FILES):
+        pytest.fail(
+            f"BM25 stopword files missing in {directory}. Run:\n"
+            f"  uv run python scripts/download_models.py --only bm25 --dest {directory}",
+            pytrace=False,
+        )
+    return directory
 
 
 @pytest.fixture
