@@ -134,3 +134,110 @@ the 50-calls/day budget goes to questions the corpus can answer.
 5. The gate SHALL be a pure function of the reranked scores and the threshold, testable without
    models.
 
+### Requirement 6: Follow-up questions without an LLM rewrite
+
+**User Story:** As a user, I want "and what about the deadline?" to find the same document as my
+previous question, without the bot spending an LLM call to rewrite it.
+
+#### Acceptance Criteria
+
+1. WHEN `history` is empty THEN the search query SHALL be the message itself.
+2. WHEN `history` is non-empty AND the message is short (fewer than
+   `RETRIEVAL_FOLLOWUP_MAX_WORDS` words, default 8) THEN the search query and the rerank query
+   SHALL be the previous turn's `user_message` followed by the current message.
+3. WHEN the message is long enough to stand alone THEN the history SHALL be ignored.
+4. The query builder SHALL be a pure function, tolerant of history items that are not `Turn`
+   (they are ignored), because the protocol types `history` as `list[object]`.
+
+### Requirement 7: Neighbour expansion (optional, off by default)
+
+**User Story:** As the answer layer, I want a little surrounding context for a passage that starts
+mid-argument, without retrieving bigger chunks.
+
+#### Acceptance Criteria
+
+1. WHEN `RETRIEVAL_NEIGHBOURS` is true THEN for each returned chunk the system SHALL fetch the
+   chunks with `index ± 1` of the same `doc_id` and `content_hash` (one Qdrant request for all)
+   and join their text around the hit in reading order in `Chunk.text`.
+2. Expansion SHALL NOT change `chunk_id`, `score`, ordering or the gate decision, and SHALL NOT add
+   a neighbour the role may not see (same visibility filter).
+3. WHEN `RETRIEVAL_NEIGHBOURS` is false (default) THEN `Chunk.text` SHALL be the chunk alone.
+
+### Requirement 8: Errors and observability
+
+**User Story:** As an operator, I want a Qdrant or model failure to give a clear error and a log
+line I can read, never document text in logs.
+
+#### Acceptance Criteria
+
+1. IF Qdrant is unreachable or errors THEN `retrieve()` SHALL raise `IndexUnavailable` (code
+   `index_unavailable`, 503), the existing ingest error type.
+2. IF the encoder or reranker fails at run time THEN `retrieve()` SHALL raise a typed error
+   (`embedding_error` for encoders, a new `rerank_error` for the reranker) and SHALL NOT return a
+   partial result.
+3. The system SHALL log one structlog `retrieval_done` event per call with role, candidate count
+   after dedupe, returned count, `top_score`, decision, whether the history was used, and
+   per-stage milliseconds (encode, search, rerank). It SHALL NOT log the query or chunk text.
+
+### Requirement 9: Performance
+
+**User Story:** As a user, I want an answer in a few seconds on the club's CPU-only server.
+
+#### Acceptance Criteria
+
+1. WITH the default settings and ~300-token chunks THEN `retrieve()` SHALL take at most 3 s
+   (median over the eval set, 4 threads, dev machine), measured by `run_eval.py`.
+2. The reranker model, the candidate count (`RETRIEVE_TOP_K`) and the reranker threads SHALL be
+   settings, so latency can be traded for recall without code changes.
+
+### Requirement 10: Evaluation harness
+
+**User Story:** As the team, I want one command that tells me whether a retrieval change helps,
+in every language and on unanswerable questions, so defaults are measured.
+
+#### Acceptance Criteria
+
+1. `eval/questions.jsonl` SHALL hold at least 40 questions, each with an id, the question, its
+   language, the role, `answerable`, tags, and for answerable ones the expected `doc` (topic) and
+   one or more `evidence` strings found verbatim in the document. Labels SHALL NOT depend on chunk
+   ids, so they survive rechunking.
+2. The set SHALL include at least: 10 Arabic questions, 6 cross-lingual ones (question language
+   differs from the document language, both directions), 8 unanswerable ones (on topic but not in
+   the corpus), 4 follow-ups with a `history`, and 3 members-only documents asked as `public`
+   (expected: not found).
+3. `eval/run_eval.py` SHALL ingest a corpus directory into an in-memory Qdrant with the real models,
+   run `retrieve()` for every question, and report hit@5 and MRR@10 (a hit = a chunk of the
+   expected doc containing one of the evidence strings), overall and per tag, before and after
+   reranking.
+4. `run_eval.py` SHALL report the `top_score` distributions of answerable and unanswerable
+   questions and sweep thresholds, printing for each the share of unanswerable questions refused
+   and of answerable ones wrongly refused, and a suggested `GATE_THRESHOLD`.
+5. `run_eval.py` SHALL report median and p95 `retrieve()` latency per stage.
+6. Settings under test (reranker model, top-k, fusion, weights, chunking variants, neighbours)
+   SHALL be passed as environment overrides, and each run SHALL write a JSON result with the
+   settings, the corpus version and the metrics to `eval/results/`.
+7. A public-role question SHALL count as a failure if any returned chunk is from a members-only
+   document, whatever its rank.
+
+### Requirement 11: Tests
+
+1. Unit tests SHALL run without model files or Docker: in-memory Qdrant, the fake encoders from
+   `tests/pipeline_helpers.py`, and a fake reranker session.
+2. Tests needing the real reranker SHALL carry a new `reranker` pytest marker and run in the CI
+   models job (which downloads the pinned reranker, sha256-checked).
+3. There SHALL be a test that a public role never receives a members-only chunk, with members-only
+   chunks scoring higher than public ones on both arms.
+
+## Decisions and open questions
+
+1. **Reranker default: gte** (decided 2026-10-10). bge stays a registry entry for the eval; switch
+   only if it shows a clear hit@5/MRR gain worth ~4 s more per question. `config.py` still defaults
+   `rerank_model` to bge, so the registry maps that name too and `.env.example` sets gte (ask
+   eequaled to change the default).
+2. **`RETRIEVE_TOP_K=30`** (eequaled's `config.py`) costs 3.3 s of reranking with gte. Accepted:
+   `RETRIEVE_TOP_K` stays the rerank candidate count; the eval picks a new default (likely 15 to
+   20), then eequaled is asked to change it.
+3. **Ownership** of `search.py` / `rerank.py` / `gate.py` (unassigned in AGENTS.md): this spec
+   assumes nisbenz builds them. Still to confirm with eequaled.
+4. **`history` content:** accepted, `Turn`s only; cited `chunk_ids` would need a protocol change.
+5. **CI cost:** accepted, the models job downloads gte (341 MB) once, cached like the embedder.
