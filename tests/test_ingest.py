@@ -80,6 +80,7 @@ ERROR_TRIGGERS = {
     errors.OcrConfigError: "tests.test_preprocess_file:test_missing_tessdata_fails_fast",
     errors.TokenizerConfigError: "tests.test_tokens:test_missing_tokenizer_raises_with_instruction",
     errors.EmbedderConfigError: "tests.test_embed:test_missing_stopword_file_fails",
+    errors.EmbeddingError: "tests.test_embed:test_inference_failure_becomes_embedding_error",
 }
 
 # Pipeline errors whose triggering tests land with later tasks of specs/ingest-pipeline/tasks.md.
@@ -87,7 +88,6 @@ ERROR_TRIGGERS = {
 PENDING_TRIGGERS = {
     errors.IndexUnavailable,
     errors.IndexStale,
-    errors.EmbeddingError,
 }
 
 
