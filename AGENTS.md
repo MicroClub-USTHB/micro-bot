@@ -17,11 +17,17 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - **eequaled:** API side (`api/`, `config.py`, schemas, answer layer).
 - Seam between them = **frozen signatures**, agreed in advance. Do not change one silently:
   - `text/lang.py: detect_language(text) -> Literal["ar","fr","en"]` (nisbenz, implemented)
-  - `ingest/pipeline.py: ingest_file(path, filename, visibility) -> IngestResult`, `ingest_url(url,
-    visibility)` (nisbenz). Proposed to be `async def`, **pending eequaled's approval**.
+  - `ingest/pipeline.py` (nisbenz, implemented as `async def`; the async form, the keyword-only
+    additions and the extra functions are **pending eequaled's approval**):
+    `ingest_file(path, filename, visibility, *, title=None, topic=None) -> IngestResult`,
+    `ingest_url(url, visibility, *, title=None, topic=None) -> IngestResult`,
+    `list_documents() -> list[DocumentInfo]`, `delete_document(doc_id) -> bool`,
+    `corpus_version() -> str`, `init_pipeline()` / `close_pipeline()` for the app lifespan.
+    Failures raise typed `IngestError`s (new: `index_unavailable` 503, `embedding_error`, startup
+    `embedder_config_error` / `index_stale`).
 - `doc_id` is derived in `pipeline.py` from the document `topic` (e.g. `uuid5(NAMESPACE, topic)`),
-  not in preprocessing. Same topic + same sha256 = `duplicate`. Default topic: filename stem (files)
-  or normalized URL without query (web).
+  not in preprocessing. Same topic + same sha256 = `duplicate` (+ new visibility = `updated`, new
+  hash = `replaced`). Default topic: filename stem (files) or final URL without query (web).
 - `INGEST_`-prefixed `IngestSettings` is a separate settings class so neither side edits the other's
   `config.py` fields.
 - Open question with eequaled: does a bad upload return a 4xx or 200 with `status: "failed"`?
@@ -30,14 +36,16 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 
 - **Spec-driven.** Features get `specs/<feature>/requirements.md`, `design.md`, `tasks.md`
   (see `specs/data-preprocessing/`). Read the relevant spec before touching that area; keep it in
-  sync with the code. Chunking is spec'd and built (`specs/chunking/`). Next spec to write: the
-  ingest pipeline (embedding with granite ONNX, Qdrant hybrid store, `corpus_version()`).
+  sync with the code. Chunking (`specs/chunking/`) and the ingest pipeline
+  (`specs/ingest-pipeline/`) are spec'd and built. Next: the retrieval spec (hybrid query + RRF,
+  reranker with `max_length` >= 640, gate).
 - **Test-first** per task; tick the task in `tasks.md` when done.
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
   Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
-  `pytest -m "not ocr and not tokenizer"`, and a models job that downloads sha256-verified tessdata
-  and the embedder `tokenizer.json`, then runs `pytest -m "ocr or tokenizer"`.
+  `pytest -m "not ocr and not tokenizer and not embedder"`, and a models job that downloads
+  sha256-verified tessdata, the embedder (tokenizer + int8 ONNX) and the BM25 stopword lists, then
+  runs `pytest -m "ocr or tokenizer or embedder"`.
 - Before starting: `git fetch`; local `dev` may be behind `origin/dev`.
 
 ## Fixed decisions (do not change; ask the user if blocked)
@@ -73,10 +81,13 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 ```bash
 uv sync --locked
 uv run ruff check . && uv run ruff format --check .
-uv run pytest -m "not ocr and not tokenizer"   # no model files needed
+uv run pytest -m "not ocr and not tokenizer and not embedder"   # no model files needed
 uv run python scripts/download_models.py --only tessdata --dest models/tessdata
-uv run python scripts/download_models.py --only tokenizer --dest models/embedder
-TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer"
+uv run python scripts/download_models.py --only embedder --dest models/embedder   # 313 MB
+uv run python scripts/download_models.py --only bm25 --dest models/bm25
+MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder"
+uv run python scripts/ingest_folder.py <dir> --visibility public   # needs Qdrant
+uv run python scripts/reindex.py   # rebuild after embedder/chunking changes
 cp .env.example .env && docker compose up -d --build
 ```
 
@@ -136,15 +147,18 @@ src/mcclub_rag/
 ├── text/       normalize.py, lang.py
 ├── retrieval/  embed.py, store.py, search.py, rerank.py, gate.py
 └── llm/        client.py, quota.py, prompts.py
-scripts/        download_models.py, ingest_folder.py
+scripts/        download_models.py, ingest_folder.py, reindex.py
 eval/           questions.jsonl, run_eval.py
 tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
 ```
 
 Built: preprocessing (below) and chunking (`ingest/chunk.py`, `ingest/tokens.py`,
 `text/sentences.py`; `chunk_document(doc) -> tuple[Chunk, ...]`, sizes in embedder tokens,
-`chunking_signature()` for the corpus version). Not yet built: `pipeline.py`, `retrieval/`, `llm/`, `api/`, `answer.py` and the other
-top-level modules. Don't create planned files unless the task asks.
+`chunking_signature()` for the corpus version), and the ingest pipeline (`ingest/pipeline.py`,
+`ingest/identity.py`, `ingest/docstore.py`, `retrieval/registry.py`, `retrieval/embed.py`,
+`retrieval/store.py`, `scripts/ingest_folder.py`, `scripts/reindex.py`). Not yet built:
+`retrieval/search.py`, `rerank.py`, `gate.py`, `llm/`, `api/`, `answer.py` and the other top-level
+modules. Don't create planned files unless the task asks.
 
 ## Configuration
 
