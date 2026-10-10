@@ -102,9 +102,10 @@ def test_cli_default_dest_uses_models_dir(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setenv("MODELS_DIR", str(tmp_path))
     monkeypatch.setattr(dm, "download_tessdata", lambda dest, variant: calls.append(dest))
-    monkeypatch.setattr(dm, "download_tokenizer", lambda dest: calls.append(dest))
+    monkeypatch.setattr(dm, "download_embedder", lambda dest: calls.append(dest))
+    monkeypatch.setattr(dm, "download_bm25", lambda dest: calls.append(dest))
     assert dm.main([]) == 0
-    assert calls == [tmp_path / "tessdata", tmp_path / "embedder"]
+    assert calls == [tmp_path / "tessdata", tmp_path / "embedder", tmp_path / "bm25"]
 
 
 def test_cli_reports_failure(monkeypatch, capsys):
@@ -172,3 +173,100 @@ def test_cli_only_tokenizer(monkeypatch, tmp_path):
 def test_cli_dest_with_several_groups_is_rejected(tmp_path):
     with pytest.raises(SystemExit):
         dm.main(["--dest", str(tmp_path)])
+
+
+ONNX = b"onnx-graph-bytes" * 200
+SPEC = dm.EmbedderSpec(
+    repo="org/model",
+    revision="abc123",
+    onnx_file="onnx/model_quint8_avx2.onnx",
+    onnx_sha256=hashlib.sha256(ONNX).hexdigest(),
+    tokenizer_sha256=TOKENIZER_HASH,
+    dim=8,
+    pooling="cls",
+)
+
+
+def _serve_embedder(request: httpx.Request) -> httpx.Response:
+    body = TOKENIZER if request.url.path.endswith("tokenizer.json") else ONNX
+    return httpx.Response(200, content=body)
+
+
+def test_embedder_downloads_tokenizer_and_onnx(tmp_path):
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return _serve_embedder(request)
+
+    dm.download_embedder(tmp_path, client=_client(handler), spec=SPEC)
+    assert (tmp_path / "tokenizer.json").read_bytes() == TOKENIZER
+    assert (tmp_path / "onnx" / "model_quint8_avx2.onnx").read_bytes() == ONNX
+    assert seen == [
+        "https://huggingface.co/org/model/resolve/abc123/tokenizer.json",
+        "https://huggingface.co/org/model/resolve/abc123/onnx/model_quint8_avx2.onnx",
+    ]
+
+
+def test_embedder_onnx_mismatch_leaves_no_file(tmp_path):
+    def handler(request):
+        if request.url.path.endswith("tokenizer.json"):
+            return httpx.Response(200, content=TOKENIZER)
+        return httpx.Response(200, content=b"tampered")
+
+    with pytest.raises(dm.DownloadError, match="sha256 mismatch for onnx"):
+        dm.download_embedder(tmp_path, client=_client(handler), spec=SPEC)
+    assert list((tmp_path / "onnx").iterdir()) == []
+
+
+def test_existing_valid_embedder_is_not_downloaded_again(tmp_path):
+    (tmp_path / "onnx").mkdir()
+    (tmp_path / "tokenizer.json").write_bytes(TOKENIZER)
+    (tmp_path / "onnx" / "model_quint8_avx2.onnx").write_bytes(ONNX)
+
+    def handler(request):
+        raise AssertionError(f"unexpected download of {request.url}")
+
+    dm.download_embedder(tmp_path, client=_client(handler), spec=SPEC)
+
+
+STOPWORDS = {name: f"{name} words".encode() for name in ("arabic.txt", "french.txt")}
+STOPWORD_HASHES = {name: hashlib.sha256(data).hexdigest() for name, data in STOPWORDS.items()}
+
+
+def test_bm25_downloads_pinned_stopword_files(tmp_path):
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return httpx.Response(200, content=STOPWORDS[request.url.path.rsplit("/", 1)[-1]])
+
+    dm.download_bm25(tmp_path, client=_client(handler), files=STOPWORD_HASHES)
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == STOPWORDS
+    assert all(f"/Qdrant/bm25/resolve/{dm.BM25_REVISION}/" in url for url in seen)
+
+
+def test_bm25_mismatch_leaves_no_file(tmp_path):
+    def handler(request):
+        return httpx.Response(200, content=b"tampered")
+
+    with pytest.raises(dm.DownloadError, match="sha256 mismatch for arabic.txt"):
+        dm.download_bm25(tmp_path, client=_client(handler), files=STOPWORD_HASHES)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_pins_come_from_the_registry():
+    from mcclub_rag.retrieval import registry
+
+    assert dm.TOKENIZER_SHA256 == registry.GRANITE_R2.tokenizer_sha256
+    assert dm.EMBEDDER_REVISION == registry.GRANITE_R2.revision
+    assert set(registry.BM25_FILES) == {"arabic.txt", "french.txt", "english.txt"}
+
+
+@pytest.mark.parametrize("group", ["embedder", "bm25"])
+def test_cli_only_new_groups(monkeypatch, tmp_path, group):
+    calls = []
+    monkeypatch.setattr(dm, "download_embedder", lambda dest: calls.append(("embedder", dest)))
+    monkeypatch.setattr(dm, "download_bm25", lambda dest: calls.append(("bm25", dest)))
+    assert dm.main(["--only", group, "--dest", str(tmp_path)]) == 0
+    assert calls == [(group, tmp_path)]
