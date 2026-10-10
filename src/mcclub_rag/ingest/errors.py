@@ -86,6 +86,18 @@ class EmbedderConfigError(IngestError):
     code = "embedder_config_error"
 
 
+class RerankError(IngestError):
+    """The reranker model failed at inference time."""
+
+    code = "rerank_error"
+
+
+class RerankerConfigError(IngestError):
+    """Raised at startup when reranker files are missing, corrupt or the model is unknown."""
+
+    code = "reranker_config_error"
+
+
 ALL_ERRORS: tuple[type[IngestError], ...] = (
     InvalidInput,
     FileTooLarge,
@@ -101,4 +113,6 @@ ALL_ERRORS: tuple[type[IngestError], ...] = (
     IndexStale,
     EmbeddingError,
     EmbedderConfigError,
+    RerankError,
+    RerankerConfigError,
 )

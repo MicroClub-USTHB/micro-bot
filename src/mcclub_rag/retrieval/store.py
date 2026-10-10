@@ -61,7 +61,8 @@ class Marker:
 
 
 @asynccontextmanager
-async def _guard(action: str) -> AsyncIterator[None]:
+async def guard(action: str) -> AsyncIterator[None]:
+    """Map Qdrant transport and API errors to ``IndexUnavailable`` (shared with retrieval)."""
     try:
         yield
     except (ApiException, httpx.HTTPError, TimeoutError) as exc:
@@ -93,7 +94,7 @@ class VectorStore:
         )
 
     async def _alias_target(self) -> str | None:
-        async with _guard("alias lookup"):
+        async with guard("alias lookup"):
             aliases = (await self.client.get_aliases()).aliases
         return next((a.collection_name for a in aliases if a.alias_name == self.alias), None)
 
@@ -101,7 +102,7 @@ class VectorStore:
         """Create the collection and alias if missing; report whether they match ``signature``."""
         target = await self._alias_target()
         if target is None:
-            async with _guard("collection check"):
+            async with guard("collection check"):
                 clash = await self.client.collection_exists(self.alias)
             if clash:
                 raise IndexStale(
@@ -116,7 +117,7 @@ class VectorStore:
     async def create_physical(self, signature: str, *, name: str | None = None) -> str:
         """(Re)create a physical collection for ``signature``; returns its name."""
         name = name or self.physical_name(signature)
-        async with _guard("collection create"):
+        async with guard("collection create"):
             if await self.client.collection_exists(name):
                 await self.client.delete_collection(name)
             await self.client.create_collection(
@@ -134,7 +135,7 @@ class VectorStore:
         return name
 
     async def drop_physical(self, name: str) -> None:
-        async with _guard("collection drop"):
+        async with guard("collection drop"):
             if await self.client.collection_exists(name):
                 await self.client.delete_collection(name)
 
@@ -151,7 +152,7 @@ class VectorStore:
                 create_alias=qm.CreateAlias(collection_name=physical, alias_name=self.alias)
             )
         )
-        async with _guard("alias switch"):
+        async with guard("alias switch"):
             await self.client.update_collection_aliases(change_aliases_operations=operations)
             if old is not None and old != physical:
                 await self.client.delete_collection(old)
@@ -159,7 +160,7 @@ class VectorStore:
     async def upsert(self, points: Sequence[qm.PointStruct], *, collection: str | None = None):
         """Write ``points`` in order, in batches, each acknowledged before the next."""
         target = collection or self.alias
-        async with _guard("upsert"):
+        async with guard("upsert"):
             for start in range(0, len(points), self.batch):
                 batch = list(points[start : start + self.batch])
                 await self.client.upsert(target, batch, wait=True)
@@ -174,11 +175,11 @@ class VectorStore:
 
     async def count(self, doc_id: str, content_hash: str) -> int:
         flt = qm.Filter(must=_match(doc_id=doc_id, content_hash=content_hash))
-        async with _guard("count"):
+        async with guard("count"):
             return (await self.client.count(self.alias, count_filter=flt, exact=True)).count
 
     async def set_visibility(self, doc_id: str, visibility: Visibility) -> None:
-        async with _guard("visibility update"):
+        async with guard("visibility update"):
             await self.client.set_payload(
                 self.alias,
                 payload={"visibility": visibility},
@@ -187,7 +188,7 @@ class VectorStore:
             )
 
     async def _delete(self, flt: qm.Filter, collection: str | None = None) -> None:
-        async with _guard("delete"):
+        async with guard("delete"):
             await self.client.delete(
                 collection or self.alias, points_selector=qm.FilterSelector(filter=flt), wait=True
             )
@@ -206,7 +207,7 @@ class VectorStore:
     async def delete_doc(self, doc_id: str) -> bool:
         """Delete every point of ``doc_id``; False if it had none."""
         flt = qm.Filter(must=_match(doc_id=doc_id))
-        async with _guard("count"):
+        async with guard("count"):
             existed = (await self.client.count(self.alias, count_filter=flt, exact=True)).count > 0
         if existed:
             await self._delete(flt)
@@ -224,7 +225,7 @@ class VectorStore:
     async def _markers(self, must: list[qm.FieldCondition]) -> list[Marker]:
         found: list[Marker] = []
         offset = None
-        async with _guard("scroll"):
+        async with guard("scroll"):
             while True:
                 points, offset = await self.client.scroll(
                     self.alias,
