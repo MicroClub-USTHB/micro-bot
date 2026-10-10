@@ -455,7 +455,43 @@ class IngestPipeline:
         return _digest({"index": self.signature, "documents": documents})
 
     async def reindex(self) -> None:
-        raise NotImplementedError  # task 6.8
+        """Rebuild every stored document into a new collection, then swap the alias.
+
+        Search keeps using the old collection until the new one is complete. If any document
+        cannot be rebuilt (unreadable JSON, indexed but never stored, or an indexing error),
+        the new collection is dropped, the alias stays, and ``IndexStale`` is raised.
+        """
+        start = time.perf_counter()
+        async with self._exclusive():
+            stored, failed = await self.docstore.load_all()
+            known = {item.doc_id for item in stored}
+            failed += [m.doc_id for m in await self.store.markers() if m.doc_id not in known]
+            log.info("reindex_started", documents=len(stored), signature=self.signature[:12])
+            name = await self.store.next_physical(self.signature)
+            physical = await self.store.create_physical(self.signature, name=name)
+            chunks = 0
+            for item in stored if not failed else ():
+                try:
+                    chunks += await self._index(
+                        _Run(), item.doc_id, item.document, item.ingested_at, collection=physical
+                    )
+                except IngestError as exc:
+                    log.warning("document_reindex_failed", doc_id=item.doc_id, error_code=exc.code)
+                    failed.append(item.doc_id)
+            if failed:
+                await self.store.drop_physical(physical)
+                log.warning("reindex_aborted", failed=sorted(failed))
+                raise IndexStale(
+                    f"reindex failed for {len(failed)} document(s) "
+                    f"({', '.join(sorted(failed)[:5])}); the previous index is still served"
+                )
+            await self.store.switch_alias(physical)
+        log.info(
+            "reindex_finished",
+            documents=len(stored),
+            chunks=chunks,
+            duration_ms=round((time.perf_counter() - start) * 1000),
+        )
 
     async def close(self) -> None:
         await self.client.close()

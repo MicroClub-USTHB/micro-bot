@@ -133,6 +133,11 @@ class VectorStore:
                 await self.client.create_payload_index(name, "index", qm.PayloadSchemaType.INTEGER)
         return name
 
+    async def drop_physical(self, name: str) -> None:
+        async with _guard("collection drop"):
+            if await self.client.collection_exists(name):
+                await self.client.delete_collection(name)
+
     async def switch_alias(self, physical: str) -> None:
         """Point the alias at ``physical`` in one atomic operation, then drop the old target."""
         old = await self._alias_target()
