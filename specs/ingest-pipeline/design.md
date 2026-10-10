@@ -111,11 +111,12 @@ builds the new physical collection by name, then swaps the alias with one
 class EmbedderSpec:
     repo: str
     revision: str
-    onnx_file: str          # "onnx/model_quint8_avx2.onnx"
+    onnx_file: str  # "onnx/model_quint8_avx2.onnx"
     onnx_sha256: str
     tokenizer_sha256: str
-    dim: int                # 768
+    dim: int  # 768
     pooling: Literal["cls"]
+
 
 EMBEDDERS = {"ibm-granite/granite-embedding-311m-multilingual-r2": EmbedderSpec(...)}
 ```
@@ -129,12 +130,15 @@ switching is a config change (`EMBED_MODEL`), as AGENTS.md requires.
 ```python
 class DenseEncoder(Protocol):
     dim: int
-    fingerprint: str                      # repo@revision:onnx_sha256
+    fingerprint: str  # repo@revision:onnx_sha256
+
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]: ...
     def embed_query(self, text: str) -> list[float]: ...
 
+
 class SparseEncoder(Protocol):
-    fingerprint: str                      # SPARSE_VERSION, k, b, avg_len, stopwords sha256
+    fingerprint: str  # SPARSE_VERSION, k, b, avg_len, stopwords sha256
+
     def embed_documents(self, texts: Sequence[str]) -> list[SparseVector]: ...
     def embed_query(self, text: str) -> SparseVector: ...
 ```
@@ -264,7 +268,8 @@ complete collection.
 ```python
 IngestStatus = Literal["created", "replaced", "duplicate", "updated"]
 
-class IngestResult(BaseModel):          # frozen
+
+class IngestResult(BaseModel):  # frozen
     doc_id: str
     status: IngestStatus
     title: str
@@ -274,15 +279,24 @@ class IngestResult(BaseModel):          # frozen
     language: str
     chunk_count: int
     content_hash: str
-    ocr_used: bool                      # False for duplicate / updated (no parse ran)
+    ocr_used: bool  # False for duplicate / updated (no parse ran)
     warnings: tuple[str, ...]
     duration_ms: int
 
-class DocumentInfo(BaseModel):          # frozen, one per complete document
-    doc_id: str; title: str; source: str; source_type: SourceType; visibility: Visibility
-    language: str; chunk_count: int; content_hash: str; ingested_at: datetime
 
-class StoredDocument(BaseModel):        # DATA_DIR/documents/<doc_id>.json
+class DocumentInfo(BaseModel):  # frozen, one per complete document
+    doc_id: str
+    title: str
+    source: str
+    source_type: SourceType
+    visibility: Visibility
+    language: str
+    chunk_count: int
+    content_hash: str
+    ingested_at: datetime
+
+
+class StoredDocument(BaseModel):  # DATA_DIR/documents/<doc_id>.json
     schema_version: int = 1
     doc_id: str
     topic: str

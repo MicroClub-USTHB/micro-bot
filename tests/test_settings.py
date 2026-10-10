@@ -6,11 +6,21 @@ from pydantic import ValidationError
 
 from mcclub_rag.ingest.settings import IngestSettings, get_ingest_settings
 
+_SHARED = {
+    "TESSDATA_PREFIX",
+    "QDRANT_URL",
+    "QDRANT_COLLECTION",
+    "EMBED_MODEL",
+    "EMBED_DIM",
+    "MODELS_DIR",
+    "DATA_DIR",
+}
+
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     for key in list(os.environ):
-        if key.startswith("INGEST_") or key == "TESSDATA_PREFIX":
+        if key.startswith("INGEST_") or key in _SHARED:
             monkeypatch.delenv(key)
     get_ingest_settings.cache_clear()
     yield
@@ -125,3 +135,47 @@ def test_chunk_env_override(monkeypatch, tmp_path):
 def test_chunk_size_ordering_enforced(fields):
     with pytest.raises(ValidationError):
         IngestSettings(**fields)
+
+
+def test_pipeline_defaults_match_design():
+    s = IngestSettings()
+    assert s.qdrant_url == "http://qdrant:6333"
+    assert s.qdrant_collection == "mcclub"
+    assert s.qdrant_timeout_s == 10
+    assert s.embed_model == "ibm-granite/granite-embedding-311m-multilingual-r2"
+    assert s.embed_dim == 768
+    assert s.models_dir == Path("/app/models")
+    assert s.data_dir == Path("/data")
+    assert s.embed_threads == 4
+    assert s.embed_max_length == 512
+    assert (s.bm25_k, s.bm25_b, s.bm25_avg_len) == (1.2, 0.75, 110)
+    assert s.upsert_batch == 64
+    assert s.reindex_on_startup is True
+
+
+def test_shared_names_read_without_prefix(monkeypatch, tmp_path):
+    monkeypatch.setenv("QDRANT_URL", "http://localhost:6333")
+    monkeypatch.setenv("QDRANT_COLLECTION", "test")
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("MODELS_DIR", str(tmp_path / "m"))
+    s = IngestSettings()
+    assert s.qdrant_url == "http://localhost:6333"
+    assert s.qdrant_collection == "test"
+    assert s.data_dir == tmp_path
+    assert s.models_dir == tmp_path / "m"
+
+
+def test_pipeline_env_override(monkeypatch):
+    monkeypatch.setenv("INGEST_EMBED_THREADS", "2")
+    monkeypatch.setenv("INGEST_REINDEX_ON_STARTUP", "false")
+    s = IngestSettings()
+    assert s.embed_threads == 2
+    assert s.reindex_on_startup is False
+
+
+def test_embed_max_length_must_fit_chunks(monkeypatch):
+    monkeypatch.setenv("INGEST_EMBED_MAX_LENGTH", "300")
+    with pytest.raises(ValidationError):
+        IngestSettings()
+    with pytest.raises(ValidationError):
+        IngestSettings(embed_max_length=401)  # chunk_max_tokens + 2 = 402
