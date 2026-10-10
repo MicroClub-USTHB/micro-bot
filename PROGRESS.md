@@ -1,5 +1,29 @@
 # progress
 
+## 2026-10-10 (retrieval)
+
+### Shipped
+
+- Retrieval spec (`specs/retrieval/`) and all its tasks: `HybridRetriever` implements
+  eequaled's `RetrievalBackend` (hybrid dense + BM25 in one Qdrant query, filter on every level,
+  dedupe, gte int8 reranker one pair per run, gate, follow-up query, optional neighbours).
+- Measured first: gte 3.3 s vs bge 7.7 s for 30 pairs; int8 rerank scores moved by up to 1.8
+  logits in batches, so batch 1. `--only reranker` download, `reranker` test marker, CI step.
+- Eval harness: 48 questions, `python -m eval.run_eval`, results in `eval/results/`. Defaults set
+  from it: `RETRIEVE_TOP_K=20`, `RETRIEVAL_RRF_K=2`, `GATE_THRESHOLD=0.40` (gte). Median
+  retrieval 1.3 s. 6 edge cases recorded.
+
+### Blocked
+
+- Wiring into `main.py` (eequaled): app error handler must also catch `ingest.errors.IngestError`
+  and map `index_unavailable` to 503; `config.py` defaults for `rerank_model` / `retrieve_top_k`
+  still say bge / 30; ownership of search/rerank/gate to confirm.
+
+### Next
+
+- `DocumentBackend` adapter and readiness probe, then the wiring PR with eequaled.
+- Grow the corpus and question set: hit@5 is saturated at 1.0 on 70 chunks.
+
 ## 2026-10-10
 
 ### Shipped

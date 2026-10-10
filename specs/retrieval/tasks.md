@@ -170,7 +170,7 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     model tests' latency bound match.
   - _Requirements: 5.1, 9.1, 10.6_
 
-- [ ] 7. Keep the repo docs in sync
+- [x] 7. Keep the repo docs in sync
   - `README.md` (retrieval section), `EDGE_CASES.md` (rows: batch-dependent int8 rerank scores;
     gte tokenizer padding; top-level filter propagation; RRF default k=2; app/ingest
     `IngestError` mismatch), `PROGRESS.md`, `AGENTS.md` ("Retrieval" built: what it is, rules that
