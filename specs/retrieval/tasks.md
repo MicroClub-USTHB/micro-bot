@@ -137,15 +137,15 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     members-only doc for a public role.
   - _Requirements: 1.1, 2.3, 11.2_
 
-- [ ] 6. Evaluation harness
-- [ ] 6.1 Metrics in `eval/metrics.py` (+ `eval/__init__.py`)
+- [x] 6. Evaluation harness
+- [x] 6.1 Metrics in `eval/metrics.py` (+ `eval/__init__.py`)
   - `is_hit(chunk, question)` (folded evidence + doc), `hit_at(ranks, k)`, `mrr_at(ranks, k)`,
     `sweep(answerable_scores, unanswerable_scores)`, `suggest_threshold(sweep, max_false_refusal)`,
     `access_violations(rows)`.
   - `tests/test_eval_metrics.py`: hand-made rows for every function, folding (tatweel, case),
     the suggestion rule, no-hit MRR = 0.
   - _Requirements: 10.3, 10.4, 10.7_
-- [ ] 6.2 `eval/corpus.json` and `eval/questions.jsonl`
+- [x] 6.2 `eval/corpus.json` and `eval/questions.jsonl`
   - Corpus manifest for the 4 `data/parsed` files (visibility, topic). At least 40 questions per
     Requirement 10.2: >= 10 Arabic, >= 6 cross-lingual (both directions), >= 8 unanswerable,
     >= 4 follow-ups with `history`, >= 3 `access` (public role, members-only doc); evidence
@@ -154,7 +154,7 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     is a topic in `corpus.json`; each evidence string occurs (folded) in that document's text;
     `access` questions point at members-only docs.
   - _Requirements: 10.1, 10.2_
-- [ ] 6.3 `eval/run_eval.py`
+- [x] 6.3 `eval/run_eval.py`
   - CLI per design "Evaluation harness": settings from env, in-memory Qdrant, real encoders +
     reranker, ingest corpus, per-question stages with timings, metrics pre/post rerank per tag,
     access violations, sweep + suggested threshold, latency median/p95, JSON to
@@ -162,7 +162,7 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
   - Test the orchestration with fakes (fake encoders, `FakeReranker`, 3 tiny docs, 4 questions):
     JSON written with settings, corpus version, rows, aggregates and sweep.
   - _Requirements: 9.1, 10.3, 10.4, 10.5, 10.6, 10.7_
-- [ ] 6.4 Measured defaults
+- [x] 6.4 Measured defaults
   - Run the eval for: gte vs bge; `RETRIEVE_TOP_K` 10 / 15 / 20 / 30; RRF `k` 2 vs 60; DBSF;
     dense/sparse weights 1:1 vs 1:0.5; neighbours off/on. Commit the result JSONs.
   - Set the chosen `RETRIEVE_TOP_K`, fusion settings and `GATE_THRESHOLD` in `.env.example` and

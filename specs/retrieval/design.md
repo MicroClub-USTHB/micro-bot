@@ -228,8 +228,8 @@ done together with the `DocumentBackend` adapter (out of scope here).
 ## Evaluation harness (`eval/run_eval.py`)
 
 ```
-uv run python eval/run_eval.py [--corpus data/parsed] [--label gte-k20] [--max-false-refusal 0.05]
-RETRIEVE_TOP_K=20 RETRIEVAL_RRF_K=2 INGEST_CHUNK_TARGET_TOKENS=200 uv run python eval/run_eval.py
+uv run python -m eval.run_eval [--corpus data/parsed] [--label gte-k20] [--max-false-refusal 0.05]
+RETRIEVE_TOP_K=20 RETRIEVAL_RRF_K=2 INGEST_CHUNK_TARGET_TOKENS=200 uv run python -m eval.run_eval
 ```
 
 1. Build `IngestSettings` / `RetrievalSettings` from the environment, an in-memory Qdrant, the real

@@ -25,8 +25,10 @@ class RetrievalSettings(BaseSettings):
     )
 
     # Shared names (app config declares them too)
-    top_k: int = Field(default=30, gt=0, validation_alias="RETRIEVE_TOP_K")
+    # 20: same MRR as 30 on the eval, rerank 1.3 s instead of 1.9 s (eval/results, 2026-10-10)
+    top_k: int = Field(default=20, gt=0, validation_alias="RETRIEVE_TOP_K")
     top_n: int = Field(default=5, gt=0, validation_alias="RERANK_TOP_N")
+    # Model-specific (gte: 0.40, bge: ~0.15), so set in the environment, not here.
     gate_threshold: float | None = Field(
         default=None, ge=0, le=1, validation_alias="GATE_THRESHOLD"
     )
@@ -38,7 +40,7 @@ class RetrievalSettings(BaseSettings):
 
     # Fusion (Qdrant server-side)
     fusion: Literal["rrf", "dbsf"] = "rrf"
-    rrf_k: int = Field(default=60, gt=0)  # Qdrant's own default is 2
+    rrf_k: int = Field(default=2, gt=0)  # 2 beat 60 before rerank: MRR 0.861 vs 0.816
     dense_weight: float = Field(default=1.0, gt=0)
     sparse_weight: float = Field(default=1.0, gt=0)
     prefetch_limit: int = Field(default=40, gt=0)  # per arm

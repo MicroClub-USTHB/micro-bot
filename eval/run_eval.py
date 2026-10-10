@@ -126,7 +126,7 @@ def write_result(out_dir: Path, label: str, payload: dict) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     path = out_dir / f"{stamp}-{label}.json"
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")  # one line
     return path
 
 

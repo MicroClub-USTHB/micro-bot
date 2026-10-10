@@ -28,14 +28,14 @@ def clean_env(monkeypatch):
 
 def test_defaults_match_design():
     s = RetrievalSettings()
-    assert s.top_k == 30
+    assert s.top_k == 20
     assert s.top_n == 5
     assert s.gate_threshold is None
     assert s.rerank_model == "Alibaba-NLP/gte-multilingual-reranker-base"
     assert s.models_dir == Path("/app/models")
     assert s.qdrant_collection == "mcclub"
     assert s.fusion == "rrf"
-    assert s.rrf_k == 60
+    assert s.rrf_k == 2
     assert (s.dense_weight, s.sparse_weight) == (1.0, 1.0)
     assert s.prefetch_limit == 40
     assert s.rerank_max_length == 640
