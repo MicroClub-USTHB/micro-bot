@@ -83,7 +83,7 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
   - `tests/test_embed_model.py`: shape 768 and unit norm; a text alone vs inside a list of
     different-length texts agree within 1e-4; `embed_query(x) == embed_documents([x])[0]`; the
     FR↔EN translation pair scores above the unrelated sentence; perf: 32 chunks of about 300
-    tokens, dense + sparse, under 10 s with 4 threads.
+    tokens, dense + sparse, under 20 s with 4 threads (GitHub runner: 11 s).
   - _Requirements: 4.1, 4.2, 4.3, 4.6, 9.5_
 - [x] 4.4 CI in `.github/workflows/ci.yml`
   - Fast job: `-m "not ocr and not tokenizer and not embedder"`. Models job: cache `models/embedder`
