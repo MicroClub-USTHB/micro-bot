@@ -55,8 +55,10 @@ the old one, so that the bot never answers from two versions of the same rules.
    UUID, so the same topic gives the same `doc_id` on every machine and run.
 2. WHEN no `topic` is given THEN the topic SHALL be the filename stem for files, and for URLs the
    final URL after redirects, lower-cased scheme and host, without query string, fragment or
-   trailing slash.
-3. WHEN a `topic` is given THEN the system SHALL strip it, apply NFC, and reject an empty or
+   trailing slash. IF such a default topic is longer than 200 characters (saved web pages often
+   have percent-encoded URLs as filenames) THEN the system SHALL shorten it to a prefix plus a
+   hash of the full value, so it stays unique and stable instead of being rejected.
+3. WHEN a `topic` is given explicitly THEN the system SHALL strip it, apply NFC, and reject an empty or
    longer-than-200-character topic with `InvalidInput`.
 4. Each chunk's Qdrant point id SHALL be `uuid5(doc_id, f"{content_hash}:{index}")`, so that two
    versions of a document never overwrite each other's points.

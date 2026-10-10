@@ -203,9 +203,12 @@ class VectorStore:
 
 - `NAMESPACE = UUID("…")`: a fixed UUID committed once, never changed (changing it re-keys every
   document).
-- `file_topic(filename)`: `PurePath(filename).stem`, then `clean_topic`.
+- `file_topic(filename)`: `PurePath(filename).stem`, then `_fit`, then `clean_topic`.
 - `url_topic(url)`: lower-case scheme and host, drop default port, query, fragment and trailing `/`
-  (but keep `/` for the root path), then `clean_topic`.
+  (but keep `/` for the root path), then `_fit`, then `clean_topic`.
+- `_fit(topic)`: a default topic over 200 characters becomes its first 183 characters + `~` + the
+  first 16 hex of its sha256 (exactly 200). Explicit topics are not shortened: over 200 is an
+  `InvalidInput`, since the admin chose it.
 - `clean_topic(topic)`: strip, NFC, reject empty or over 200 characters with `InvalidInput`.
 - `doc_id_for(topic) -> str`: `str(uuid5(NAMESPACE, topic))`.
 - `point_id(doc_id, content_hash, index) -> str`: `str(uuid5(UUID(doc_id), f"{content_hash}:{index}"))`.

@@ -2,6 +2,7 @@ import pytest
 
 from mcclub_rag.ingest.errors import InvalidInput
 from mcclub_rag.ingest.identity import (
+    MAX_TOPIC,
     clean_topic,
     doc_id_for,
     file_topic,
@@ -74,3 +75,31 @@ def test_point_id_is_stable_and_distinct():
     assert first != point_id(doc_id, "b" * 64, 0)
     assert first != point_id(doc_id, "a" * 64, 1)
     assert first != point_id(doc_id_for("other"), "a" * 64, 0)
+
+
+# Real case: data/parsed holds an Al Jazeera page saved under its percent-encoded URL (234 chars).
+LONG_STEM = "www.aljazeera.net_blogs_2026_10_8_" + "D8_BA_D8_B2_D8_A9-" * 11
+
+
+def test_long_default_file_topic_is_shortened_not_rejected():
+    topic = file_topic(LONG_STEM + ".md")
+    assert len(LONG_STEM) > MAX_TOPIC and len(topic) == MAX_TOPIC
+    assert topic.startswith("www.aljazeera.net_blogs_2026_10_8_")
+    assert topic == file_topic(LONG_STEM + ".pdf")  # stable: same stem, same topic
+
+
+def test_shortened_topics_stay_distinct():
+    assert file_topic(LONG_STEM + "a.md") != file_topic(LONG_STEM + "b.md")
+
+
+def test_long_default_url_topic_is_shortened():
+    url = "https://www.aljazeera.net/blogs/" + "%D8%BA%D8%B2%D8%A9-" * 20
+    topic = url_topic(url + "?utm=1")
+    assert len(topic) == MAX_TOPIC and topic.startswith("https://www.aljazeera.net/blogs/")
+    assert topic == url_topic(url)
+
+
+def test_short_topics_are_unchanged_and_explicit_long_topics_still_rejected():
+    assert file_topic("rules.md") == "rules"
+    with pytest.raises(InvalidInput):
+        clean_topic(LONG_STEM)
