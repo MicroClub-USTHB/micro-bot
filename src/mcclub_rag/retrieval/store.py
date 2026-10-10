@@ -8,7 +8,7 @@ corpus version read markers only.
 """
 
 import warnings
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -139,3 +139,85 @@ class VectorStore:
             await self.client.update_collection_aliases(change_aliases_operations=operations)
             if old is not None and old != physical:
                 await self.client.delete_collection(old)
+
+    async def upsert(self, points: Sequence[qm.PointStruct], *, collection: str | None = None):
+        """Write ``points`` in order, in batches, each acknowledged before the next."""
+        target = collection or self.alias
+        async with _guard("upsert"):
+            for start in range(0, len(points), self.batch):
+                batch = list(points[start : start + self.batch])
+                await self.client.upsert(target, batch, wait=True)
+
+    async def versions(self, doc_id: str) -> list[Marker]:
+        """Markers of every complete version of ``doc_id``, newest first."""
+        return sorted(
+            await self._markers(_match(doc_id=doc_id, index=0)),
+            key=lambda m: m.ingested_at,
+            reverse=True,
+        )
+
+    async def count(self, doc_id: str, content_hash: str) -> int:
+        flt = qm.Filter(must=_match(doc_id=doc_id, content_hash=content_hash))
+        async with _guard("count"):
+            return (await self.client.count(self.alias, count_filter=flt, exact=True)).count
+
+    async def set_visibility(self, doc_id: str, visibility: Visibility) -> None:
+        async with _guard("visibility update"):
+            await self.client.set_payload(
+                self.alias,
+                payload={"visibility": visibility},
+                points=qm.Filter(must=_match(doc_id=doc_id)),
+                wait=True,
+            )
+
+    async def _delete(self, flt: qm.Filter, collection: str | None = None) -> None:
+        async with _guard("delete"):
+            await self.client.delete(
+                collection or self.alias, points_selector=qm.FilterSelector(filter=flt), wait=True
+            )
+
+    async def delete_version(
+        self, doc_id: str, content_hash: str, *, collection: str | None = None
+    ) -> None:
+        await self._delete(
+            qm.Filter(must=_match(doc_id=doc_id, content_hash=content_hash)), collection
+        )
+
+    async def delete_other_versions(self, doc_id: str, keep_hash: str) -> None:
+        flt = qm.Filter(must=_match(doc_id=doc_id), must_not=_match(content_hash=keep_hash))
+        await self._delete(flt)
+
+    async def delete_doc(self, doc_id: str) -> bool:
+        """Delete every point of ``doc_id``; False if it had none."""
+        flt = qm.Filter(must=_match(doc_id=doc_id))
+        async with _guard("count"):
+            existed = (await self.client.count(self.alias, count_filter=flt, exact=True)).count > 0
+        if existed:
+            await self._delete(flt)
+        return existed
+
+    async def markers(self) -> list[Marker]:
+        """The newest complete version of every document, sorted by ``doc_id``."""
+        newest: dict[str, Marker] = {}
+        for marker in await self._markers(_match(index=0)):
+            current = newest.get(marker.doc_id)
+            if current is None or marker.ingested_at > current.ingested_at:
+                newest[marker.doc_id] = marker
+        return [newest[doc_id] for doc_id in sorted(newest)]
+
+    async def _markers(self, must: list[qm.FieldCondition]) -> list[Marker]:
+        found: list[Marker] = []
+        offset = None
+        async with _guard("scroll"):
+            while True:
+                points, offset = await self.client.scroll(
+                    self.alias,
+                    scroll_filter=qm.Filter(must=must),
+                    limit=_SCROLL_PAGE,
+                    offset=offset,
+                    with_payload=_MARKER_FIELDS,
+                    with_vectors=False,
+                )
+                found.extend(Marker.from_payload(p.payload or {}) for p in points)
+                if offset is None:
+                    return found
