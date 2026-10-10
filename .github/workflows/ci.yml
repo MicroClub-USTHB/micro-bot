@@ -60,15 +60,17 @@ jobs:
         run: uv sync --locked
 
       - name: Tests that run without model files
-        run: uv run pytest -m "not ocr and not tokenizer"
+        run: uv run pytest -m "not ocr and not tokenizer and not embedder"
 
   test-ocr:
-    name: Tests (needs tessdata / tokenizer)
+    name: Tests (needs tessdata / tokenizer / embedder)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       TESSDATA_PREFIX: ${{ github.workspace }}/models/tessdata
       INGEST_CHUNK_TOKENIZER_PATH: ${{ github.workspace }}/models/embedder/tokenizer.json
+      MODELS_DIR: ${{ github.workspace }}/models
+      HF_HUB_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -93,14 +95,20 @@ jobs:
       - name: Download OCR traineddata (ara, fra, eng; sha256-verified)
         run: uv run python scripts/download_models.py --only tessdata --dest models/tessdata
 
-      - name: Cache embedder tokenizer
+      - name: Cache embedder (tokenizer + ONNX) and BM25 stopwords
         uses: actions/cache@v4
         with:
-          path: models/embedder
-          key: tokenizer-${{ hashFiles('scripts/download_models.py') }}
+          path: |
+            models/embedder
+            models/bm25
+          key: embedder-${{ hashFiles('src/mcclub_rag/retrieval/registry.py') }}
 
-      - name: Download embedder tokenizer.json (pinned revision, sha256-verified)
-        run: uv run python scripts/download_models.py --only tokenizer --dest models/embedder
+      - name: Download embedder and BM25 files (pinned revisions, sha256-verified)
+        env:
+          HF_HUB_OFFLINE: "0"
+        run: |
+          uv run python scripts/download_models.py --only embedder --dest models/embedder
+          uv run python scripts/download_models.py --only bm25 --dest models/bm25
 
-      - name: Tests that need tessdata or the tokenizer
-        run: uv run pytest -m "ocr or tokenizer"
+      - name: Tests that need tessdata, the tokenizer or the embedder
+        run: uv run pytest -m "ocr or tokenizer or embedder"
