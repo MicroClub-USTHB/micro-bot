@@ -283,3 +283,56 @@ async def test_logs_one_event_without_document_text(pipe, tmp_path):
     assert failed["event"] == "document_ingest_failed"
     assert failed["error_code"] == "invalid_input" and failed["stage"] == "validate"
     assert not any("cotisation" in str(value) for e in logs for value in e.values())
+
+
+PAGE = "# Programme\n\nAtelier Python le samedi en salle B12."
+
+
+@pytest.fixture
+async def web(tmp_path):
+    pre = FakePreprocess()
+    p = make_pipeline(tmp_path, preprocess=pre)
+    await p.start()
+    yield p, pre
+    await p.close()
+
+
+async def test_url_query_and_fragment_do_not_change_doc_id(web):
+    p, pre = web
+    pre.pages["https://club.example/a"] = ("https://club.example/a?utm=2", PAGE)
+    result = await p.ingest_url("https://club.example/a?x=1#top", "public")
+    assert result.status == "created" and result.source_type == "web"
+    assert result.doc_id == pl.doc_id_for("https://club.example/a")
+
+
+async def test_redirect_uses_the_final_url_as_topic(web):
+    p, pre = web
+    pre.pages["https://club.example/old"] = ("https://club.example/new", PAGE)
+    result = await p.ingest_url("https://club.example/old", "members")
+    assert result.doc_id == pl.doc_id_for("https://club.example/new")
+    stored = await p.docstore.load(result.doc_id)
+    assert stored.topic == "https://club.example/new"
+
+
+async def test_same_page_twice_is_duplicate(web):
+    p, pre = web
+    pre.pages["https://club.example/a"] = ("https://club.example/a", PAGE)
+    await p.ingest_url("https://club.example/a", "public")
+    assert (await p.ingest_url("https://club.example/a", "public")).status == "duplicate"
+
+
+async def test_logged_url_has_no_query_string(web):
+    p, pre = web
+    pre.pages["https://club.example/a"] = ("https://club.example/a", PAGE)
+    with capture_logs() as logs:
+        await p.ingest_url("https://club.example/a?token=secret", "public")
+    event = next(e for e in logs if e["event"] == "document_ingested")
+    assert event["source"] == "https://club.example/a"
+    assert not any("secret" in str(v) for e in logs for v in e.values())
+
+
+async def test_module_level_ingest_url(tmp_path):
+    pre = FakePreprocess()
+    pre.pages["https://club.example/a"] = ("https://club.example/a", PAGE)
+    await pl.init_pipeline(pipeline=make_pipeline(tmp_path, preprocess=pre))
+    assert (await pl.ingest_url("https://club.example/a", "public")).status == "created"

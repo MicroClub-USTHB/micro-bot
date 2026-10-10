@@ -31,7 +31,7 @@ from mcclub_rag.ingest.errors import (
     IngestError,
     InvalidInput,
 )
-from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id
+from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id, url_topic
 from mcclub_rag.ingest.models import (
     Chunk,
     IngestResult,
@@ -63,6 +63,14 @@ def _digest(value: object) -> str:
 def _check_visibility(visibility: str) -> None:
     if visibility not in ("public", "members"):
         raise InvalidInput("visibility must be one of public, members")
+
+
+def _log_url(url: str) -> str:
+    """URL for logs: no credentials, query string or fragment (they may carry tokens)."""
+    try:
+        return url_topic(url)
+    except InvalidInput:
+        return "<invalid url>"
 
 
 def _payload(
@@ -267,6 +275,35 @@ class IngestPipeline:
             )
             return await self._store_new(run, doc_id, topic, doc, replaces)
 
+    async def ingest_url(
+        self, url: str, visibility: str, *, title: str | None = None, topic: str | None = None
+    ) -> IngestResult:
+        run = _Run()
+        return await self._logged(
+            run, _log_url(url), lambda: self._ingest_url(run, url, visibility, title, topic)
+        )
+
+    async def _ingest_url(
+        self, run: _Run, url: str, visibility: str, title: str | None, topic: str | None
+    ) -> IngestResult:
+        _check_visibility(visibility)
+        topic = clean_topic(topic) if topic is not None else None
+        # Web pages are hashed on extracted text, so the duplicate check follows the fetch.
+        run.step("preprocess")
+        doc = await self._preprocess_url(
+            url, visibility=visibility, title=title, settings=self.settings
+        )
+        topic = topic or url_topic(doc.source)  # final URL after redirects
+        doc_id = run.doc_id = doc_id_for(topic)
+        async with self._writing(doc_id):
+            run.step("dedup")
+            existing, replaces = await self._check_existing(
+                run, doc_id, doc.content_hash, visibility
+            )
+            if existing is not None:
+                return existing
+            return await self._store_new(run, doc_id, topic, doc, replaces)
+
     async def _check_existing(
         self, run: _Run, doc_id: str, content_hash: str, visibility: str
     ) -> tuple[IngestResult | None, bool]:
@@ -440,3 +477,10 @@ async def ingest_file(
 ) -> IngestResult:
     pipeline = await get_pipeline()
     return await pipeline.ingest_file(path, filename, visibility, title=title, topic=topic)
+
+
+async def ingest_url(
+    url: str, visibility: str, *, title: str | None = None, topic: str | None = None
+) -> IngestResult:
+    pipeline = await get_pipeline()
+    return await pipeline.ingest_url(url, visibility, title=title, topic=topic)
