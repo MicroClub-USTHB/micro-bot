@@ -9,14 +9,27 @@ index fail before the first request.
 import asyncio
 import hashlib
 import json
+import os
+import time
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Literal
 
 import structlog
 from qdrant_client import AsyncQdrantClient
+from qdrant_client import models as qm
 
-from mcclub_rag.ingest.chunk import chunking_signature
+from mcclub_rag.ingest.chunk import chunk_document, chunking_signature
 from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.errors import IndexStale
+from mcclub_rag.ingest.errors import EmptyDocument, FileTooLarge, IndexStale, InvalidInput
+from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id
+from mcclub_rag.ingest.models import (
+    Chunk,
+    IngestResult,
+    IngestStatus,
+    ParsedDocument,
+    StoredDocument,
+)
 from mcclub_rag.ingest.preprocess import preprocess_file, preprocess_url
 from mcclub_rag.ingest.settings import IngestSettings, get_ingest_settings
 from mcclub_rag.ingest.tokens import TokenCounter, get_token_counter
@@ -26,7 +39,7 @@ from mcclub_rag.retrieval.embed import (
     get_dense_encoder,
     get_sparse_encoder,
 )
-from mcclub_rag.retrieval.store import VectorStore
+from mcclub_rag.retrieval.store import DENSE, SPARSE, VectorStore
 
 log = structlog.get_logger(__name__)
 
@@ -36,6 +49,53 @@ _REINDEX_COMMAND = "uv run python scripts/reindex.py"
 
 def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _check_visibility(visibility: str) -> None:
+    if visibility not in ("public", "members"):
+        raise InvalidInput("visibility must be one of public, members")
+
+
+def _payload(
+    doc_id: str, doc: ParsedDocument, chunk: Chunk, count: int, ingested_at: datetime
+) -> dict:
+    return {
+        "doc_id": doc_id,
+        "content_hash": doc.content_hash,
+        "index": chunk.index,
+        "chunk_count": count,
+        "text": chunk.text,
+        "heading_path": list(chunk.heading_path),
+        "page_start": chunk.page_start,
+        "page_end": chunk.page_end,
+        "section_index": chunk.section_index,
+        "language": chunk.language,
+        "token_count": chunk.token_count,
+        "visibility": doc.visibility,
+        "title": doc.title,
+        "source": doc.source,
+        "source_type": doc.source_type,
+        "ingested_at": ingested_at.isoformat(),
+    }
+
+
+class _Run:
+    """Per-document bookkeeping: current stage and per-stage durations for the log event."""
+
+    def __init__(self) -> None:
+        self.start = time.perf_counter()
+        self.stage = "validate"
+        self.timings: dict[str, int] = {}
+        self._mark = self.start
+
+    def step(self, stage: str) -> None:
+        now = time.perf_counter()
+        self.timings[f"ms_{self.stage}"] = round((now - self._mark) * 1000)
+        self.stage, self._mark = stage, now
+
+    @property
+    def duration_ms(self) -> int:
+        return round((time.perf_counter() - self.start) * 1000)
 
 
 class IngestPipeline:
@@ -83,6 +143,96 @@ class IngestPipeline:
             )
         await self.reindex()
         return "reindexed"
+
+    async def ingest_file(
+        self,
+        path: str | os.PathLike[str],
+        filename: str,
+        visibility: str,
+        *,
+        title: str | None = None,
+        topic: str | None = None,
+    ) -> IngestResult:
+        run = _Run()
+        _check_visibility(visibility)
+        topic = clean_topic(topic) if topic is not None else file_topic(filename)
+        source = Path(path)
+        try:
+            size = (await asyncio.to_thread(source.stat)).st_size
+        except FileNotFoundError:
+            raise InvalidInput(f"file not found: {filename}") from None
+        if size > self.settings.max_file_bytes:
+            raise FileTooLarge(f"file is larger than {self.settings.max_file_mb} MB")
+        data = await asyncio.to_thread(source.read_bytes)
+        doc_id = doc_id_for(topic)
+        run.step("preprocess")
+        doc = await self._preprocess_file(
+            data, filename, visibility=visibility, title=title, settings=self.settings
+        )
+        return await self._store_new(run, doc_id, topic, doc)
+
+    async def _store_new(
+        self, run: _Run, doc_id: str, topic: str, doc: ParsedDocument
+    ) -> IngestResult:
+        ingested_at = datetime.now(UTC)
+        count = await self._index(run, doc_id, doc, ingested_at)
+        run.step("docstore")
+        await self.docstore.save(
+            StoredDocument(doc_id=doc_id, topic=topic, ingested_at=ingested_at, document=doc)
+        )
+        status: IngestStatus = "created"
+        return self._result(run, doc_id, doc, status, count)
+
+    async def _index(
+        self,
+        run: _Run,
+        doc_id: str,
+        doc: ParsedDocument,
+        ingested_at: datetime,
+        *,
+        collection: str | None = None,
+    ) -> int:
+        """Chunk, encode and store one document version; the marker (index 0) goes last."""
+        run.step("chunk")
+        chunks = await asyncio.to_thread(
+            chunk_document, doc, settings=self.settings, counter=self.counter
+        )
+        if not chunks:
+            raise EmptyDocument("document produced no chunks")
+        texts = [chunk.embed_text for chunk in chunks]
+        run.step("dense")
+        dense = await asyncio.to_thread(self.dense.embed_documents, texts)
+        run.step("sparse")
+        sparse = await asyncio.to_thread(self.sparse.embed_documents, texts)
+        run.step("store")
+        points = [
+            qm.PointStruct(
+                id=point_id(doc_id, doc.content_hash, chunk.index),
+                vector={DENSE: dense_vector, SPARSE: sparse_vector},
+                payload=_payload(doc_id, doc, chunk, len(chunks), ingested_at),
+            )
+            for chunk, dense_vector, sparse_vector in zip(chunks, dense, sparse, strict=True)
+        ]
+        await self.store.upsert(points[1:] + points[:1], collection=collection)
+        return len(chunks)
+
+    def _result(
+        self, run: _Run, doc_id: str, doc: ParsedDocument, status: IngestStatus, count: int
+    ) -> IngestResult:
+        return IngestResult(
+            doc_id=doc_id,
+            status=status,
+            title=doc.title,
+            source=doc.source,
+            source_type=doc.source_type,
+            visibility=doc.visibility,
+            language=doc.language,
+            chunk_count=count,
+            content_hash=doc.content_hash,
+            ocr_used=doc.ocr_used,
+            warnings=doc.warnings,
+            duration_ms=run.duration_ms,
+        )
 
     async def reindex(self) -> None:
         raise NotImplementedError  # task 6.8
@@ -132,3 +282,15 @@ async def close_pipeline() -> None:
         if _pipeline is not None:
             await _pipeline.close()
             _pipeline = None
+
+
+async def ingest_file(
+    path: str | os.PathLike[str],
+    filename: str,
+    visibility: str,
+    *,
+    title: str | None = None,
+    topic: str | None = None,
+) -> IngestResult:
+    pipeline = await get_pipeline()
+    return await pipeline.ingest_file(path, filename, visibility, title=title, topic=topic)
