@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -169,3 +170,29 @@ async def test_qdrant_failure_becomes_index_unavailable():
             [1.0] * 8, qm.SparseVector(indices=[1], values=[1.0]), "public"
         )
     await client.close()
+
+
+LONG = "# Statuts\n\n" + "\n\n".join(
+    f"## Article {i}\n\ncotisation article {i} " + "mot " * 25 for i in range(4)
+)
+
+
+async def test_neighbours_of_middle_and_edge_chunks(pipe, tmp_path):
+    await _ingest(pipe, tmp_path, "long.md", LONG, "public")
+    found = await run(pipe, searcher(pipe), "cotisation", "public")
+    assert len(found) >= 3
+    by_index = {c.index: c for c in found}
+    middle, first = by_index[1], by_index[0]
+    got = await searcher(pipe).neighbours([middle, first], "public")
+    key = (middle.doc_id, middle.content_hash)
+    assert set(got) == {(*key, 0), (*key, 1), (*key, 2)}
+    assert got[(*key, 2)] == by_index[2].text
+
+
+async def test_neighbours_ignore_other_versions_and_hidden_chunks(pipe, tmp_path):
+    await _ingest(pipe, tmp_path, "long.md", LONG, "members")
+    found = await run(pipe, searcher(pipe), "cotisation", "member")
+    hit = next(c for c in found if c.index == 1)
+    assert await searcher(pipe).neighbours([hit], "public") == {}
+    assert await searcher(pipe).neighbours([replace(hit, content_hash="other")], "member") == {}
+    assert await searcher(pipe).neighbours([], "member") == {}

@@ -122,3 +122,40 @@ class HybridSearch:
                 with_vectors=False,
             )
         return dedupe([Candidate.from_point(p, rank) for rank, p in enumerate(response.points)])
+
+    async def neighbours(
+        self, hits: Sequence[Candidate], role: Role
+    ) -> dict[tuple[str, str, int], str]:
+        """Text of the chunks at ``index ± 1`` of each hit, same document version, same role."""
+        if not hits:
+            return {}
+        wanted = [
+            qm.Filter(
+                must=[
+                    qm.FieldCondition(key="doc_id", match=qm.MatchValue(value=h.doc_id)),
+                    qm.FieldCondition(
+                        key="content_hash", match=qm.MatchValue(value=h.content_hash)
+                    ),
+                    qm.FieldCondition(
+                        key="index", match=qm.MatchAny(any=[h.index - 1, h.index + 1])
+                    ),
+                ]
+            )
+            for h in hits
+        ]
+        flt = qm.Filter(must=[visibility_filter(role)], should=wanted)
+        async with guard("neighbours"):
+            points, _ = await self.client.scroll(
+                self.alias,
+                scroll_filter=flt,
+                limit=2 * len(hits),
+                with_payload=["doc_id", "content_hash", "index", "text"],
+                with_vectors=False,
+            )
+        return {
+            (p.payload["doc_id"], p.payload["content_hash"], int(p.payload["index"])): p.payload[
+                "text"
+            ]
+            for p in points
+            if p.payload
+        }
