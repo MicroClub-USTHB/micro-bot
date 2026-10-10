@@ -18,7 +18,7 @@ from onnxruntime.capi import onnxruntime_pybind11_state as ort_state
 from qdrant_client.models import SparseVector
 from tokenizers import Tokenizer
 
-from mcclub_rag.ingest.errors import EmbedderConfigError, EmbeddingError
+from mcclub_rag.ingest.errors import EmbedderConfigError, EmbeddingError, IngestError
 from mcclub_rag.ingest.settings import IngestSettings
 from mcclub_rag.retrieval.registry import BM25_FILES, EMBEDDERS, EmbedderSpec
 from mcclub_rag.text.normalize import fold_for_search
@@ -39,12 +39,18 @@ def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def _check_file(path: Path, expected: str, group: str, directory: Path) -> None:
+def _check_file(
+    path: Path,
+    expected: str,
+    group: str,
+    directory: Path,
+    error: type[IngestError] = EmbedderConfigError,
+) -> None:
     run = _DOWNLOAD.format(group=group, directory=directory)
     if not path.is_file():
-        raise EmbedderConfigError(f"model file missing at {path}. Run: {run}")
+        raise error(f"model file missing at {path}. Run: {run}")
     if _sha256_file(path) != expected:
-        raise EmbedderConfigError(f"model file at {path} has the wrong sha256. Run: {run}")
+        raise error(f"model file at {path} has the wrong sha256. Run: {run}")
 
 
 _ORT_ERRORS = (
