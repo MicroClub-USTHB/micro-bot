@@ -20,12 +20,18 @@ dependencies = [
     "semchunk~=4.1",
     "py3langid~=0.4",
     "structlog>=26.1",
+    "charset-normalizer~=3.5",
+    "lxml~=6.1",
 ]
 
 [dependency-groups]
 dev = [
+    "openpyxl~=3.1",
+    "pillow~=12.3",
+    "pypdf~=6.20",
     "pytest~=9.1",
     "pytest-asyncio~=1.4",
+    "python-docx~=1.2",
     "ruff~=0.16",
 ]
 
@@ -43,3 +49,9 @@ select = ["E", "F", "W", "I", "B", "UP"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+addopts = "-ra --strict-markers"
+markers = [
+    "ocr: needs Tesseract traineddata (ara, fra, eng) under TESSDATA_PREFIX (auto-applied to tests using the tessdata_dir fixture)",
+    "tokenizer: needs the embedder tokenizer.json (auto-applied to tests using the tokenizer_path fixture)",
+    "embedder: needs the embedder ONNX model and BM25 stopwords (auto-applied to tests using the onnx_path or real_bm25_dir fixtures)",
+]
