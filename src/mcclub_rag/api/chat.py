@@ -41,9 +41,7 @@ async def chat(
 
     started_at = perf_counter()
     has_conversation_param = payload.conversation_id is not None
-    previous = (
-        state.conversations.load(payload.conversation_id) if has_conversation_param else None
-    )
+    previous = state.conversations.load(payload.conversation_id) if has_conversation_param else None
     language = (
         state.conversations.reuse_language(payload.conversation_id, payload.message)
         if has_conversation_param

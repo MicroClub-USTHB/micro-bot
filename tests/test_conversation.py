@@ -74,11 +74,14 @@ def test_load_expires_conversations_older_than_thirty_minutes(clock: FakeClock) 
 
     clock.advance(timedelta(microseconds=1))
     assert store.load(conversation.conversation_id) is None
-    assert store.save(
-        conversation.conversation_id,
-        Turn(user_message="متى؟", assistant_message="السبت."),
-        cited_chunk_ids=["chunk-1"],
-    ) is None
+    assert (
+        store.save(
+            conversation.conversation_id,
+            Turn(user_message="متى؟", assistant_message="السبت."),
+            cited_chunk_ids=["chunk-1"],
+        )
+        is None
+    )
 
 
 def test_short_follow_up_reuses_the_pinned_language(clock: FakeClock) -> None:
