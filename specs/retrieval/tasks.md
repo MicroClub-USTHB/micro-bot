@@ -7,8 +7,8 @@ helpers in `tests/pipeline_helpers.py` (fake dense encoder, real BM25 on tiny st
 fake preprocessing) and a `FakeReranker` / fake ONNX session. Only tasks 4.2, 5.3 and 6.4 need
 the real reranker. Commits stay under 200 changed lines; split a task across commits if needed.
 
-- [ ] 1. Settings, errors, registry and model download
-- [ ] 1.1 `RetrievalSettings` in `src/mcclub_rag/retrieval/settings.py`
+- [x] 1. Settings, errors, registry and model download
+- [x] 1.1 `RetrievalSettings` in `src/mcclub_rag/retrieval/settings.py`
   - Fields and defaults from design "Components / RetrievalSettings": `env_prefix="RETRIEVAL_"`;
     `top_k`, `top_n`, `gate_threshold`, `rerank_model`, `models_dir`, `qdrant_collection` read
     through `validation_alias` of `RETRIEVE_TOP_K`, `RERANK_TOP_N`, `GATE_THRESHOLD`,
@@ -21,13 +21,13 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     threshold is None; `RETRIEVAL_PREFETCH_LIMIT=10` with `RETRIEVE_TOP_K=30` and
     `RETRIEVAL_RERANK_MAX_LENGTH=512` raise `ValidationError`.
   - _Requirements: 2.1, 4.2, 4.6, 5.4, 6.2, 7.1, 9.2_
-- [ ] 1.2 Errors and the shared Qdrant guard
+- [x] 1.2 Errors and the shared Qdrant guard
   - `src/mcclub_rag/ingest/errors.py`: `RerankError` (`rerank_error`), `RerankerConfigError`
     (`reranker_config_error`); add both to `ALL_ERRORS`.
   - `src/mcclub_rag/retrieval/store.py`: rename `_guard` to public `guard` (update call sites).
   - Extend `tests/test_errors.py`: codes stable and unique.
   - _Requirements: 4.5, 8.1, 8.2_
-- [ ] 1.3 Reranker registry entries and download target
+- [x] 1.3 Reranker registry entries and download target
   - `retrieval/registry.py`: `RerankerSpec(repo, revision, onnx_file, onnx_sha256,
     tokenizer_sha256)` with `url()` and `slug` (directory name); `RERANKERS` keyed by both names:
     - gte: `onnx-community/gte-multilingual-reranker-base` @
@@ -50,18 +50,18 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     writes `<slug>/tokenizer.json` and `<slug>/onnx/model_int8.onnx` (fake HTTP transport).
   - _Requirements: 4.1, 4.5, 11.2_
 
-- [ ] 2. Pure building blocks
-- [ ] 2.1 Follow-up query builder in `src/mcclub_rag/retrieval/query.py`
+- [x] 2. Pure building blocks
+- [x] 2.1 Follow-up query builder in `src/mcclub_rag/retrieval/query.py`
   - `build_search_query(message, history, max_words) -> tuple[str, bool]` per design.
   - `tests/test_retrieval_query.py`: no history; short follow-up joins the previous
     `user_message`; long message ignores history; only the last turn is used; non-`Turn` items
     ignored; whitespace/NFC normalised; empty message returns `("", False)`.
   - _Requirements: 1.5, 6.1, 6.2, 6.3, 6.4_
-- [ ] 2.2 Gate in `src/mcclub_rag/retrieval/gate.py`
+- [x] 2.2 Gate in `src/mcclub_rag/retrieval/gate.py`
   - `decide(scores, threshold) -> (top_score, decision)`.
   - `tests/test_gate.py`: empty -> `(0.0, "refuse")`; None -> answer; below / equal / above.
   - _Requirements: 1.4, 5.1, 5.2, 5.4, 5.5_
-- [ ] 2.3 Reranker passage text in `src/mcclub_rag/retrieval/rerank.py`
+- [x] 2.3 Reranker passage text in `src/mcclub_rag/retrieval/rerank.py`
   - `passage(title, heading_path, text, *, header=True)`: header without consecutive repeats,
     `"\n\n"`, text; text alone when `header` is false.
   - Tests in `tests/test_rerank.py`: equals the chunk's `embed_text` for a chunk built by
