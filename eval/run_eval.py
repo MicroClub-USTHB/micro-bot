@@ -1,17 +1,22 @@
 """Retrieval eval: hit@5 / MRR@10 before and after reranking, gate sweep, latency (Req 10).
 
-    uv run python eval/run_eval.py --label baseline
-    RETRIEVE_TOP_K=20 RETRIEVAL_RRF_K=2 uv run python eval/run_eval.py --label k20-rrf2
-    RERANK_MODEL=BAAI/bge-reranker-v2-m3 uv run python eval/run_eval.py --label bge
+    uv run python -m eval.run_eval --label baseline
+    RETRIEVE_TOP_K=20 RETRIEVAL_RRF_K=2 uv run python -m eval.run_eval --label k20-rrf2
+    RERANK_MODEL=BAAI/bge-reranker-v2-m3 uv run python -m eval.run_eval --label bge
 
 Ingests the corpus (``eval/corpus.json``, files in ``--corpus``) into an in-memory Qdrant with
 the real encoders and reranker, runs every question of ``eval/questions.jsonl`` through the
 retriever's stages, prints a summary and writes ``eval/results/<UTC>-<label>.json``. Settings
-come from the environment exactly as in the app (``RETRIEVAL_*``, ``INGEST_*`` and shared names).
+come from the environment exactly as in the app (``RETRIEVAL_*``, ``INGEST_*`` and shared names);
+``MODELS_DIR`` defaults to the repo's ``models/``, ``TESSDATA_PREFIX`` to ``$MODELS_DIR/tessdata``.
 """
 
+import argparse
+import asyncio
 import json
+import os
 import statistics
+import tempfile
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -19,8 +24,14 @@ from pathlib import Path
 
 from eval import metrics as m
 from mcclub_rag.conversation import Turn
+from mcclub_rag.ingest.docstore import DocStore
+from mcclub_rag.ingest.pipeline import IngestPipeline
+from mcclub_rag.ingest.settings import IngestSettings
 from mcclub_rag.retrieval.backend import HybridRetriever
+from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
 from mcclub_rag.retrieval.query import build_search_query
+from mcclub_rag.retrieval.rerank import get_reranker
+from mcclub_rag.retrieval.settings import RetrievalSettings
 
 REPO = Path(__file__).resolve().parents[1]
 STAGES = ("ms_encode", "ms_search", "ms_rerank", "ms_total")
@@ -136,3 +147,82 @@ def print_summary(summary: dict, label: str) -> None:
             f"  t={row['threshold']:.2f} refuses {row['refused_unanswerable']:.0%} unanswerable, "
             f"{row['false_refusal']:.0%} answerable"
         )
+
+
+def _settings_record(retriever: HybridRetriever, pipeline: IngestPipeline) -> dict:
+    ingest = pipeline.settings
+    return {
+        "retrieval": json.loads(retriever.settings.model_dump_json()),
+        "chunking": {
+            "target": ingest.chunk_target_tokens,
+            "max": ingest.chunk_max_tokens,
+            "min": ingest.chunk_min_tokens,
+            "context_header": ingest.chunk_context_header,
+        },
+        "dense": pipeline.dense.fingerprint,
+        "sparse": pipeline.sparse.fingerprint,
+        "reranker": retriever.reranker.fingerprint,
+        "index_signature": pipeline.signature[:12],
+    }
+
+
+async def _run(args: argparse.Namespace) -> Path:
+    from qdrant_client import AsyncQdrantClient
+
+    corpus = json.loads(args.manifest.read_text(encoding="utf-8"))
+    questions = [
+        json.loads(line)
+        for line in args.questions.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        ingest = IngestSettings(data_dir=Path(tmp))
+        pipeline = IngestPipeline(
+            ingest,
+            dense=get_dense_encoder(ingest),
+            sparse=get_sparse_encoder(ingest),
+            client=AsyncQdrantClient(location=":memory:"),
+            docstore=DocStore(Path(tmp) / "documents"),
+        )
+        await pipeline.start()
+        started = time.perf_counter()
+        doc_ids = {}
+        for doc in corpus:
+            path = args.corpus / doc["file"]
+            result = await pipeline.ingest_file(
+                path, path.name, doc["visibility"], topic=doc["topic"]
+            )
+            doc_ids[doc["topic"]] = result.doc_id
+        print(f"ingested {len(corpus)} documents in {time.perf_counter() - started:.1f}s")
+        settings = RetrievalSettings(qdrant_collection=ingest.qdrant_collection)
+        retriever = HybridRetriever.from_pipeline(pipeline, settings, get_reranker(settings))
+        rows = await evaluate(retriever, questions, doc_ids)
+        summary = summarize(rows, max_false_refusal=args.max_false_refusal)
+        payload = {
+            "label": args.label,
+            "settings": _settings_record(retriever, pipeline),
+            "corpus_version": await pipeline.corpus_version(),
+            "summary": summary,
+            "rows": rows,
+        }
+        await pipeline.close()
+    print_summary(summary, args.label)
+    return write_result(args.out, args.label, payload)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--corpus", type=Path, default=REPO / "data" / "parsed")
+    parser.add_argument("--manifest", type=Path, default=REPO / "eval" / "corpus.json")
+    parser.add_argument("--questions", type=Path, default=REPO / "eval" / "questions.jsonl")
+    parser.add_argument("--out", type=Path, default=REPO / "eval" / "results")
+    parser.add_argument("--label", default="run")
+    parser.add_argument("--max-false-refusal", type=float, default=0.05)
+    args = parser.parse_args(argv)
+    os.environ.setdefault("MODELS_DIR", str(REPO / "models"))
+    os.environ.setdefault("TESSDATA_PREFIX", str(Path(os.environ["MODELS_DIR"]) / "tessdata"))
+    print(f"results: {asyncio.run(_run(args))}")
+
+
+if __name__ == "__main__":
+    main()
