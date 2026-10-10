@@ -111,8 +111,8 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     RSS; reads the model from the registry and `MODELS_DIR`. No test (manual tool), but ruff-clean.
   - _Requirements: 9.2_
 
-- [ ] 5. Backend `src/mcclub_rag/retrieval/backend.py`
-- [ ] 5.1 `HybridRetriever.retrieve` core
+- [x] 5. Backend `src/mcclub_rag/retrieval/backend.py`
+- [x] 5.1 `HybridRetriever.retrieve` core
   - Constructor with injected settings, encoders, client, reranker; `candidates()` (encode in
     `to_thread`, `HybridSearch.search`) and `rerank()` (lock + `to_thread`, `passage()` input);
     `retrieve()` = query -> candidates -> rerank -> top_n -> `gate.decide` -> `Retrieval`.
@@ -121,7 +121,7 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     refuse vs answer with chunks still returned; empty query -> refuse with no Qdrant / reranker
     call; empty collection -> refuse; two concurrent `retrieve()` never overlap in `score()`.
   - _Requirements: 1.1, 1.2, 1.4, 1.5, 1.6, 2.4, 4.6, 5.1, 5.2, 5.3_
-- [ ] 5.2 Follow-ups, neighbours, logging, errors
+- [x] 5.2 Follow-ups, neighbours, logging, errors
   - Use `build_search_query` for search and rerank; neighbours when enabled (text joined in
     reading order, ids/scores/decision unchanged); `retrieval_done` structlog event; gate-open
     warning once at construction; encoder / reranker errors propagate typed.
@@ -129,7 +129,7 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     the fields and no query text (`structlog.testing.capture_logs`); gate-open warning;
     `EmbeddingError` / `RerankError` / `IndexUnavailable` propagate, no partial result.
   - _Requirements: 5.4, 6.1, 6.2, 7.1, 7.2, 7.3, 8.1, 8.2, 8.3_
-- [ ] 5.3 `from_pipeline` and the end-to-end test
+- [x] 5.3 `from_pipeline` and the end-to-end test
   - `HybridRetriever.from_pipeline(pipeline, settings=None, reranker=None)` reuses encoders,
     client and alias; default reranker from `get_reranker`.
   - Extend `tests/test_pipeline_e2e.py` (markers `embedder`, `reranker`): ingest `notes.md`,
