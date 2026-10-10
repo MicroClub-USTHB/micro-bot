@@ -165,22 +165,65 @@ class IngestPipeline:
             raise FileTooLarge(f"file is larger than {self.settings.max_file_mb} MB")
         data = await asyncio.to_thread(source.read_bytes)
         doc_id = doc_id_for(topic)
+        # Files are hashed on raw bytes, so a duplicate is caught before parsing or OCR.
+        run.step("dedup")
+        existing, replaces = await self._check_existing(
+            run, doc_id, hashlib.sha256(data).hexdigest(), visibility
+        )
+        if existing is not None:
+            return existing
         run.step("preprocess")
         doc = await self._preprocess_file(
             data, filename, visibility=visibility, title=title, settings=self.settings
         )
-        return await self._store_new(run, doc_id, topic, doc)
+        return await self._store_new(run, doc_id, topic, doc, replaces)
+
+    async def _check_existing(
+        self, run: _Run, doc_id: str, content_hash: str, visibility: str
+    ) -> tuple[IngestResult | None, bool]:
+        """``duplicate`` / ``updated`` result for a complete copy of this content, else None.
+
+        The flag says whether another complete version exists (the new one then replaces it).
+        """
+        versions = await self.store.versions(doc_id)
+        others = any(m.content_hash != content_hash for m in versions)
+        marker = next((m for m in versions if m.content_hash == content_hash), None)
+        if marker is None or await self.store.count(doc_id, content_hash) != marker.chunk_count:
+            return None, others  # absent, or a crashed half-ingest: rewrite it
+        if others:  # leftover of an interrupted replacement
+            await self.store.delete_other_versions(doc_id, content_hash)
+        status: IngestStatus = "duplicate"
+        if marker.visibility != visibility:
+            await self.store.set_visibility(doc_id, visibility)
+            await self.docstore.set_visibility(doc_id, visibility)
+            status = "updated"
+        result = IngestResult(
+            doc_id=doc_id,
+            status=status,
+            title=marker.title,
+            source=marker.source,
+            source_type=marker.source_type,
+            visibility=visibility,
+            language=marker.language,
+            chunk_count=marker.chunk_count,
+            content_hash=content_hash,
+            ocr_used=False,
+            duration_ms=run.duration_ms,
+        )
+        return result, others
 
     async def _store_new(
-        self, run: _Run, doc_id: str, topic: str, doc: ParsedDocument
+        self, run: _Run, doc_id: str, topic: str, doc: ParsedDocument, replaces: bool
     ) -> IngestResult:
+        """Write the new version, then remove every other one: never zero points."""
         ingested_at = datetime.now(UTC)
         count = await self._index(run, doc_id, doc, ingested_at)
         run.step("docstore")
         await self.docstore.save(
             StoredDocument(doc_id=doc_id, topic=topic, ingested_at=ingested_at, document=doc)
         )
-        status: IngestStatus = "created"
+        await self.store.delete_other_versions(doc_id, doc.content_hash)
+        status: IngestStatus = "replaced" if replaces else "created"
         return self._result(run, doc_id, doc, status, count)
 
     async def _index(
