@@ -81,12 +81,12 @@ ERROR_TRIGGERS = {
     errors.TokenizerConfigError: "tests.test_tokens:test_missing_tokenizer_raises_with_instruction",
     errors.EmbedderConfigError: "tests.test_embed:test_missing_stopword_file_fails",
     errors.EmbeddingError: "tests.test_embed:test_inference_failure_becomes_embedding_error",
+    errors.IndexUnavailable: "tests.test_store:test_transport_error_becomes_index_unavailable",
 }
 
 # Pipeline errors whose triggering tests land with later tasks of specs/ingest-pipeline/tasks.md.
 # Each entry moves into ERROR_TRIGGERS when its test exists; the set is empty after task 6.8.
 PENDING_TRIGGERS = {
-    errors.IndexUnavailable,
     errors.IndexStale,
 }
 
