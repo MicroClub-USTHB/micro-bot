@@ -79,8 +79,18 @@ class VectorStore:
         self.dim = dim
         self.batch = batch
 
-    def physical_name(self, signature: str) -> str:
-        return f"{self.alias}__{signature[:12]}"
+    def physical_name(self, signature: str, *, alternate: bool = False) -> str:
+        """``alternate``: a forced reindex with unchanged settings builds next to the live one."""
+        return f"{self.alias}__{signature[:12]}" + ("_b" if alternate else "")
+
+    async def next_physical(self, signature: str) -> str:
+        """Name for a rebuild that never collides with the collection currently served."""
+        primary = self.physical_name(signature)
+        return (
+            self.physical_name(signature, alternate=True)
+            if await self._alias_target() == primary
+            else primary
+        )
 
     async def _alias_target(self) -> str | None:
         async with _guard("alias lookup"):
@@ -100,11 +110,12 @@ class VectorStore:
                 )
             await self.switch_alias(await self.create_physical(signature))
             return "created"
-        return "ok" if target == self.physical_name(signature) else "stale"
+        names = {self.physical_name(signature), self.physical_name(signature, alternate=True)}
+        return "ok" if target in names else "stale"
 
-    async def create_physical(self, signature: str) -> str:
-        """(Re)create the physical collection for ``signature``; returns its name."""
-        name = self.physical_name(signature)
+    async def create_physical(self, signature: str, *, name: str | None = None) -> str:
+        """(Re)create a physical collection for ``signature``; returns its name."""
+        name = name or self.physical_name(signature)
         async with _guard("collection create"):
             if await self.client.collection_exists(name):
                 await self.client.delete_collection(name)

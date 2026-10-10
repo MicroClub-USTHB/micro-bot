@@ -54,6 +54,17 @@ async def test_switch_alias_drops_old_collection_and_keeps_search_working(store)
     assert [p.id for p in hits.points] == [1]
 
 
+async def test_forced_rebuild_never_targets_the_live_collection(store):
+    await store.ensure(SIG_A)
+    live = store.physical_name(SIG_A)
+    rebuild = await store.next_physical(SIG_A)
+    assert rebuild != live
+    await store.switch_alias(await store.create_physical(SIG_A, name=rebuild))
+    assert await store.ensure(SIG_A) == "ok"
+    assert await store.next_physical(SIG_A) == live
+    assert not await store.client.collection_exists(live)
+
+
 async def test_create_physical_replaces_a_half_built_collection(store):
     name = await store.create_physical(SIG_B)
     await store.client.upsert(name, [_point(1)], wait=True)
