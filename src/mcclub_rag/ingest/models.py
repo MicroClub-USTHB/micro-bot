@@ -63,6 +63,56 @@ class Chunk(BaseModel):
     token_count: int  # tokens of embed_text, embedder tokenizer
 
 
+IngestStatus = Literal["created", "replaced", "duplicate", "updated"]
+
+
+class IngestResult(BaseModel):
+    """What ``ingest_file`` / ``ingest_url`` did with one document."""
+
+    model_config = ConfigDict(frozen=True)
+
+    doc_id: str
+    status: IngestStatus
+    title: str
+    source: str
+    source_type: SourceType
+    visibility: Visibility
+    language: str
+    chunk_count: int
+    content_hash: str
+    ocr_used: bool  # False for duplicate / updated: nothing was parsed
+    warnings: tuple[str, ...] = ()
+    duration_ms: int
+
+
+class DocumentInfo(BaseModel):
+    """One complete indexed document, as listed for the admin endpoints."""
+
+    model_config = ConfigDict(frozen=True)
+
+    doc_id: str
+    title: str
+    source: str
+    source_type: SourceType
+    visibility: Visibility
+    language: str
+    chunk_count: int
+    content_hash: str
+    ingested_at: datetime
+
+
+class StoredDocument(BaseModel):
+    """``DATA_DIR/documents/<doc_id>.json``: enough to rebuild a document's points."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: int = 1
+    doc_id: str
+    topic: str
+    ingested_at: datetime
+    document: ParsedDocument
+
+
 @dataclass(frozen=True)
 class RawPage:
     """One page (PDF/image), sheet (XLSX) or the whole body (DOCX) as extracted."""
