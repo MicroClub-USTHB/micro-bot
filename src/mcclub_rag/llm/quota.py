@@ -124,3 +124,48 @@ class DailyQuota:
                     if fcntl is not None:
                         fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
+
+class CircuitBreaker:
+    """Open for a cooldown after consecutive failed generation attempts."""
+
+    def __init__(
+        self,
+        clock: Clock | None = None,
+        failure_limit: int = 3,
+        cooldown_s: int = 60,
+    ) -> None:
+        self.clock = clock or (lambda: datetime.now(UTC))
+        self.failure_limit = failure_limit
+        self.cooldown_s = cooldown_s
+        self.failures = 0
+        self.opened_until: float | None = None
+        self._lock = Lock()
+
+    def allow(self) -> bool:
+        with self._lock:
+            if self.opened_until is None:
+                return True
+            if self._now() < self.opened_until:
+                return False
+            self.failures = 0
+            self.opened_until = None
+            return True
+
+    def record_success(self) -> None:
+        with self._lock:
+            self.failures = 0
+            self.opened_until = None
+
+    def record_failure(self) -> None:
+        with self._lock:
+            self.failures += 1
+            if self.failures >= self.failure_limit:
+                self.opened_until = self._now() + self.cooldown_s
+
+    def _now(self) -> float:
+        value = self.clock()
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=UTC)
+            return value.timestamp()
+        return value
