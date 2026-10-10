@@ -336,3 +336,39 @@ async def test_module_level_ingest_url(tmp_path):
     pre.pages["https://club.example/a"] = ("https://club.example/a", PAGE)
     await pl.init_pipeline(pipeline=make_pipeline(tmp_path, preprocess=pre))
     assert (await pl.ingest_url("https://club.example/a", "public")).status == "created"
+
+
+async def test_list_documents_shows_complete_documents_only(pipe, tmp_path):
+    a = await pipe.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    b = await pipe.ingest_file(_write(tmp_path, "page.md", PAGE), "page.md", "members")
+    await pipe.client.upsert(  # a crashed ingest: chunk without marker
+        pipe.store.alias,
+        [
+            qm.PointStruct(
+                id=pl.point_id(pl.doc_id_for("ghost"), "h", 1),
+                vector={"dense": [0.1] * 8, "bm25": qm.SparseVector(indices=[], values=[])},
+                payload={"doc_id": pl.doc_id_for("ghost"), "content_hash": "h", "index": 1},
+            )
+        ],
+        wait=True,
+    )
+    docs = await pipe.list_documents()
+    assert sorted(d.doc_id for d in docs) == sorted([a.doc_id, b.doc_id])
+    info = next(d for d in docs if d.doc_id == b.doc_id)
+    assert (info.visibility, info.chunk_count, info.source) == ("members", b.chunk_count, "page.md")
+
+
+async def test_delete_document(pipe, tmp_path):
+    a = await pipe.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    assert await pipe.delete_document(a.doc_id) is True
+    assert await pipe.delete_document(a.doc_id) is False
+    assert await pipe.list_documents() == []
+    assert await _points(pipe) == []
+    assert await pipe.docstore.load(a.doc_id) is None
+
+
+async def test_module_level_list_and_delete(tmp_path):
+    p = await pl.init_pipeline(pipeline=make_pipeline(tmp_path))
+    a = await p.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    assert [d.doc_id for d in await pl.list_documents()] == [a.doc_id]
+    assert await pl.delete_document(a.doc_id) is True

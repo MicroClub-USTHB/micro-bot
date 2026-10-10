@@ -34,6 +34,7 @@ from mcclub_rag.ingest.errors import (
 from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id, url_topic
 from mcclub_rag.ingest.models import (
     Chunk,
+    DocumentInfo,
     IngestResult,
     IngestStatus,
     ParsedDocument,
@@ -417,6 +418,42 @@ class IngestPipeline:
             duration_ms=run.duration_ms,
         )
 
+    async def list_documents(self) -> list[DocumentInfo]:
+        """One entry per complete document, sorted by ``doc_id``."""
+        return [
+            DocumentInfo(
+                doc_id=m.doc_id,
+                title=m.title,
+                source=m.source,
+                source_type=m.source_type,
+                visibility=m.visibility,
+                language=m.language,
+                chunk_count=m.chunk_count,
+                content_hash=m.content_hash,
+                ingested_at=m.ingested_at,
+            )
+            for m in await self.store.markers()
+        ]
+
+    async def delete_document(self, doc_id: str) -> bool:
+        """Remove every point and the stored JSON of ``doc_id``; False if it was unknown."""
+        async with self._writing(doc_id):
+            had_points = await self.store.delete_doc(doc_id)
+            had_json = await self.docstore.load(doc_id) is not None
+            await self.docstore.delete(doc_id)
+        if had_points or had_json:
+            log.info("document_deleted", doc_id=doc_id)
+        return had_points or had_json
+
+    async def corpus_version(self) -> str:
+        """Changes whenever indexed content, visibility or index settings change.
+
+        Read from Qdrant on every call (one marker scroll), so writes made by another process
+        (the CLI) are seen at once; nothing is cached in memory.
+        """
+        documents = [[m.doc_id, m.content_hash, m.visibility] for m in await self.store.markers()]
+        return _digest({"index": self.signature, "documents": documents})
+
     async def reindex(self) -> None:
         raise NotImplementedError  # task 6.8
 
@@ -484,3 +521,15 @@ async def ingest_url(
 ) -> IngestResult:
     pipeline = await get_pipeline()
     return await pipeline.ingest_url(url, visibility, title=title, topic=topic)
+
+
+async def list_documents() -> list[DocumentInfo]:
+    return await (await get_pipeline()).list_documents()
+
+
+async def delete_document(doc_id: str) -> bool:
+    return await (await get_pipeline()).delete_document(doc_id)
+
+
+async def corpus_version() -> str:
+    return await (await get_pipeline()).corpus_version()
