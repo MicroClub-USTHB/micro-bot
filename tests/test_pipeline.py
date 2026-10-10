@@ -1,7 +1,12 @@
+import asyncio
+
 import pytest
 from qdrant_client import models as qm
+from qdrant_client.http.exceptions import ResponseHandlingException
+from structlog.testing import capture_logs
 
 from mcclub_rag.ingest import pipeline as pl
+from mcclub_rag.ingest.errors import EmbeddingError, IndexUnavailable
 from tests.pipeline_helpers import FakeDenseEncoder, FakePreprocess, make_pipeline
 
 
@@ -200,3 +205,81 @@ async def test_crashed_half_ingest_is_rewritten_not_duplicate(pipe, tmp_path):
     second = await pipe.ingest_file(path, "long.md", "public")
     assert second.status == "created"
     assert len(await _points(pipe)) == first.chunk_count
+
+
+async def test_concurrent_ingests_of_one_topic_are_serialized(tmp_path):
+    p = make_pipeline(tmp_path, max_concurrency=4)
+    await p.start()
+    active, peak = 0, 0
+    original = p._store_new
+
+    async def tracking(*args):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.01)
+        try:
+            return await original(*args)
+        finally:
+            active -= 1
+
+    p._store_new = tracking
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    a = _write(tmp_path / "a", "rules.md", RULES)
+    b = _write(tmp_path / "b", "rules.md", RULES.replace("mardi", "jeudi"))
+    results = await asyncio.gather(
+        p.ingest_file(a, "rules.md", "public"), p.ingest_file(b, "rules.md", "public")
+    )
+    assert peak == 1
+    assert sorted(r.status for r in results) == ["created", "replaced"]
+    last = next(r for r in results if r.status == "replaced")
+    assert {pt.payload["content_hash"] for pt in await _points(p)} == {last.content_hash}
+    assert (await p.docstore.load(last.doc_id)).document.content_hash == last.content_hash
+
+
+async def test_encoder_failure_keeps_the_previous_version(pipe, tmp_path):
+    first = await pipe.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    pipe.dense.fail_after = 0
+    with pytest.raises(EmbeddingError):
+        await pipe.ingest_file(
+            _write(tmp_path, "rules.md", RULES + " Nouveau."), "rules.md", "public"
+        )
+    assert {p.payload["content_hash"] for p in await _points(pipe)} == {first.content_hash}
+    assert (await pipe.docstore.load(first.doc_id)).document.content_hash == first.content_hash
+
+
+async def test_store_failure_mid_upsert_cleans_up(tmp_path):
+    p = make_pipeline(tmp_path, upsert_batch=1)
+    await p.start()
+    first = await p.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    original, calls = p.client.upsert, 0
+
+    async def flaky(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ResponseHandlingException(ConnectionError("qdrant went away"))
+        return await original(*args, **kwargs)
+
+    p.client.upsert = flaky
+    text = "\n\n".join(f"# Partie {i}\n\n" + "mot " * 40 for i in range(4))
+    with pytest.raises(IndexUnavailable):
+        await p.ingest_file(_write(tmp_path, "rules.md", text), "rules.md", "public")
+    assert {pt.payload["content_hash"] for pt in await _points(p)} == {first.content_hash}
+
+
+async def test_logs_one_event_without_document_text(pipe, tmp_path):
+    with capture_logs() as logs:
+        await pipe.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+        with pytest.raises(pl.InvalidInput):
+            await pipe.ingest_file(_write(tmp_path, "x.md", RULES), "x.md", "admins")
+    events = [e for e in logs if e["event"].startswith("document_ingest")]
+    ok, failed = events
+    assert ok["event"] == "document_ingested" and ok["status"] == "created"
+    assert {"doc_id", "chunks", "source", "duration_ms", "ms_chunk", "ms_dense", "ms_store"} <= set(
+        ok
+    )
+    assert failed["event"] == "document_ingest_failed"
+    assert failed["error_code"] == "invalid_input" and failed["stage"] == "validate"
+    assert not any("cotisation" in str(value) for e in logs for value in e.values())
