@@ -1,7 +1,11 @@
 import asyncio
 
+import httpx
 import pytest
+from structlog.testing import capture_logs
 
+from mcclub_rag.conversation import Turn
+from mcclub_rag.ingest.errors import EmbeddingError, IndexUnavailable, RerankError
 from mcclub_rag.schemas import Retrieval
 from tests.pipeline_helpers import make_pipeline
 from tests.retrieval_helpers import FakeReranker, make_retriever
@@ -110,3 +114,72 @@ async def test_concurrent_requests_never_rerank_at_the_same_time(pipe, rules):
         *(retriever.retrieve(q, "public", []) for q in ("cotisation", "élections", "ateliers"))
     )
     assert len(reranker.calls) == 3 and reranker.max_active == 1
+
+
+async def test_short_follow_up_searches_with_the_previous_question(pipe, rules):
+    reranker = FakeReranker()
+    history = [
+        Turn(user_message="Quand ont lieu les élections du bureau ?", assistant_message="En juin.")
+    ]
+    result = await make_retriever(pipe, reranker).retrieve("et le vote ?", "public", history)
+    assert reranker.calls[0][0] == "Quand ont lieu les élections du bureau ?\net le vote ?"
+    assert "élections" in result.chunks[0].text.lower()
+
+
+LONG = "# Statuts\n\n" + "\n\n".join(
+    f"## Article {i}\n\narticle{i} " + f"mot{i} " * 25 for i in range(4)
+)
+
+
+async def test_neighbours_join_the_surrounding_chunks(pipe, tmp_path):
+    await pipe.ingest_file(_write(tmp_path, "long.md", LONG), "long.md", "public")
+    plain = await make_retriever(pipe, top_n=1).retrieve("article2", "public", [])
+    wide = await make_retriever(pipe, top_n=1, neighbours=True).retrieve("article2", "public", [])
+    hit, expanded = plain.chunks[0], wide.chunks[0]
+    assert "article2" in hit.text and "article1" not in hit.text
+    assert expanded.text.index("article1") < expanded.text.index("article2")
+    assert expanded.text.index("article2") < expanded.text.index("article3")
+    assert (expanded.chunk_id, expanded.score) == (hit.chunk_id, hit.score)
+    assert wide.decision == plain.decision
+
+
+async def test_one_log_event_without_the_query_text(pipe, rules):
+    with capture_logs() as logs:
+        await make_retriever(pipe).retrieve("cotisation annuelle", "public", [])
+    (event,) = [e for e in logs if e["event"] == "retrieval_done"]
+    assert event["role"] == "public" and event["decision"] == "answer"
+    assert event["candidates"] >= event["returned"] >= 1
+    assert event["history_used"] is False
+    assert {"ms_encode", "ms_search", "ms_rerank", "duration_ms", "top_score"} <= set(event)
+    assert not any("cotisation" in str(v) for v in event.values())
+
+
+async def test_open_gate_is_logged_once_at_construction(pipe):
+    with capture_logs() as logs:
+        make_retriever(pipe)
+        make_retriever(pipe, gate_threshold=0.3)
+    assert [e["event"] for e in logs].count("retrieval_gate_open") == 1
+
+
+async def test_encoder_failure_propagates(pipe, rules, monkeypatch):
+    def boom(text):
+        raise EmbeddingError("embedding model failed: test")
+
+    monkeypatch.setattr(pipe.dense, "embed_query", boom)
+    with pytest.raises(EmbeddingError):
+        await make_retriever(pipe).retrieve("cotisation", "public", [])
+
+
+async def test_reranker_failure_propagates(pipe, rules):
+    reranker = FakeReranker(error=RerankError("reranker failed: Fail"))
+    with pytest.raises(RerankError):
+        await make_retriever(pipe, reranker).retrieve("cotisation", "public", [])
+
+
+async def test_qdrant_failure_becomes_index_unavailable(pipe, rules, monkeypatch):
+    async def down(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(pipe.client, "query_points", down)
+    with pytest.raises(IndexUnavailable):
+        await make_retriever(pipe).retrieve("cotisation", "public", [])
