@@ -1,7 +1,8 @@
 import pytest
+from qdrant_client import models as qm
 
 from mcclub_rag.ingest import pipeline as pl
-from tests.pipeline_helpers import FakeDenseEncoder, make_pipeline
+from tests.pipeline_helpers import FakeDenseEncoder, FakePreprocess, make_pipeline
 
 
 @pytest.fixture
@@ -131,3 +132,71 @@ async def test_module_level_ingest_file_uses_the_shared_pipeline(tmp_path):
     await pl.init_pipeline(pipeline=make_pipeline(tmp_path))
     result = await pl.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
     assert result.status == "created"
+
+
+async def test_same_file_twice_is_duplicate_without_parsing(tmp_path):
+    pre = FakePreprocess()
+    p = make_pipeline(tmp_path, preprocess=pre)
+    await p.start()
+    path = _write(tmp_path, "rules.md", RULES)
+    first = await p.ingest_file(path, "rules.md", "public")
+    calls = p.dense.calls
+    second = await p.ingest_file(path, "rules.md", "public")
+    assert second.status == "duplicate"
+    assert second.chunk_count == first.chunk_count and second.title == first.title
+    assert pre.file_calls == ["rules.md"] and p.dense.calls == calls
+
+
+async def test_same_file_other_visibility_is_updated(pipe, tmp_path):
+    path = _write(tmp_path, "rules.md", RULES)
+    first = await pipe.ingest_file(path, "rules.md", "public")
+    calls = pipe.dense.calls
+    second = await pipe.ingest_file(path, "rules.md", "members")
+    assert second.status == "updated" and second.visibility == "members"
+    assert pipe.dense.calls == calls
+    assert {p.payload["visibility"] for p in await _points(pipe)} == {"members"}
+    assert (await pipe.docstore.load(first.doc_id)).document.visibility == "members"
+
+
+async def test_new_content_same_topic_replaces(pipe, tmp_path):
+    first = await pipe.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    new_text = RULES.replace("500 DA", "800 DA")
+    second = await pipe.ingest_file(_write(tmp_path, "rules.md", new_text), "rules.md", "public")
+    assert second.status == "replaced" and second.doc_id == first.doc_id
+    assert {p.payload["content_hash"] for p in await _points(pipe)} == {second.content_hash}
+    stored = await pipe.docstore.load(first.doc_id)
+    assert stored.document.content_hash == second.content_hash
+
+
+async def test_replacement_never_leaves_zero_points(pipe, tmp_path):
+    await pipe.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    seen = []
+    for name in ("upsert", "delete"):
+        original = getattr(pipe.client, name)
+
+        async def spy(*args, _original=original, **kwargs):
+            result = await _original(*args, **kwargs)
+            seen.append((await pipe.client.count(pipe.store.alias)).count)
+            return result
+
+        setattr(pipe.client, name, spy)
+    new_text = RULES + "\n\n# Horaires\n\nDe 9h à 17h."
+    await pipe.ingest_file(_write(tmp_path, "rules.md", new_text), "rules.md", "public")
+    assert seen and min(seen) > 0
+
+
+async def test_crashed_half_ingest_is_rewritten_not_duplicate(pipe, tmp_path):
+    long_text = "\n\n".join(f"# Partie {i}\n\n" + "mot " * 40 for i in range(4))
+    path = _write(tmp_path, "long.md", long_text)
+    first = await pipe.ingest_file(path, "long.md", "public")
+    # Simulate a crash that lost some non-marker points of this version.
+    await pipe.client.delete(
+        pipe.store.alias,
+        points_selector=qm.FilterSelector(
+            filter=qm.Filter(must=[qm.FieldCondition(key="index", match=qm.MatchValue(value=1))])
+        ),
+        wait=True,
+    )
+    second = await pipe.ingest_file(path, "long.md", "public")
+    assert second.status == "created"
+    assert len(await _points(pipe)) == first.chunk_count
