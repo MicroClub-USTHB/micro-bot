@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from qdrant_client import AsyncQdrantClient
 
 from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.errors import EmptyDocument, InvalidInput
+from mcclub_rag.ingest.errors import EmptyDocument, InvalidInput, UnsupportedFileType
 from mcclub_rag.ingest.models import ParsedDocument, Section
 from mcclub_rag.ingest.pipeline import IngestPipeline
 from mcclub_rag.ingest.settings import IngestSettings
@@ -94,6 +94,8 @@ class FakePreprocess:
 
     async def file(self, data, filename, *, visibility, title=None, settings=None):
         self.file_calls.append(filename)
+        if not filename.endswith((".md", ".txt")):
+            raise UnsupportedFileType("unsupported file type: application/octet-stream")
         return _doc(
             data.decode(),
             source=filename,
