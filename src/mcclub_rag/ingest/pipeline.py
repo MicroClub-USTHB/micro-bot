@@ -11,6 +11,9 @@ import hashlib
 import json
 import os
 import time
+import weakref
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -21,7 +24,13 @@ from qdrant_client import models as qm
 
 from mcclub_rag.ingest.chunk import chunk_document, chunking_signature
 from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.errors import EmptyDocument, FileTooLarge, IndexStale, InvalidInput
+from mcclub_rag.ingest.errors import (
+    EmptyDocument,
+    FileTooLarge,
+    IndexStale,
+    IngestError,
+    InvalidInput,
+)
 from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id
 from mcclub_rag.ingest.models import (
     Chunk,
@@ -85,6 +94,7 @@ class _Run:
     def __init__(self) -> None:
         self.start = time.perf_counter()
         self.stage = "validate"
+        self.doc_id: str | None = None
         self.timings: dict[str, int] = {}
         self._mark = self.start
 
@@ -122,6 +132,11 @@ class IngestPipeline:
         )
         self._preprocess_file = preprocess_file
         self._preprocess_url = preprocess_url
+        self._semaphore = asyncio.Semaphore(settings.max_concurrency)
+        self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+        self._gate = asyncio.Condition()  # ingests share it; reindex takes it exclusively
+        self._active = 0
+        self._reindexing = False
         self.signature = _digest(
             {
                 "schema": SCHEMA_VERSION,
@@ -144,6 +159,66 @@ class IngestPipeline:
         await self.reindex()
         return "reindexed"
 
+    def _lock(self, doc_id: str) -> asyncio.Lock:
+        lock = self._locks.get(doc_id)
+        if lock is None:
+            lock = self._locks[doc_id] = asyncio.Lock()
+        return lock
+
+    @asynccontextmanager
+    async def _writing(self, doc_id: str) -> AsyncIterator[None]:
+        """Shared side of the reindex gate, then the per-document lock, then a concurrency slot."""
+        async with self._gate:
+            await self._gate.wait_for(lambda: not self._reindexing)
+            self._active += 1
+        try:
+            async with self._lock(doc_id), self._semaphore:
+                yield
+        finally:
+            async with self._gate:
+                self._active -= 1
+                self._gate.notify_all()
+
+    @asynccontextmanager
+    async def _exclusive(self) -> AsyncIterator[None]:
+        async with self._gate:
+            await self._gate.wait_for(lambda: not self._reindexing)
+            self._reindexing = True  # new ingests wait from here on
+            await self._gate.wait_for(lambda: self._active == 0)
+        try:
+            yield
+        finally:
+            async with self._gate:
+                self._reindexing = False
+                self._gate.notify_all()
+
+    async def _logged(
+        self, run: _Run, source: str, work: Callable[[], Awaitable[IngestResult]]
+    ) -> IngestResult:
+        try:
+            result = await work()
+        except IngestError as exc:
+            log.warning(
+                "document_ingest_failed",
+                doc_id=run.doc_id,
+                source=source,
+                error_code=exc.code,
+                stage=run.stage,
+                duration_ms=run.duration_ms,
+            )
+            raise
+        run.step("done")
+        log.info(
+            "document_ingested",
+            doc_id=result.doc_id,
+            status=result.status,
+            chunks=result.chunk_count,
+            source=source,
+            duration_ms=run.duration_ms,
+            **run.timings,
+        )
+        return result
+
     async def ingest_file(
         self,
         path: str | os.PathLike[str],
@@ -154,6 +229,19 @@ class IngestPipeline:
         topic: str | None = None,
     ) -> IngestResult:
         run = _Run()
+        return await self._logged(
+            run, filename, lambda: self._ingest_file(run, path, filename, visibility, title, topic)
+        )
+
+    async def _ingest_file(
+        self,
+        run: _Run,
+        path: str | os.PathLike[str],
+        filename: str,
+        visibility: str,
+        title: str | None,
+        topic: str | None,
+    ) -> IngestResult:
         _check_visibility(visibility)
         topic = clean_topic(topic) if topic is not None else file_topic(filename)
         source = Path(path)
@@ -164,19 +252,20 @@ class IngestPipeline:
         if size > self.settings.max_file_bytes:
             raise FileTooLarge(f"file is larger than {self.settings.max_file_mb} MB")
         data = await asyncio.to_thread(source.read_bytes)
-        doc_id = doc_id_for(topic)
-        # Files are hashed on raw bytes, so a duplicate is caught before parsing or OCR.
-        run.step("dedup")
-        existing, replaces = await self._check_existing(
-            run, doc_id, hashlib.sha256(data).hexdigest(), visibility
-        )
-        if existing is not None:
-            return existing
-        run.step("preprocess")
-        doc = await self._preprocess_file(
-            data, filename, visibility=visibility, title=title, settings=self.settings
-        )
-        return await self._store_new(run, doc_id, topic, doc, replaces)
+        doc_id = run.doc_id = doc_id_for(topic)
+        async with self._writing(doc_id):
+            # Files are hashed on raw bytes, so a duplicate is caught before parsing or OCR.
+            run.step("dedup")
+            existing, replaces = await self._check_existing(
+                run, doc_id, hashlib.sha256(data).hexdigest(), visibility
+            )
+            if existing is not None:
+                return existing
+            run.step("preprocess")
+            doc = await self._preprocess_file(
+                data, filename, visibility=visibility, title=title, settings=self.settings
+            )
+            return await self._store_new(run, doc_id, topic, doc, replaces)
 
     async def _check_existing(
         self, run: _Run, doc_id: str, content_hash: str, visibility: str
@@ -219,9 +308,12 @@ class IngestPipeline:
         ingested_at = datetime.now(UTC)
         count = await self._index(run, doc_id, doc, ingested_at)
         run.step("docstore")
-        await self.docstore.save(
-            StoredDocument(doc_id=doc_id, topic=topic, ingested_at=ingested_at, document=doc)
-        )
+        stored = StoredDocument(doc_id=doc_id, topic=topic, ingested_at=ingested_at, document=doc)
+        try:
+            await self.docstore.save(stored)
+        except OSError:
+            await self._discard(doc_id, doc.content_hash)
+            raise
         await self.store.delete_other_versions(doc_id, doc.content_hash)
         status: IngestStatus = "replaced" if replaces else "created"
         return self._result(run, doc_id, doc, status, count)
@@ -256,8 +348,19 @@ class IngestPipeline:
             )
             for chunk, dense_vector, sparse_vector in zip(chunks, dense, sparse, strict=True)
         ]
-        await self.store.upsert(points[1:] + points[:1], collection=collection)
+        try:
+            await self.store.upsert(points[1:] + points[:1], collection=collection)
+        except IngestError:
+            await self._discard(doc_id, doc.content_hash, collection=collection)
+            raise
         return len(chunks)
+
+    async def _discard(self, doc_id: str, content_hash: str, *, collection: str | None = None):
+        """Best-effort removal of a half-written version; the previous version is untouched."""
+        try:
+            await self.store.delete_version(doc_id, content_hash, collection=collection)
+        except IngestError as exc:
+            log.warning("partial_version_cleanup_failed", doc_id=doc_id, error_code=exc.code)
 
     def _result(
         self, run: _Run, doc_id: str, doc: ParsedDocument, status: IngestStatus, count: int
