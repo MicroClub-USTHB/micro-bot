@@ -95,7 +95,7 @@ builds the new physical collection by name, then swaps the alias with one
 | `retrieval/embed.py` (new) | Dense ONNX encoder and BM25 sparse encoder | `DenseEncoder`, `SparseEncoder` protocols; `OnnxDenseEncoder`, `Bm25SparseEncoder`; `get_dense_encoder(settings)`, `get_sparse_encoder(settings)` (cached) |
 | `retrieval/store.py` (new) | Qdrant collection, alias, writes, marker reads | `VectorStore` class (below) |
 | `ingest/identity.py` (new) | Pure topic and id derivation | `NAMESPACE`, `file_topic(filename)`, `url_topic(url)`, `clean_topic(topic)`, `doc_id_for(topic)`, `point_id(doc_id, content_hash, index)` |
-| `ingest/docstore.py` (new) | Parsed-document JSON store | `DocStore(root)`: `save`, `load`, `delete`, `iter_all`, `set_visibility` |
+| `ingest/docstore.py` (new) | Parsed-document JSON store | `DocStore(root)`: async `save`, `load`, `delete`, `load_all`, `set_visibility` |
 | `ingest/pipeline.py` (new) | Orchestration, locks, versioning, reindex | the functions in the Overview, `IngestPipeline`, `index_signature()`, `reindex()` |
 | `ingest/models.py` (extend) | Result types | `IngestResult`, `DocumentInfo`, `StoredDocument` |
 | `ingest/errors.py` (extend) | New error codes | `IndexUnavailable`, `IndexStale`, `EmbeddingError`, `EmbedderConfigError` |
@@ -180,7 +180,9 @@ class VectorStore:
     async def delete_other_versions(self, doc_id: str, keep_hash: str)
     async def delete_doc(self, doc_id: str) -> int
     async def markers(self) -> list[Marker]                        # all docs, newest per doc_id
-    async def create_physical(self, signature: str) -> str
+    async def next_physical(self, signature: str) -> str           # never the live collection
+    async def create_physical(self, signature: str, *, name: str | None = None) -> str
+    async def drop_physical(self, name: str)
     async def switch_alias(self, physical: str)                    # atomic swap, drop old
 ```
 
@@ -211,7 +213,7 @@ class VectorStore:
 ### `ingest/docstore.py`
 
 `DocStore(root=DATA_DIR / "documents")`. `save(stored)` writes `<doc_id>.json.tmp`, fsyncs, then
-`os.replace`. `load(doc_id)`, `delete(doc_id)` (missing file is fine), `iter_all()` (sorted by
+`os.replace`. `load(doc_id)`, `delete(doc_id)` (missing file is fine), `load_all()` (sorted by
 filename, skips `*.tmp`; an unreadable file is logged and reported to the caller, which in
 `reindex()` counts as a failed document), `set_visibility(doc_id, v)` rewrites with `model_copy`.
 All file I/O runs in a thread.
@@ -254,11 +256,16 @@ visibility)` of `markers()`. It reads Qdrant on every call (one scroll over mark
 few hundred documents), so a change made by another process is seen immediately. No in-process
 cache that could go stale.
 
-`reindex()`: take the write lock, `create_physical(signature)` (drop a half-built one first), run
-`_index` into it for every `StoredDocument` (same `doc_id`, visibility and `ingested_at` kept),
-`switch_alias`, release. A document that fails is logged (`document_reindex_failed`) and skipped;
-if any failed, the alias is **not** switched and `reindex()` raises, so search stays on the old,
-complete collection.
+`reindex()`: take the write lock, build into `next_physical(signature)` (the primary name, or a
+`_b` twin when the alias already serves the primary, so a forced rebuild with unchanged settings
+never drops the live collection), run `_index` for every `StoredDocument` (same `doc_id`,
+visibility and `ingested_at` kept), `switch_alias`, release. If any document cannot be rebuilt
+(unreadable JSON, a document indexed in Qdrant but missing from the docstore, or an indexing
+error), the new collection is dropped, the alias is **not** switched and `reindex()` raises
+`IndexStale`, so search stays on the old, complete collection. `ensure()` accepts both names.
+
+`_check_existing` also deletes other versions when it finds a complete copy of the same content
+(the leftover of an interrupted replacement).
 
 `init_pipeline()`: build encoders (fail fast), connect, `ensure(signature)`; on `stale`, reindex if
 `INGEST_REINDEX_ON_STARTUP`, else raise `IndexStale` with `uv run python scripts/reindex.py`.
@@ -373,6 +380,7 @@ as `ocr`).
 | `tests/test_embed.py` | sparse: folding makes `الإنتخابات` match `الانتخابات` and `règlement` match `reglement`, stopwords dropped after folding, missing file → `EmbedderConfigError`; dense config errors with a fake file (Req 4.4, 5) |
 | `tests/test_embed_model.py` (`embedder`) | shape 768, unit norm, alone vs inside a list identical (1e-4), `embed_query == embed_documents([x])[0]`, translation pair above unrelated, sha check, perf: 32 × 300-token chunks dense + sparse < 10 s on 4 threads (Req 4.1–4.3, 4.6, 9.5) |
 | `tests/test_store.py` | schema created, `ensure` ok / created / stale / name clash, markers newest wins, delete other versions, set visibility, alias switch keeps search working, transport errors → `IndexUnavailable` (Req 6, 8.3) |
+| `tests/test_pipeline_e2e.py` (`ocr`, `tokenizer`, `embedder`) | real preprocessing + tokenizer + ONNX + BM25 on `notes.md`, then a hybrid RRF query with the visibility filter finds the document (integration check for the retrieval spec) |
 | `tests/test_pipeline.py` | created → duplicate → updated → replaced sequence; no moment with zero points (store spy); crashed half-ingest is not duplicate; concurrent same-`doc_id` ingests serialized; failure after partial upsert cleans up and keeps the old version; duplicate file skips preprocessing (spy); empty doc; size check before read; logging has no text (Req 1, 3, 9) |
 | `tests/test_corpus_version.py` | changes on create/replace/update/delete, stable otherwise, equal across two pipeline instances on the same store, changes with chunking settings (Req 8.1, 8.2) |
 | `tests/test_reindex.py` | signature change → rebuild from docstore without preprocessing (spy), alias swapped, old collection dropped; a failing document leaves the alias alone; startup with reindex off → `IndexStale` (Req 8.3, 8.4) |
