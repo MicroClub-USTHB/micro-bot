@@ -25,6 +25,11 @@ def test_all_errors_lists_every_subclass():
         (e.UrlNotAllowed, e.FetchError),
         (e.FileTooLarge, e.IngestError),
         (e.OcrConfigError, e.IngestError),
+        (e.TokenizerConfigError, e.IngestError),
+        (e.IndexUnavailable, e.IngestError),
+        (e.IndexStale, e.IngestError),
+        (e.EmbeddingError, e.IngestError),
+        (e.EmbedderConfigError, e.IngestError),
     ],
 )
 def test_hierarchy(child, parent):
@@ -49,4 +54,9 @@ def test_expected_codes():
         "FetchError": "fetch_error",
         "UrlNotAllowed": "url_not_allowed",
         "OcrConfigError": "ocr_config_error",
+        "TokenizerConfigError": "tokenizer_config_error",
+        "IndexUnavailable": "index_unavailable",
+        "IndexStale": "index_stale",
+        "EmbeddingError": "embedding_error",
+        "EmbedderConfigError": "embedder_config_error",
     }

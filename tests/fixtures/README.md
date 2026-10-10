@@ -24,6 +24,7 @@ dependencies, the DejaVu Sans font and Pillow built with libraqm.
 | File | What it exercises |
 |---|---|
 | `web/mcoli_introduction.html` | Real docs page (Next.js + Fumadocs) saved 2026-10-09 from mcoli-ui.microclub.info, slimmed (no scripts, styles, classes). Permalinked headings, tabbed install commands, link-only list, sidebar/TOC boilerplate |
+| `chunking/mcoli_introduction.json` | Golden chunk summary `[heading_path, page_start, token_count]` of `web/mcoli_introduction.html` after preprocessing and chunking with default settings and the real embedder tokenizer. Regenerate with `make_fixtures.py --chunk-golden` (needs tessdata and `tokenizer.json`) only when chunking intentionally changes |
 
 ## Real scans (to be added by hand)
 

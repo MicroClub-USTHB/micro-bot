@@ -78,11 +78,21 @@ ERROR_TRIGGERS = {
     errors.FetchError: "tests.test_web:test_http_error_status",
     errors.UrlNotAllowed: "tests.test_url_guard:test_internal_addresses_rejected",
     errors.OcrConfigError: "tests.test_preprocess_file:test_missing_tessdata_fails_fast",
+    errors.TokenizerConfigError: "tests.test_tokens:test_missing_tokenizer_raises_with_instruction",
+    errors.EmbedderConfigError: "tests.test_embed:test_missing_stopword_file_fails",
+    errors.EmbeddingError: "tests.test_embed:test_inference_failure_becomes_embedding_error",
+    errors.IndexUnavailable: "tests.test_store:test_transport_error_becomes_index_unavailable",
+    errors.IndexStale: "tests.test_store:test_real_collection_named_like_the_alias_is_refused",
 }
+
+# Pipeline errors whose triggering tests land with later tasks of specs/ingest-pipeline/tasks.md.
+# Each entry moves into ERROR_TRIGGERS when its test exists; the set is empty after task 6.8.
+PENDING_TRIGGERS: set[type[errors.IngestError]] = set()
 
 
 def test_every_error_has_a_triggering_test():
-    assert set(ERROR_TRIGGERS) == set(errors.ALL_ERRORS)
+    assert not set(ERROR_TRIGGERS) & PENDING_TRIGGERS
+    assert set(ERROR_TRIGGERS) | PENDING_TRIGGERS == set(errors.ALL_ERRORS)
     for target in ERROR_TRIGGERS.values():
         module_name, func_name = target.split(":")
         assert callable(getattr(importlib.import_module(module_name), func_name)), target

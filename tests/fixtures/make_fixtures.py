@@ -2,6 +2,10 @@
 
     uv run python tests/fixtures/make_fixtures.py
 
+The chunking golden file needs tessdata and the embedder tokenizer instead (see AGENTS.md):
+
+    uv run python tests/fixtures/make_fixtures.py --chunk-golden
+
 Needs the dev dependencies (pillow, openpyxl, python-docx, pypdf), the DejaVu Sans font
 and Pillow built with libraqm (for correct Arabic shaping in arabic_notice.png).
 Outputs are committed, so tests never regenerate them.
@@ -9,8 +13,12 @@ Outputs are committed, so tests never regenerate them.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import io
+import json
+import os
+import sys
 from pathlib import Path
 
 import docx
@@ -273,7 +281,29 @@ def write_text_files() -> None:
     )
 
 
+def write_chunk_golden() -> None:
+    sys.path.insert(0, str(OUT.parents[1]))
+    from mcclub_rag.ingest.settings import IngestSettings
+    from tests.chunk_helpers import MCOLI_GOLDEN, mcoli_chunk_summary
+
+    repo = OUT.parents[1]
+    settings = IngestSettings(
+        tessdata_prefix=os.environ.get("TESSDATA_PREFIX", repo / "models" / "tessdata"),
+        chunk_tokenizer_path=os.environ.get(
+            "INGEST_CHUNK_TOKENIZER_PATH", repo / "models" / "embedder" / "tokenizer.json"
+        ),
+    )
+    summary = asyncio.run(mcoli_chunk_summary(settings))
+    MCOLI_GOLDEN.parent.mkdir(exist_ok=True)
+    rows = ",\n".join(f"  {json.dumps(row, ensure_ascii=False)}" for row in summary)
+    MCOLI_GOLDEN.write_text(f"[\n{rows}\n]\n")  # one chunk per line: readable diffs
+    print(f"{MCOLI_GOLDEN.name}: {len(summary)} chunks")
+
+
 def main() -> None:
+    if "--chunk-golden" in sys.argv[1:]:
+        write_chunk_golden()
+        return
     if not features.check("raqm"):
         raise SystemExit("Pillow needs libraqm to shape Arabic text correctly")
     write_pdfs()

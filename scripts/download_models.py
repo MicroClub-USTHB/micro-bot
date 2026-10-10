@@ -1,9 +1,14 @@
 """Download model assets at image build time (offline at runtime).
 
-Currently: Tesseract traineddata for ara/fra/eng, pinned to tag 4.1.0 and verified by
-SHA-256. Embedder/reranker downloads can be added as further ``--only`` targets.
+Currently: Tesseract traineddata for ara/fra/eng (pinned to tag 4.1.0), the embedder
+(``tokenizer.json`` plus the int8 ONNX model, pinned revision) and the BM25 stopword lists,
+all verified by SHA-256. The embedder and BM25 pins live in ``mcclub_rag.retrieval.registry``.
+The reranker weights can be added as a further ``--only`` target.
 
     uv run python scripts/download_models.py --only tessdata --dest models/tessdata
+    uv run python scripts/download_models.py --only tokenizer --dest models/embedder
+    uv run python scripts/download_models.py --only embedder --dest models/embedder
+    uv run python scripts/download_models.py --only bm25 --dest models/bm25
 """
 
 from __future__ import annotations
@@ -17,6 +22,14 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
+
+from mcclub_rag.retrieval.registry import (
+    BM25_FILES,
+    BM25_REVISION,
+    GRANITE_R2,
+    EmbedderSpec,
+    bm25_url,
+)
 
 Variant = Literal["fast", "best"]
 
@@ -36,6 +49,11 @@ TESSDATA_SHA256: dict[str, dict[str, str]] = {
     },
 }
 
+EMBEDDER_REPO = GRANITE_R2.repo
+EMBEDDER_REVISION = GRANITE_R2.revision
+TOKENIZER_URL = GRANITE_R2.url("tokenizer.json")
+TOKENIZER_SHA256 = GRANITE_R2.tokenizer_sha256
+
 
 class DownloadError(RuntimeError):
     pass
@@ -49,6 +67,29 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _fetch_verified(http: httpx.Client, url: str, target: Path, expected: str, label: str) -> None:
+    """Stream ``url`` to ``<target>.part``, check its SHA-256, then rename into place.
+
+    A failed or tampered download never leaves a usable-looking file behind.
+    """
+    partial = target.with_name(target.name + ".part")
+    digest = hashlib.sha256()
+    try:
+        with http.stream("GET", url) as response:
+            response.raise_for_status()
+            with partial.open("wb") as fh:
+                for chunk in response.iter_bytes():
+                    fh.write(chunk)
+                    digest.update(chunk)
+        if digest.hexdigest() != expected:
+            raise DownloadError(
+                f"sha256 mismatch for {label}: expected {expected}, got {digest.hexdigest()}"
+            )
+        partial.replace(target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def download_tessdata(
     dest: Path,
     variant: Variant = "fast",
@@ -57,11 +98,7 @@ def download_tessdata(
     client: httpx.Client | None = None,
     hashes: dict[str, str] | None = None,
 ) -> list[Path]:
-    """Fetch ``<lang>.traineddata`` into ``dest``; skip files already present and valid.
-
-    Each file is streamed to ``<name>.part``, hash-checked, then renamed into place, so a
-    failed or tampered download never leaves a usable-looking file behind.
-    """
+    """Fetch ``<lang>.traineddata`` into ``dest``; skip files already present and valid."""
     expected_hashes = hashes or TESSDATA_SHA256[variant]
     dest.mkdir(parents=True, exist_ok=True)
     owns_client = client is None
@@ -76,23 +113,7 @@ def download_tessdata(
                 written.append(target)
                 continue
             url = TESSDATA_URL.format(variant=variant, tag=TESSDATA_TAG, lang=lang)
-            partial = target.with_name(target.name + ".part")
-            digest = hashlib.sha256()
-            try:
-                with http.stream("GET", url) as response:
-                    response.raise_for_status()
-                    with partial.open("wb") as fh:
-                        for chunk in response.iter_bytes():
-                            fh.write(chunk)
-                            digest.update(chunk)
-                if digest.hexdigest() != expected:
-                    raise DownloadError(
-                        f"sha256 mismatch for {lang}.traineddata ({variant}): "
-                        f"expected {expected}, got {digest.hexdigest()}"
-                    )
-                partial.replace(target)
-            finally:
-                partial.unlink(missing_ok=True)
+            _fetch_verified(http, url, target, expected, f"{lang}.traineddata ({variant})")
             print(f"tessdata {lang}: downloaded ({variant}, tag {TESSDATA_TAG})")
             written.append(target)
     finally:
@@ -101,8 +122,75 @@ def download_tessdata(
     return written
 
 
-def _default_tessdata_dest() -> Path:
-    return Path(os.environ.get("MODELS_DIR", "/app/models")) / "tessdata"
+def _ensure_file(http: httpx.Client, url: str, target: Path, expected: str, label: str) -> bool:
+    """Download ``url`` to ``target`` unless a valid copy is there; True if it downloaded."""
+    if target.exists() and _sha256_file(target) == expected:
+        print(f"{label}: already present")
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _fetch_verified(http, url, target, expected, label)
+    print(f"{label}: downloaded")
+    return True
+
+
+def download_tokenizer(
+    dest: Path,
+    *,
+    client: httpx.Client | None = None,
+    sha256: str = TOKENIZER_SHA256,
+) -> Path:
+    """Fetch the embedder's ``tokenizer.json`` into ``dest``; skip it if already valid."""
+    dest.mkdir(parents=True, exist_ok=True)
+    target = dest / "tokenizer.json"
+    if target.exists() and _sha256_file(target) == sha256:
+        print("tokenizer.json: already present")
+        return target
+    owns_client = client is None
+    http = client or httpx.Client(follow_redirects=True, timeout=120)
+    try:
+        _fetch_verified(http, TOKENIZER_URL, target, sha256, "tokenizer.json")
+    finally:
+        if owns_client:
+            http.close()
+    print(f"tokenizer.json: downloaded ({EMBEDDER_REPO}@{EMBEDDER_REVISION[:8]})")
+    return target
+
+
+def download_embedder(
+    dest: Path, *, client: httpx.Client | None = None, spec: EmbedderSpec = GRANITE_R2
+) -> list[Path]:
+    """Fetch the embedder's ``tokenizer.json`` and ONNX model into ``dest`` (repo layout)."""
+    files = [("tokenizer.json", spec.tokenizer_sha256), (spec.onnx_file, spec.onnx_sha256)]
+    http = client or httpx.Client(follow_redirects=True, timeout=600)
+    try:
+        for name, expected in files:
+            label = "tokenizer.json" if name == "tokenizer.json" else "onnx model"
+            _ensure_file(http, spec.url(name), dest / name, expected, label)
+    finally:
+        if client is None:
+            http.close()
+    print(f"embedder: {spec.repo}@{spec.revision[:8]}")
+    return [dest / name for name, _ in files]
+
+
+def download_bm25(
+    dest: Path, *, client: httpx.Client | None = None, files: dict[str, str] | None = None
+) -> list[Path]:
+    """Fetch the BM25 stopword lists into ``dest`` (fastembed ``specific_model_path``)."""
+    pins = BM25_FILES if files is None else files
+    http = client or httpx.Client(follow_redirects=True, timeout=120)
+    try:
+        for name, expected in pins.items():
+            _ensure_file(http, bm25_url(name), dest / name, expected, name)
+    finally:
+        if client is None:
+            http.close()
+    print(f"bm25 stopwords: Qdrant/bm25@{BM25_REVISION[:8]}")
+    return [dest / name for name in pins]
+
+
+def _models_dir() -> Path:
+    return Path(os.environ.get("MODELS_DIR", "/app/models"))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -110,19 +198,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--only",
         action="append",
-        choices=["tessdata"],
+        choices=["tessdata", "tokenizer", "embedder", "bm25"],
         help="asset group to download (repeatable); default: all",
     )
     parser.add_argument(
-        "--dest", type=Path, help="tessdata directory (default: $MODELS_DIR/tessdata)"
+        "--dest",
+        type=Path,
+        help="target directory when downloading a single group "
+        "(default: $MODELS_DIR/tessdata, $MODELS_DIR/embedder, $MODELS_DIR/bm25)",
     )
     parser.add_argument("--variant", choices=["fast", "best"], default="fast")
     args = parser.parse_args(argv)
 
-    targets = set(args.only or ["tessdata"])
+    targets = set(args.only or ["tessdata", "embedder", "bm25"])
+    if args.dest and len(targets) > 1:
+        parser.error("--dest needs exactly one --only group")
     try:
         if "tessdata" in targets:
-            download_tessdata(args.dest or _default_tessdata_dest(), args.variant)
+            download_tessdata(args.dest or _models_dir() / "tessdata", args.variant)
+        if "tokenizer" in targets:
+            download_tokenizer(args.dest or _models_dir() / "embedder")
+        if "embedder" in targets:
+            download_embedder(args.dest or _models_dir() / "embedder")
+        if "bm25" in targets:
+            download_bm25(args.dest or _models_dir() / "bm25")
     except (DownloadError, httpx.HTTPError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
