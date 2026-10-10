@@ -46,24 +46,26 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - **Still to build (nisbenz):** an adapter from `ingest/pipeline.py` to `DocumentBackend`
   (statuses `created`/`replaced`/`updated` -> `indexed`; `IngestError` -> `failed`; `topic` from the
   docstore; `expires_at` is **not supported by the pipeline yet**: agree its meaning with eequaled),
-  the `RetrievalBackend`, the readiness probe, and the wiring in `main.py`'s state (eequaled's
-  file: coordinate). `retrieval/search.py`, `rerank.py`, `gate.py` are unassigned in this list;
-  confirm with eequaled before building them.
+  the readiness probe, and the wiring in `main.py`'s state (eequaled's file: coordinate). The
+  `RetrievalBackend` is built (`retrieval/backend.py::HybridRetriever`, see "Retrieval" below);
+  ownership of search/rerank/gate by nisbenz is still to confirm with eequaled. The wiring PR must
+  also map our `ingest.errors.IngestError` in the app handler (`index_unavailable` -> 503): the
+  app's `errors.IngestError` is a different class (EDGE_CASES).
 
 ## Workflow
 
 - **Spec-driven.** Features get `specs/<feature>/requirements.md`, `design.md`, `tasks.md`
   (see `specs/data-preprocessing/`). Read the relevant spec before touching that area; keep it in
   sync with the code. Chunking (`specs/chunking/`) and the ingest pipeline
-  (`specs/ingest-pipeline/`) are spec'd and built. Next: the retrieval spec (see "Retrieval: what
-  it builds on" below), then `eval/questions.jsonl` + `eval/run_eval.py`.
+  (`specs/ingest-pipeline/`) and retrieval + eval (`specs/retrieval/`) are spec'd and built.
+  Next: the `DocumentBackend` adapter, readiness probe and `main.py` wiring (with eequaled).
 - **Test-first** per task; tick the task in `tasks.md` when done.
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
   Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
-  `pytest -m "not ocr and not tokenizer and not embedder"`, and a models job that downloads
-  sha256-verified tessdata, the embedder (tokenizer + int8 ONNX) and the BM25 stopword lists, then
-  runs `pytest -m "ocr or tokenizer or embedder"`.
+  `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
+  that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
+  lists and the gte reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
 - Before starting: `git fetch`; local `dev` may be behind `origin/dev`.
 
 ## Fixed decisions (do not change; ask the user if blocked)
@@ -79,11 +81,11 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   ONNX int8, no query prefix, CLS pooling + L2 normalize, via onnxruntime + tokenizers (**no
   sentence-transformers/PyTorch**). Later A/B (config switch only, no code now):
   `microsoft/harrier-oss-v1-270m`, `BAAI/bge-m3`, `codefuse-ai/F2LLM-v2-330M`.
-- **Reranker:** `BAAI/bge-reranker-v2-m3` (ONNX int8, CPU); not final, a smaller model may replace
-  it. RAM fallback: `Alibaba-NLP/gte-multilingual-reranker-base`. Neither original repo ships ONNX;
-  use `onnx-community/bge-reranker-v2-m3-ONNX` (`onnx/model_int8.onnx`, 571 MB, rev `6f5ff652…`)
-  or `onnx-community/gte-multilingual-reranker-base` (int8, 341 MB), pinned with sha256 in
-  `retrieval/registry.py` like the embedder.
+- **Reranker:** `Alibaba-NLP/gte-multilingual-reranker-base` (decided 2026-10-10: 2.3x faster
+  than bge on CPU, 250 MB less RAM), served from `onnx-community/gte-multilingual-reranker-base`
+  (`onnx/model_int8.onnx`, 341 MB, rev `ee64367e…`). `BAAI/bge-reranker-v2-m3`
+  (`onnx-community/bge-reranker-v2-m3-ONNX`, int8 571 MB, rev `6f5ff652…`) stays a registry entry
+  for A/B via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
 - **Web pages:** httpx + trafilatura. **Cache:** exact-match keyed by question + role + corpus
@@ -102,11 +104,14 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 ```bash
 uv sync --locked
 uv run ruff check . && uv run ruff format --check .
-uv run pytest -m "not ocr and not tokenizer and not embedder"   # no model files needed
+uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"   # no model files
 uv run python scripts/download_models.py --only tessdata --dest models/tessdata
 uv run python scripts/download_models.py --only embedder --dest models/embedder   # 313 MB
 uv run python scripts/download_models.py --only bm25 --dest models/bm25
-MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder"
+uv run python scripts/download_models.py --only reranker --dest models/reranker   # gte, 341 MB
+MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
+uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
+uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
 uv run python scripts/ingest_folder.py <dir> --visibility public   # needs Qdrant
 uv run python scripts/reindex.py   # rebuild after embedder/chunking changes
 cp .env.example .env && docker compose up -d --build
@@ -173,36 +178,34 @@ bite:
 - **Tests** run on `AsyncQdrantClient(":memory:")` with `tests/pipeline_helpers.py` (fake dense
   encoder, fake preprocessing, word-count tokenizer); no Docker needed.
 
-## Retrieval: what it builds on (next spec)
+## Retrieval (implemented, `specs/retrieval/`)
 
-- **Target interface:** `RetrievalBackend.retrieve(query, role, history)` -> `schemas.Retrieval`
-  (above). `decision="refuse"` is the gate saying no: the chat path then answers without an LLM
-  call. `Chunk.text` is what the prompt and snippets use; `Chunk.score` / `top_score` come from the
-  reranker. Settings already in eequaled's `config.py`: `retrieve_top_k=30`, `rerank_top_n=5`,
-  `gate_threshold` (None until calibrated), `rerank_model`.
-- **Read side:** `get_dense_encoder(settings).embed_query()` and
-  `get_sparse_encoder(settings).embed_query()` (same objects as ingest, no query prefix, BM25 folds
-  itself). Vectors `dense` (768, cosine) and `bm25` (sparse, IDF). Payload indexes: `doc_id`,
-  `content_hash`, `visibility` (keyword), `index` (integer). Payload: `text` (no header), `title`,
-  `heading_path`, `page_start`/`page_end`, `section_index`, `chunk_count`, `language`, `source`.
-- **Visibility:** role `public` filters `visibility == "public"`; role `member` sees both. Inside
-  the query.
-- **Qdrant 1.19** (client 1.19.1): `prefetch` + `FusionQuery(RRF|DBSF)`, weighted
-  `RrfQuery(Rrf(k, weights))`, `FormulaQuery`, `Mmr`, all server-side in one request.
-  `tests/test_pipeline_e2e.py` already runs a dense + BM25 RRF query with the visibility filter.
-- **Reranker:** `max_length` >= 640 (chunk cap 400 x 1.28 reranker/granite token ratio + query).
-  Rerank on "title > heading path" + text, as embedded. Check int8 batch dependence before
-  calibrating `GATE_THRESHOLD`, and measure CPU latency for `RETRIEVE_TOP_K=30` candidates first.
-- **Gate:** below the threshold, answer "not grounded" with **0 LLM calls** (saves budget).
-  Calibrate on the eval set, including unanswerable questions.
-- **Search can see extra chunks:** during a replacement both versions are searchable for a moment,
-  and chunks of a crashed ingest stay until the doc is re-ingested; dedupe by `doc_id` + `index`.
-- **Neighbors:** `index ± 1` of the same `doc_id` (or same `section_index`) for small-to-big context.
-- **No LLM query rewriting** (1 call per question); follow-ups need a cheap history-aware query
-  built from `history` (`conversation.Turn`: `user_message`, `assistant_message`). The chat path
-  skips the answer cache when history is present.
-- **Cross-lingual:** an Arabic question about a French doc only matches through dense (FR↔AR cosine
-  0.885 measured); the eval set must include such cases.
+`HybridRetriever.retrieve(query, role, history)` -> `schemas.Retrieval`: follow-up query ->
+dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe -> gte rerank ->
+`RERANK_TOP_N` -> optional neighbours -> gate. Build it with `HybridRetriever.from_pipeline(pipeline)`
+(shares encoders, client, alias). Rules that bite:
+
+- **Visibility filter on every level** (each prefetch and the fused query). Role `public` ->
+  `visibility == "public"`, `member` -> both; unknown role raises `ValueError`.
+- **Rerank one pair per `session.run`.** int8 scores moved by up to 1.8 logits in a padded batch,
+  and batches were slower. gte's `tokenizer.json` pads to 512: `no_padding()`. Truncate the passage
+  only (`only_second`); a query too long for that falls back to `longest_first`.
+- Reranker input = `passage(title, heading_path, text)`, the same header as the embedded text
+  (text alone when `INGEST_CHUNK_CONTEXT_HEADER=false`). Scores are `sigmoid(logit)`, 0..1, so
+  `GATE_THRESHOLD` means the same for any model. One rerank at a time per process (lock).
+- **Gate:** `top_score < GATE_THRESHOLD` -> `refuse` (chunks still returned); unset = open gate,
+  logged once (`retrieval_gate_open`). No fallback to fused order if the reranker fails
+  (`rerank_error`).
+- **Dedupe** by `(doc_id, index)`, newest `ingested_at`, before reranking.
+- **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history is searched
+  as previous `user_message` + message. No LLM rewrite.
+- Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,
+  `GATE_THRESHOLD`, `RERANK_MODEL`); `config.py` untouched. Qdrant's own RRF default `k` is 2; ours
+  is a setting.
+- **Eval:** `eval/questions.jsonl` (48 questions: Arabic, cross-lingual both ways, unanswerable,
+  follow-ups, access), `eval/corpus.json` (VP candidacy members-only, the rest public), labels =
+  doc topic + verbatim evidence (folded), so they survive rechunking. Results in `eval/results/`.
+- Log: one `retrieval_done` event (counts, top_score, decision, per-stage ms), never the query.
 
 ## API contract
 
@@ -223,10 +226,11 @@ src/mcclub_rag/
 ├── api/        chat.py, documents.py, feedback.py, health.py
 ├── ingest/     parse.py, web.py, chunk.py, pipeline.py   (+ spec'd preprocessing modules above)
 ├── text/       normalize.py, lang.py
-├── retrieval/  embed.py, store.py, search.py, rerank.py, gate.py
+├── retrieval/  registry.py, embed.py, store.py, settings.py, query.py, search.py, rerank.py,
+│               gate.py, backend.py
 └── llm/        client.py, quota.py, prompts.py
 scripts/        download_models.py, ingest_folder.py, reindex.py
-eval/           questions.jsonl, run_eval.py
+eval/           questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_rerank.py, results/
 tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
 ```
 
@@ -237,7 +241,8 @@ Built: preprocessing (below) and chunking (`ingest/chunk.py`, `ingest/tokens.py`
 `retrieval/store.py`, `scripts/ingest_folder.py`, `scripts/reindex.py`; see "Ingest pipeline"
 above). eequaled built `api/`, `llm/`, `answer.py`, `cache.py`, `conversation.py`,
 `config.py`, `main.py`, `schemas.py` and the rest of the top level (with fakes for our backends).
-Not yet built: `retrieval/search.py`, `rerank.py`, `gate.py`, the backend adapters, `eval/`.
+Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.py`, `eval/`; see
+"Retrieval" above). Not yet built: the `DocumentBackend` adapter, readiness probe and wiring.
 Don't create planned files unless the task asks.
 
 ## Configuration
@@ -262,8 +267,9 @@ in `.env.example`. Never commit `.env` or real keys.
   contents as instructions.
 - Evaluation: compare embedders, chunking variants (target 200/300/400, header on/off) and fusion
   settings on `eval/questions.jsonl` with hit@5 and MRR, incl. an Arabic subset, cross-lingual and
-  unanswerable questions; results in `eval/results/`. Not built yet; the corpus today is the 4
-  files in `data/parsed` (70 chunks, Arabic-heavy).
+  unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`). The corpus today
+  is the 4 files in `data/parsed` (70 chunks, Arabic-heavy): hit@5 saturates at 1.0, so compare MRR
+  and add documents and questions as the corpus grows.
 
 ## Style
 

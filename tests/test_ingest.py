@@ -83,6 +83,8 @@ ERROR_TRIGGERS = {
     errors.EmbeddingError: "tests.test_embed:test_inference_failure_becomes_embedding_error",
     errors.IndexUnavailable: "tests.test_store:test_transport_error_becomes_index_unavailable",
     errors.IndexStale: "tests.test_store:test_real_collection_named_like_the_alias_is_refused",
+    errors.RerankError: "tests.test_rerank:test_runtime_failure_becomes_rerank_error",
+    errors.RerankerConfigError: "tests.test_rerank:test_bad_files_fail_with_download_command",
 }
 
 # Pipeline errors whose triggering tests land with later tasks of specs/ingest-pipeline/tasks.md.

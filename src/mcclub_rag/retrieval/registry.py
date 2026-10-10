@@ -1,8 +1,9 @@
-"""Pinned model files for the dense and sparse encoders (ingest-pipeline Req 4, 5).
+"""Pinned model files for the encoders (ingest-pipeline Req 4, 5) and rerankers (retrieval Req 4).
 
 No heavy imports: ``scripts/download_models.py`` reads these constants at image build time,
 and ``retrieval/embed.py`` checks the same hashes at startup. A later A/B embedder is a new
-``EMBEDDERS`` entry plus ``EMBED_MODEL`` in the environment, not a code change elsewhere.
+``EMBEDDERS`` entry plus ``EMBED_MODEL`` in the environment, not a code change elsewhere; the
+same goes for ``RERANKERS`` and ``RERANK_MODEL``.
 """
 
 from dataclasses import dataclass
@@ -47,3 +48,46 @@ BM25_FILES: dict[str, str] = {
 
 def bm25_url(filename: str) -> str:
     return f"https://huggingface.co/{BM25_REPO}/resolve/{BM25_REVISION}/{filename}"
+
+
+@dataclass(frozen=True)
+class RerankerSpec:
+    repo: str
+    revision: str
+    onnx_file: str
+    onnx_sha256: str
+    tokenizer_sha256: str
+
+    @property
+    def slug(self) -> str:
+        """Directory under ``$MODELS_DIR/reranker``, so several rerankers can sit side by side."""
+        return self.repo.rsplit("/", 1)[-1]
+
+    def url(self, filename: str) -> str:
+        return f"https://huggingface.co/{self.repo}/resolve/{self.revision}/{filename}"
+
+
+# Neither original repo ships ONNX; onnx-community exports, int8 (measured in specs/retrieval).
+GTE_RERANKER = RerankerSpec(
+    repo="onnx-community/gte-multilingual-reranker-base",
+    revision="ee64367e35a2db0da46bb6497e13a18f8bd585cb",
+    onnx_file="onnx/model_int8.onnx",
+    onnx_sha256="ccf51dba7f8aa9205753761cfaa68c55f741792501463a3bf25d7e5bcdac7c35",
+    tokenizer_sha256="3ffb37461c391f096759f4a9bbbc329da0f36952f88bab061fcf84940c022e98",
+)
+BGE_RERANKER = RerankerSpec(
+    repo="onnx-community/bge-reranker-v2-m3-ONNX",
+    revision="6f5ff65298512715a1e669753bc754d2bc8f367b",
+    onnx_file="onnx/model_int8.onnx",
+    onnx_sha256="912fc1215c2dbff6499700534bd8d31253af01573861abbfc43afd1fab6cce5d",
+    tokenizer_sha256="8bf8afbfd11306bd872018c53bfdf2e160a56f8edbcf49933324404791c148d3",
+)
+
+# Keyed by the original model name (what config.py and .env use) and by the export's repo.
+RERANKERS: dict[str, RerankerSpec] = {
+    "Alibaba-NLP/gte-multilingual-reranker-base": GTE_RERANKER,
+    GTE_RERANKER.repo: GTE_RERANKER,
+    "BAAI/bge-reranker-v2-m3": BGE_RERANKER,
+    BGE_RERANKER.repo: BGE_RERANKER,
+}
+DEFAULT_RERANKER = "Alibaba-NLP/gte-multilingual-reranker-base"

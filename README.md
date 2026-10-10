@@ -13,8 +13,8 @@ docker compose up -d --build
 
 ## Architecture
 
-Layout (built: `ingest/`, `text/`, `retrieval/embed.py`, `retrieval/store.py`, the scripts;
-the rest is planned):
+Layout (built: `ingest/`, `text/`, `retrieval/`, `eval/`, the scripts, and eequaled's API side
+running on fakes until the backends are wired in):
 
 ```
 src/mcclub_rag/
@@ -23,10 +23,11 @@ src/mcclub_rag/
 ├── api/        chat.py, documents.py, feedback.py, health.py
 ├── ingest/     parse.py, web.py, chunk.py, pipeline.py
 ├── text/       normalize.py, lang.py
-├── retrieval/  embed.py, store.py, search.py, rerank.py, gate.py
+├── retrieval/  registry.py, embed.py, store.py, settings.py, query.py, search.py, rerank.py,
+│               gate.py, backend.py
 └── llm/        client.py, quota.py, prompts.py
 scripts/        download_models.py, ingest_folder.py, reindex.py
-eval/           questions.jsonl, run_eval.py
+eval/           questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_rerank.py, results/
 tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
 ```
 
@@ -63,7 +64,20 @@ tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.p
   Parsed documents are kept as JSON under `DATA_DIR/documents`, and a settings change rebuilds a
   new collection from them, then swaps the `QDRANT_COLLECTION` alias atomically.
 
+- Retrieval ([spec](specs/retrieval/)): one Qdrant query with dense + BM25 prefetches fused by
+  RRF (k=2), the visibility filter on every level, dedupe by document and chunk index, then the
+  gte-multilingual-reranker-base int8 cross-encoder (one pair per run: batching moved scores by
+  up to 1.8 logits) on the top 20, and a gate that refuses below a sigmoid score of 0.40 with
+  **0 LLM calls**. Short follow-ups are searched together with the previous question (no LLM
+  rewrite). bge-reranker-v2-m3 stays an A/B option: +0.014 MRR for 2.2x the latency.
+
 ## Evaluation
+
+`uv run python -m eval.run_eval --label <name>` ingests `data/parsed` into an in-memory Qdrant
+with the real models and runs the 48 questions of `eval/questions.jsonl` (Arabic, cross-lingual
+both ways, unanswerable, follow-ups, access checks): hit@5 and MRR@10 before and after reranking,
+per tag, a gate-threshold sweep and per-stage latency. Settings are environment overrides; results
+and the comparison table are in [eval/results/](eval/results/README.md).
 
 ## Edge cases
 

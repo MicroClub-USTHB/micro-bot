@@ -30,6 +30,8 @@ def test_all_errors_lists_every_subclass():
         (e.IndexStale, e.IngestError),
         (e.EmbeddingError, e.IngestError),
         (e.EmbedderConfigError, e.IngestError),
+        (e.RerankError, e.IngestError),
+        (e.RerankerConfigError, e.IngestError),
     ],
 )
 def test_hierarchy(child, parent):
@@ -59,4 +61,6 @@ def test_expected_codes():
         "IndexStale": "index_stale",
         "EmbeddingError": "embedding_error",
         "EmbedderConfigError": "embedder_config_error",
+        "RerankError": "rerank_error",
+        "RerankerConfigError": "reranker_config_error",
     }

@@ -104,8 +104,14 @@ def test_cli_default_dest_uses_models_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(dm, "download_tessdata", lambda dest, variant: calls.append(dest))
     monkeypatch.setattr(dm, "download_embedder", lambda dest: calls.append(dest))
     monkeypatch.setattr(dm, "download_bm25", lambda dest: calls.append(dest))
+    monkeypatch.setattr(dm, "download_reranker", lambda dest, spec: calls.append(dest))
     assert dm.main([]) == 0
-    assert calls == [tmp_path / "tessdata", tmp_path / "embedder", tmp_path / "bm25"]
+    assert calls == [
+        tmp_path / "tessdata",
+        tmp_path / "embedder",
+        tmp_path / "bm25",
+        tmp_path / "reranker",
+    ]
 
 
 def test_cli_reports_failure(monkeypatch, capsys):
@@ -270,3 +276,66 @@ def test_cli_only_new_groups(monkeypatch, tmp_path, group):
     monkeypatch.setattr(dm, "download_bm25", lambda dest: calls.append(("bm25", dest)))
     assert dm.main(["--only", group, "--dest", str(tmp_path)]) == 0
     assert calls == [(group, tmp_path)]
+
+
+RERANKER = dm.RerankerSpec(
+    repo="org/reranker-onnx",
+    revision="def456",
+    onnx_file="onnx/model_int8.onnx",
+    onnx_sha256=hashlib.sha256(ONNX).hexdigest(),
+    tokenizer_sha256=TOKENIZER_HASH,
+)
+
+
+def test_reranker_downloads_into_its_slug_directory(tmp_path):
+    seen = []
+
+    def handler(request):
+        seen.append(str(request.url))
+        return _serve_embedder(request)
+
+    dm.download_reranker(tmp_path, client=_client(handler), spec=RERANKER)
+    root = tmp_path / "reranker-onnx"
+    assert (root / "tokenizer.json").read_bytes() == TOKENIZER
+    assert (root / "onnx" / "model_int8.onnx").read_bytes() == ONNX
+    assert seen == [
+        "https://huggingface.co/org/reranker-onnx/resolve/def456/tokenizer.json",
+        "https://huggingface.co/org/reranker-onnx/resolve/def456/onnx/model_int8.onnx",
+    ]
+
+
+def test_reranker_mismatch_leaves_no_file(tmp_path):
+    def handler(request):
+        if request.url.path.endswith("tokenizer.json"):
+            return httpx.Response(200, content=TOKENIZER)
+        return httpx.Response(200, content=b"tampered")
+
+    with pytest.raises(dm.DownloadError, match="sha256 mismatch"):
+        dm.download_reranker(tmp_path, client=_client(handler), spec=RERANKER)
+    assert list((tmp_path / "reranker-onnx" / "onnx").iterdir()) == []
+
+
+def test_reranker_keys_resolve_to_one_spec_per_model():
+    from mcclub_rag.retrieval import registry
+
+    r = registry.RERANKERS
+    assert r["Alibaba-NLP/gte-multilingual-reranker-base"] is registry.GTE_RERANKER
+    assert r["onnx-community/gte-multilingual-reranker-base"] is registry.GTE_RERANKER
+    assert r["BAAI/bge-reranker-v2-m3"] is r["onnx-community/bge-reranker-v2-m3-ONNX"]
+    assert registry.RERANKERS[registry.DEFAULT_RERANKER] is registry.GTE_RERANKER
+    assert registry.GTE_RERANKER.slug == "gte-multilingual-reranker-base"
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], "onnx-community/gte-multilingual-reranker-base"),
+        (["--model", "BAAI/bge-reranker-v2-m3"], "onnx-community/bge-reranker-v2-m3-ONNX"),
+    ],
+)
+def test_cli_only_reranker(monkeypatch, tmp_path, argv, expected):
+    monkeypatch.delenv("RERANK_MODEL", raising=False)
+    calls = []
+    monkeypatch.setattr(dm, "download_reranker", lambda dest, spec: calls.append((dest, spec.repo)))
+    assert dm.main(["--only", "reranker", "--dest", str(tmp_path), *argv]) == 0
+    assert calls == [(tmp_path, expected)]
