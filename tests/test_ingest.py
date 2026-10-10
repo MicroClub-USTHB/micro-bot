@@ -87,7 +87,8 @@ ERROR_TRIGGERS = {
 
 # Pipeline errors whose triggering tests land with later tasks of specs/ingest-pipeline/tasks.md.
 # Each entry moves into ERROR_TRIGGERS when its test exists; the set is empty after task 6.8.
-PENDING_TRIGGERS: set[type[errors.IngestError]] = set()
+# Retrieval errors: triggering tests land with specs/retrieval/tasks.md task 4.1.
+PENDING_TRIGGERS: set[type[errors.IngestError]] = {errors.RerankError, errors.RerankerConfigError}
 
 
 def test_every_error_has_a_triggering_test():
