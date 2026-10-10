@@ -27,12 +27,16 @@ def build_prompt(
         raise ValueError("language must be a QueryLang: ar, fr, or en")
 
     current_date = (today or date.today()).isoformat()
-    source_blocks = "\n\n".join(
-        _source_block(index, chunk) for index, chunk in enumerate(chunks, start=1)
-    ) or "(No retrieved passages.)"
-    history_blocks = "\n".join(
-        f"User: {turn.user_message}\nAssistant: {turn.assistant_message}" for turn in history
-    ) or "(No prior conversation.)"
+    source_blocks = (
+        "\n\n".join(_source_block(index, chunk) for index, chunk in enumerate(chunks, start=1))
+        or "(No retrieved passages.)"
+    )
+    history_blocks = (
+        "\n".join(
+            f"User: {turn.user_message}\nAssistant: {turn.assistant_message}" for turn in history
+        )
+        or "(No prior conversation.)"
+    )
 
     system = f"""You are the MC Club assistant. Today is {current_date}.
 Answer in language code `{language}` and answer only from the retrieved passages.

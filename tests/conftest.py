@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import pytest
+import structlog
 
 from mcclub_rag.ingest.settings import IngestSettings
 
@@ -23,6 +24,14 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.tokenizer)
         if "onnx_path" in fixtures or "real_bm25_dir" in fixtures:
             item.add_marker(pytest.mark.embedder)
+
+
+@pytest.fixture(autouse=True)
+def _reset_structlog():
+    # configure_logging() caches loggers on first use; a logger cached under that config
+    # bypasses structlog.testing.capture_logs() in later tests, so restore the defaults.
+    yield
+    structlog.reset_defaults()
 
 
 def _tessdata_dir() -> Path:

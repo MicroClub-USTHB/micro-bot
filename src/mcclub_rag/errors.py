@@ -55,9 +55,7 @@ def _message(detail: Any) -> str:
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
-    async def validation_error_handler(
-        _: Request, exc: RequestValidationError
-    ) -> JSONResponse:
+    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
         return error_response(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "validation_error",
