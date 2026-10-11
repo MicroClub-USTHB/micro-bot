@@ -59,3 +59,24 @@ Gate (defaults run): unanswerable questions top out at 0.388, answerable ones st
 except x-02 (Arabic question on the English VP document, 0.26). `GATE_THRESHOLD=0.40` sits in the
 gap: refuses 9 of 12 unanswerable (the 3 kept are on-topic mcoli-ui questions, 0.54 to 0.55) and
 1 of 36 answerable. The threshold is per model: recalibrate when `RERANK_MODEL` changes.
+
+## Corpus grown to 55 documents (2026-10-11, `corpus55`)
+
+Defaults (gte, top_k 20, RRF k 2, chunk 300 + header), same 48 questions, 51 documents added:
+3 Micro Club internal PDFs (members), 17 MCDI / mcoli-ui docs pages (en), 16 faculty pages
+(fr) and 6 faculty notices (ar) from finfo.usthb.dz, 3 usthb.dz pages (en), USTHB on ar/fr
+Wikipedia and 4 Arabic Wikipedia articles as distractors. 971 chunks (855 public, 116 members)
+instead of 61. Sources in `data/sources/` and `data/parsed/` (gitignored), manifest
+`eval/corpus.json`.
+
+| Run | hit@5 reranked | Fused MRR | Reranked MRR | Cross-lingual (fused / reranked) | Rerank ms p50 / p95 | Gate suggestion |
+|---|---|---|---|---|---|---|
+| defaults, 4 docs (t300 header) | 1.0 | 0.834 | 0.986 | | 1158 / 1267 | 0.42 |
+| defaults, 55 docs | **0.944** | 0.709 | 0.912 | 0.455 / 0.758 | 1424 / 1983 | 0.44 |
+
+The eval is no longer saturated. Misses after reranking: x-01 and x-02 (Arabic questions on
+English documents, not in the top 10), fr-04 (rank 3), en-07 (rank 2, but "since 1985" is also
+in the president candidacy and the Code of Conduct: a label that names one document is too
+narrow). At `GATE_THRESHOLD=0.40` the gate now refuses 42% of the unanswerable questions (was
+75%) and 3% of the answerable: the bigger corpus has more near-topic text, so unanswerable
+questions score higher. Recalibrate on the new questions before changing it.

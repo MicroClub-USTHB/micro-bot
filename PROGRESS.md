@@ -1,5 +1,49 @@
 # progress
 
+## 2026-10-11 (e2e eval built and run)
+
+### Shipped
+
+- `eval/e2e/` runner: rule-based scoring (contract, behaviour, gold, evidence, must_not,
+  access, language, path), in-process and HTTP drivers, recording / replay / budgeted
+  generator, perturbations, suites (quality, robustness, contract, faults, cache, ingest, load,
+  restart), optional cached LLM judge, scorecard (`thresholds.json`), compare.
+- Corpus grown to 63 documents (55 real incl. 5 scans, 8 adversarial), 269 cases over 42
+  slices; labels checked against the documents.
+- First full run (`eval/results/e2e/20261011T203423Z-full-1`): 0 access leaks, contract 22/22,
+  faults 9/9, cache 5/5, ingest 15/16; chat 113/269. All 21 issues with evidence in
+  `eval/results/e2e/ISSUES.md`.
+
+### Blocked
+
+- Generation quality: the live app never calls the LLM (I1, eequaled) and no key locally.
+- HTTP target and restart suite: Docker not running on the dev machine.
+
+### Next
+
+- With eequaled: I1 (wire the generator), I2/I3 (fallback must not paste unrelated or injected
+  text), I5 (refusal language), I14 (`expires_at`).
+- nisbenz: I7/I8 gate recalibration with noisy variants, I9 cross-lingual distractors, I10 short
+  topic switch, I13 OCR deskew, I16 share-bar pages.
+
+## 2026-10-11 (e2e eval spec)
+
+### Shipped
+
+- `specs/e2e-eval/` (requirements, design, tasks): an end-to-end harness over the chat API with
+  rule-based scoring, canary/injection corpus, record/replay of LLM calls, robustness, faults,
+  cache, load and restart suites, and a threshold scorecard.
+
+### Blocked
+
+- The running app never calls the LLM: `main.default_state()` keeps `FakeGenerationService`, and
+  `OpenRouterClient.generate` is sync vs the async protocol (EDGE_CASES.md). eequaled's fix;
+  generation quality cannot be measured live until then.
+
+### Next
+
+- Build the harness task by task (`specs/e2e-eval/tasks.md`).
+
 ## 2026-10-11 (0.1.0 review)
 
 ### Shipped

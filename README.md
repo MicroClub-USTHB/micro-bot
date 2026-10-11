@@ -104,6 +104,17 @@ both ways, unanswerable, follow-ups, access checks): hit@5 and MRR@10 before and
 per tag, a gate-threshold sweep and per-stage latency. Settings are environment overrides; results
 and the comparison table are in [eval/results/](eval/results/README.md).
 
+### End-to-end eval
+
+`uv run python -m eval.e2e.run --suite all --label <name>` drives the real chat and documents API
+(in-process, or `--target http` against a running app) with 269 cases over 63 documents: 42
+edge-case slices (cross-lingual, Darija, Arabizi, OCR, tables, near-duplicates, false premises,
+follow-ups, access, prompt injection in questions, documents and history, system-prompt leaks,
+PII, harmful requests), plus perturbation, API contract, fault, cache, ingest and load suites.
+Scoring is rule-based (canary and marker strings for leaks), with an optional LLM judge. See
+[specs/e2e-eval/](specs/e2e-eval/) and the issue list in
+[eval/results/e2e/ISSUES.md](eval/results/e2e/ISSUES.md).
+
 ## Edge cases
 
 See [EDGE_CASES.md](EDGE_CASES.md).

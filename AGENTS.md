@@ -116,6 +116,10 @@ uv run python scripts/download_models.py --only reranker --dest models/reranker 
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
+uv run python -m eval.e2e.run --suite all --label <name>   # e2e eval, in-process, real models
+uv run python -m eval.e2e.run --suite quality --mode record --max-llm-calls 10   # spends LLM quota
+uv run python -m eval.e2e.compare <a.json> <b.json>   # metric deltas, regressions
+uv run python scripts/build_eval_corpus.py   # rebuild data/parsed from eval/corpus_sources.txt
 uv run python scripts/ingest_folder.py <dir> --visibility public   # needs Qdrant
 uv run python scripts/reindex.py   # rebuild after embedder/chunking changes
 cp .env.example .env && docker compose up -d --build
@@ -211,6 +215,32 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   doc topic + verbatim evidence (folded), so they survive rechunking. Results in `eval/results/`.
 - Log: one `retrieval_done` event (counts, top_score, decision, per-stage ms), never the query.
 
+## E2E eval (implemented, `specs/e2e-eval/`)
+
+`eval/e2e/`: 269 cases (`cases.jsonl` hand-written + `cases_retrieval.jsonl` generated from
+`eval/questions.jsonl`) over 63 documents (`eval/corpus.json` real, files in `data/`; plus the
+synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`. Rules that bite:
+
+- **42 slices** (`SLICES` in `cases.py`, Req 11), each with at least 3 cases; `expect` is
+  `answer` / `refuse` / `any` (opinion, chitchat, ambiguous: only safety checks). `docs` lists
+  every document that holds the answer. Evidence is verbatim (folded) and checked against the
+  documents by `tests/test_e2e_cases_corpus.py` (skips without `data/`). Case ids are unique
+  across both case files.
+- **Leak detection is string match:** members-only adversarial docs carry a canary (added to every
+  public case's `must_not`), injection docs a marker (added to every case). Canaries may never be in
+  an answer or snippet; markers only in the answer (citing the injection doc is fine).
+- **Drivers** speak the public API. Each chat request sends a fresh `eval-<uuid>`
+  `conversation_id` to skip the answer cache without changing the API; follow-ups need the
+  in-process driver (it seeds the conversation store). `get_role` reads the global settings, so
+  the in-process driver sets `MEMBER_TOKEN`/`ADMIN_API_KEY` in the environment until `close()`.
+- **LLM budget:** the in-process app runs `RecordingGenerator` (budget `--max-llm-calls`, record /
+  replay by prompt hash with the date masked). Once spent, fallback answers are `not_run`, not
+  scored. A run where answerable cases were not answered by the LLM says "generation NOT
+  evaluated". The judge (`EVAL_JUDGE_*`) never uses `OPENROUTER_API_KEY`.
+- Results: `eval/results/e2e/<UTC>-<label>.{json,md}`; scorecard thresholds in
+  `eval/e2e/thresholds.json` (exit 1 on a failed threshold, 2 on a crash). Issues found so far:
+  `eval/results/e2e/ISSUES.md`.
+
 ## API contract
 
 - Endpoints: `POST /api/v1/chat`, `GET /api/v1/health`, `POST/GET /api/v1/documents`,
@@ -235,6 +265,7 @@ src/mcclub_rag/
 └── llm/        client.py, quota.py, prompts.py
 scripts/        download_models.py, ingest_folder.py, reindex.py
 eval/           questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_rerank.py, results/
+eval/e2e/       cases*.jsonl, corpus/, cases.py, score.py, drivers.py, suites.py, system.py, run.py, …
 tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
 ```
 
