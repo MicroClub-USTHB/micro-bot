@@ -33,7 +33,7 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - **eequaled's side of the seam (on `dev`, frozen):** boundary models in `schemas.py`
   (`IngestResult`, `Chunk`, `Retrieval`, `DocInfo`; changing one needs the other's PR approval)
   and the backend protocols in `main.py`, which nisbenz implements and injects into
-  `ApplicationState` (it runs on fakes until then):
+  `ApplicationState` (now wired, see below):
   - `DocumentBackend`: `ingest_file(file: UploadFile, *, visibility, topic, expires_at) ->
     schemas.IngestResult` (status `indexed` / `duplicate` / `failed`, `error` = our error code),
     `list_documents() -> list[DocInfo]` (`status`, `created_at` str, `topic`, `expires_at`),
@@ -43,22 +43,26 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   - `ReadinessProbe.check() -> bool` for the document store (health).
   - Bad uploads: **200 path with `status="failed"`** and `error=<code>`; `api/documents.py` turns it
     into the JSON error. Roles are `public` / `member` (singular); visibilities `public` / `members`.
-- **Still to build (nisbenz):** an adapter from `ingest/pipeline.py` to `DocumentBackend`
-  (statuses `created`/`replaced`/`updated` -> `indexed`; `IngestError` -> `failed`; `topic` from the
-  docstore; `expires_at` is **not supported by the pipeline yet**: agree its meaning with eequaled),
-  the readiness probe, and the wiring in `main.py`'s state (eequaled's file: coordinate). The
-  `RetrievalBackend` is built (`retrieval/backend.py::HybridRetriever`, see "Retrieval" below);
-  ownership of search/rerank/gate by nisbenz is still to confirm with eequaled. The wiring PR must
-  also map our `ingest.errors.IngestError` in the app handler (`index_unavailable` -> 503): the
-  app's `errors.IngestError` is a different class (EDGE_CASES).
+- **Wired (eequaled's PR #11, on `dev`):** `main.py` has `RealDocumentBackend` (adapter over the
+  pipeline functions: `created`/`replaced`/`updated` -> `indexed`, `topic` read from the docstore),
+  `PipelineProbe`, `RealLanguageDetector`, and `default_state()` uses them. The lifespan calls
+  `init_pipeline()` and builds `HybridRetriever.from_pipeline(pipeline)`. `errors.py` also handles
+  our `ingest.errors.IngestError` (`index_unavailable` 503, `embedding_error` / `rerank_error` 500).
+  Pipeline errors reach the client as the JSON error, not as `status="failed"`. The fakes stay for
+  tests (`ApplicationState` still takes any backend).
+- **Open seam items:** `expires_at` is accepted by `POST /documents` but the adapter drops it
+  (the pipeline has no expiry; agree the meaning with eequaled or remove the field); `config.py`
+  defaults (`rerank_model` bge, `retrieve_top_k` 30, `gate_threshold` None) disagree with the
+  retrieval defaults (gte, 20, 0.40 in `.env.example`); ownership of search/rerank/gate by nisbenz
+  is still to confirm.
 
 ## Workflow
 
 - **Spec-driven.** Features get `specs/<feature>/requirements.md`, `design.md`, `tasks.md`
   (see `specs/data-preprocessing/`). Read the relevant spec before touching that area; keep it in
   sync with the code. Chunking (`specs/chunking/`) and the ingest pipeline
-  (`specs/ingest-pipeline/`) and retrieval + eval (`specs/retrieval/`) are spec'd and built.
-  Next: the `DocumentBackend` adapter, readiness probe and `main.py` wiring (with eequaled).
+  (`specs/ingest-pipeline/`) and retrieval + eval (`specs/retrieval/`) are spec'd and built, and
+  wired into the API. Version 0.1.0 is the first release; see PROGRESS.md for what is left.
 - **Test-first** per task; tick the task in `tasks.md` when done.
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
   Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
@@ -217,7 +221,7 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   `message` longer than 2000 chars returns 422.
 - Errors are always JSON: `{"error": {"code": "...", "message": "..."}}`.
 
-## Planned layout (files not yet created are marked in README as intended)
+## Layout
 
 ```
 src/mcclub_rag/
@@ -240,15 +244,14 @@ Built: preprocessing (below) and chunking (`ingest/chunk.py`, `ingest/tokens.py`
 `ingest/identity.py`, `ingest/docstore.py`, `retrieval/registry.py`, `retrieval/embed.py`,
 `retrieval/store.py`, `scripts/ingest_folder.py`, `scripts/reindex.py`; see "Ingest pipeline"
 above). eequaled built `api/`, `llm/`, `answer.py`, `cache.py`, `conversation.py`,
-`config.py`, `main.py`, `schemas.py` and the rest of the top level (with fakes for our backends).
+`config.py`, `main.py`, `schemas.py` and the rest of the top level (`rate_limit.py` too).
 Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.py`, `eval/`; see
-"Retrieval" above). Not yet built: the `DocumentBackend` adapter, readiness probe and wiring.
-Don't create planned files unless the task asks.
+"Retrieval" above). The backends are wired in `main.py` (`default_state`).
 
 ## Configuration
 
 Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
-token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD` empty until calibrated,
+token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD=0.40` calibrated for gte,
 `MAX_MESSAGE_CHARS`, `LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
 in `.env.example`. Never commit `.env` or real keys.
 

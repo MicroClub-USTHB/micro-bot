@@ -1,5 +1,27 @@
 # progress
 
+## 2026-10-11 (0.1.0 review)
+
+### Shipped
+
+- AGENTS.md and README.md brought up to date with the wired app (PR #11): the adapter, probe and
+  lifespan are in `main.py`, the pipeline error mapping is fixed (EDGE_CASES updated).
+- Release check on `dev` (0199b4d): lockfile, ruff, 735 unit tests and the 83 model tests pass;
+  CI green. Smoke test on the real models with a real Qdrant (uvicorn + Qdrant container):
+  upload, duplicate, unsupported type, listing, in-corpus question answered with sources,
+  members-only document hidden from public and shown to a member, off-topic question refused.
+
+### Blocked
+
+- Not verified: `docker compose up --build` (port 8000 was taken on the dev machine), a live
+  OpenRouter call (no key), real Arabic scan fixtures, answer quality (generation) on the eval set.
+
+### Next
+
+- Resolve `expires_at`, align `config.py` defaults with the retrieval defaults (gte / 20 / 0.40).
+- Run the compose build and a live LLM chat once, then tag `v0.1.0` on `main`.
+- Grow the corpus and question set; re-measure `INGEST_BM25_AVG_LEN`.
+
 ## 2026-10-11 (chunking eval)
 
 ### Shipped

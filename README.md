@@ -2,33 +2,57 @@
 
 ## Overview
 
-RAG chatbot for the MC Club RAG Chatbot Challenge.
+RAG chatbot for the MC Club RAG Chatbot Challenge. Version **0.1.0**: upload documents (files or
+web pages, Arabic / French / English, scans included), ask questions in any of the three languages,
+get a grounded answer with sources, with member-only documents hidden from public callers. Plain
+Python (FastAPI, Qdrant, ONNX models on CPU), no RAG or agent framework, offline except the
+explicit URL fetch and the one OpenRouter call per answered question.
 
 ## Quickstart
 
 ```bash
-cp .env.example .env
-docker compose up -d --build
+cp .env.example .env   # set OPENROUTER_API_KEY, MEMBER_TOKEN, ADMIN_API_KEY
+docker compose up -d --build   # downloads and sha256-checks the models at build time
 ```
+
+The API listens on port 8000. Upload a document, then ask a question:
+
+```bash
+curl -H "X-Admin-Key: $ADMIN_API_KEY" -F file=@bylaws.pdf -F visibility=public \
+  localhost:8000/api/v1/documents
+curl -H 'content-type: application/json' -d '{"message":"Quelle est la cotisation ?"}' \
+  localhost:8000/api/v1/chat
+```
+
+Development: `uv sync --locked`, `uv run pytest -m "not ocr and not tokenizer and not embedder and
+not reranker"` (no model files needed), `uv run ruff check . && uv run ruff format --check .`.
+
+## Status (0.1.0)
+
+Working end to end on the real models and a real Qdrant: ingestion (PDF, images with OCR, text,
+web), hybrid retrieval with reranking, the refusal gate, role-based visibility, exact-match cache,
+rate limiting and the daily LLM quota. Known limits, tracked in [PROGRESS.md](PROGRESS.md) and
+[EDGE_CASES.md](EDGE_CASES.md): the `expires_at` upload field is accepted but ignored, the gate
+and defaults are tuned on a small corpus (61 chunks), and answer quality with the live LLM has not
+been evaluated yet (retrieval only).
 
 ## Architecture
 
-Layout (built: `ingest/`, `text/`, `retrieval/`, `eval/`, the scripts, and eequaled's API side
-running on fakes until the backends are wired in):
+Layout:
 
 ```
 src/mcclub_rag/
-├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py
+├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py, rate_limit.py
 ├── answer.py, conversation.py, cache.py
 ├── api/        chat.py, documents.py, feedback.py, health.py
-├── ingest/     parse.py, web.py, chunk.py, pipeline.py
-├── text/       normalize.py, lang.py
+├── ingest/     preprocess.py, parse.py, ocr.py, web.py, chunk.py, pipeline.py, docstore.py, ...
+├── text/       normalize.py, lang.py, sentences.py
 ├── retrieval/  registry.py, embed.py, store.py, settings.py, query.py, search.py, rerank.py,
 │               gate.py, backend.py
 └── llm/        client.py, quota.py, prompts.py
 scripts/        download_models.py, ingest_folder.py, reindex.py
 eval/           questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_rerank.py, results/
-tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
+tests/          one test module per source module, plus contract, access and wiring tests
 ```
 
 ### API contract
