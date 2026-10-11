@@ -17,3 +17,5 @@ data/*
 !data/.gitkeep
 qdrant_storage/
 eval/cache/
+*.json
+

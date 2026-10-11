@@ -2,7 +2,35 @@
 
 One compact JSON per run (`python -m eval.run_eval --label <name>`): settings, model fingerprints,
 corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files of `data/parsed`
-(`eval/corpus.json`, 70 chunks), 48 questions (36 answerable). Dev machine, 4 threads.
+(`eval/corpus.json`), 48 questions (36 answerable). Dev machine, 4 threads.
+
+## 2026-10-11: chunk size and context header (clean corpus)
+
+The `data/parsed` files are `scripts/parse.py` dumps (`# Metadata` dict, `# Sections` list, then
+`# Text`). Every run up to 2026-10-10 ingested them whole: 9 of the 70 chunks were metadata or
+section lists, and every document was titled "Metadata", so every context header started with it.
+From here on the eval ingests only the `# Text` part, with the title from `eval/corpus.json`
+(61 chunks at the defaults). Runs before this point are not comparable with runs after it.
+
+Defaults otherwise (top_k 20, RRF k 2, gte). Max = target + 100, capped at 400 (the reranker
+limit). One question is 0.028 of hit@5 and up to 0.028 of MRR, so read differences under ~0.03
+as noise.
+
+| Target / max | Header | Chunks | Fused MRR | Reranked MRR | hit@5 reranked | Cross-lingual reranked | Rerank ms |
+|---|---|---|---|---|---|---|---|
+| **300 / 400** | **on** | 61 | 0.834 | **0.986** | **1.000** | **0.955** | 1158 |
+| 300 / 400 | off | 58 | 0.800 | 0.947 | 1.000 | 0.932 | 1096 |
+| 200 / 300 | on | 86 | 0.835 | 0.944 | 0.972 | 0.909 | 852 |
+| 200 / 300 | off | 76 | 0.837 | 0.919 | 0.972 | 0.955 | 834 |
+| 400 / 400 | on | 54 | **0.847** | 0.958 | 0.972 | 0.955 | 1254 |
+| 400 / 400 | off | 49 | 0.820 | 0.921 | 0.972 | 0.939 | 1260 |
+
+Decisions: keep target 300 / max 400 with the header on. The header wins at every size after
+reranking (+0.039, +0.025, +0.037 MRR), and it is the only reranked difference above the noise.
+200 and 400 each lose a question from the top 5 (en-09). 200 cuts rerank time by a quarter
+(shorter pairs), the only argument for it. Gate: answerable questions start at 0.42 (x-02, an
+Arabic question on the English VP document, stays at 0.22), unanswerable ones top out at 0.64
+(on-topic mcoli-ui questions), so `GATE_THRESHOLD=0.40` stands. No access violations.
 
 ## 2026-10-10: fusion, candidate count, reranker
 

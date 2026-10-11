@@ -4,7 +4,8 @@
     RETRIEVE_TOP_K=20 RETRIEVAL_RRF_K=2 uv run python -m eval.run_eval --label k20-rrf2
     RERANK_MODEL=BAAI/bge-reranker-v2-m3 uv run python -m eval.run_eval --label bge
 
-Ingests the corpus (``eval/corpus.json``, files in ``--corpus``) into an in-memory Qdrant with
+Ingests the corpus (``eval/corpus.json``: files in ``--corpus``, topic, title, visibility;
+only the document text of ``scripts/parse.py`` dumps) into an in-memory Qdrant with
 the real encoders and reranker, runs every question of ``eval/questions.jsonl`` through the
 retriever's stages, prints a summary and writes ``eval/results/<UTC>-<label>.json``. Settings
 come from the environment exactly as in the app (``RETRIEVAL_*``, ``INGEST_*`` and shared names);
@@ -35,6 +36,35 @@ from mcclub_rag.retrieval.settings import RetrievalSettings
 
 REPO = Path(__file__).resolve().parents[1]
 STAGES = ("ms_encode", "ms_search", "ms_rerank", "ms_total")
+_DUMP_TEXT = "\n# Text\n"
+
+
+def document_text(raw: str) -> str:
+    """The document part of a ``scripts/parse.py`` dump (metadata and section list dropped).
+
+    The corpus files are those dumps; ingesting them whole indexed the metadata dict and
+    section list as content and made "Metadata" every document's title. Other files pass as is.
+    """
+    if raw.startswith("# Metadata\n") and _DUMP_TEXT in raw:
+        return raw.split(_DUMP_TEXT, 1)[1].lstrip("\n")
+    return raw
+
+
+async def ingest_corpus(
+    pipeline: IngestPipeline, corpus: Sequence[dict], corpus_dir: Path, work_dir: Path
+) -> dict[str, str]:
+    """Ingest each manifest entry's document text under its topic and title; topic -> doc_id."""
+    work_dir.mkdir(parents=True, exist_ok=True)
+    doc_ids = {}
+    for doc in corpus:
+        path = work_dir / doc["file"]
+        raw = (corpus_dir / doc["file"]).read_text(encoding="utf-8")
+        path.write_text(document_text(raw), encoding="utf-8")
+        result = await pipeline.ingest_file(
+            path, path.name, doc["visibility"], title=doc.get("title"), topic=doc["topic"]
+        )
+        doc_ids[doc["topic"]] = result.doc_id
+    return doc_ids
 
 
 def _ms(start: float) -> float:
@@ -186,13 +216,7 @@ async def _run(args: argparse.Namespace) -> Path:
         )
         await pipeline.start()
         started = time.perf_counter()
-        doc_ids = {}
-        for doc in corpus:
-            path = args.corpus / doc["file"]
-            result = await pipeline.ingest_file(
-                path, path.name, doc["visibility"], topic=doc["topic"]
-            )
-            doc_ids[doc["topic"]] = result.doc_id
+        doc_ids = await ingest_corpus(pipeline, corpus, args.corpus, Path(tmp) / "corpus")
         print(f"ingested {len(corpus)} documents in {time.perf_counter() - started:.1f}s")
         settings = RetrievalSettings(qdrant_collection=ingest.qdrant_collection)
         retriever = HybridRetriever.from_pipeline(pipeline, settings, get_reranker(settings))

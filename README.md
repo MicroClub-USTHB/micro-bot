@@ -73,7 +73,8 @@ tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.p
 
 ## Evaluation
 
-`uv run python -m eval.run_eval --label <name>` ingests `data/parsed` into an in-memory Qdrant
+`uv run python -m eval.run_eval --label <name>` ingests `data/parsed` (the document part of each
+`scripts/parse.py` dump, titled from `eval/corpus.json`) into an in-memory Qdrant
 with the real models and runs the 48 questions of `eval/questions.jsonl` (Arabic, cross-lingual
 both ways, unanswerable, follow-ups, access checks): hit@5 and MRR@10 before and after reranking,
 per tag, a gate-threshold sweep and per-stage latency. Settings are environment overrides; results

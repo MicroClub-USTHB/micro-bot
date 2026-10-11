@@ -268,8 +268,10 @@ in `.env.example`. Never commit `.env` or real keys.
 - Evaluation: compare embedders, chunking variants (target 200/300/400, header on/off) and fusion
   settings on `eval/questions.jsonl` with hit@5 and MRR, incl. an Arabic subset, cross-lingual and
   unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`). The corpus today
-  is the 4 files in `data/parsed` (70 chunks, Arabic-heavy): hit@5 saturates at 1.0, so compare MRR
-  and add documents and questions as the corpus grows.
+  is the 4 files in `data/parsed` (61 chunks, Arabic-heavy): hit@5 saturates at 1.0, so compare MRR
+  and add documents and questions as the corpus grows. Those files are `scripts/parse.py` dumps:
+  the eval ingests only their `# Text` part, titles from `eval/corpus.json`; don't ingest them
+  whole with `ingest_folder.py`. Chunk size measured 2026-10-11: 300/400 + header kept.
 
 ## Style
 

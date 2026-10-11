@@ -37,6 +37,32 @@ async def setup(tmp_path):
     await pipe.close()
 
 
+DUMP = (
+    "# Metadata\n\n```\n{'title': 'x'}\n```\n\n"
+    "# Sections (1)\n\n- page=None\n\n"
+    "# Text\n\n# Real\n\nBody.\n"
+)
+
+
+def test_document_text_unwraps_parse_dumps():
+    assert run_eval.document_text(DUMP) == "# Real\n\nBody.\n"
+    assert run_eval.document_text("# Plain\n\nBody.") == "# Plain\n\nBody."
+
+
+async def test_ingest_corpus_uses_the_text_and_the_manifest_title(tmp_path):
+    corpus_dir, work = tmp_path / "corpus", tmp_path / "work"
+    corpus_dir.mkdir()
+    (corpus_dir / "dump.md").write_text(DUMP, encoding="utf-8")
+    manifest = [{"file": "dump.md", "topic": "real", "visibility": "public", "title": "Real doc"}]
+    pipe = make_pipeline(tmp_path / "pipe")
+    await pipe.start()
+    doc_ids = await run_eval.ingest_corpus(pipe, manifest, corpus_dir, work)
+    [info] = await pipe.list_documents()
+    await pipe.close()
+    assert doc_ids == {"real": info.doc_id} and info.title == "Real doc"
+    assert info.source == "dump.md" and info.chunk_count == 1
+
+
 async def test_rows_have_ranks_scores_and_timings(setup):
     retriever, doc_ids = setup
     rows = await run_eval.evaluate(retriever, QUESTIONS, doc_ids)
