@@ -1,0 +1,60 @@
+# Eval corpus sources (scripts/build_eval_corpus.py): <visibility> <URL or file in data/sources/>.
+# The 4 original documents of eval/corpus.json predate this list.
+members MicroClub Code Of Conduct 2025-2026.pdf
+members President-Application.pdf
+members KENPA SG DOC.pdf
+public https://mcdi.microclub.info/docs/start-here/what-is-mcdi
+public https://mcdi.microclub.info/docs/start-here/quickstart
+public https://mcdi.microclub.info/docs/build/architecture
+public https://mcdi.microclub.info/docs/build/local-setup
+public https://mcdi.microclub.info/docs/build/glossary
+public https://mcdi.microclub.info/docs/build/decisions
+public https://mcdi.microclub.info/docs/build/contributing
+public https://mcdi.microclub.info/docs/integrate/sso
+public https://mcdi.microclub.info/docs/integrate/api-keys
+public https://mcdi.microclub.info/docs/integrate/roles-and-permissions
+public https://mcdi.microclub.info/docs/integrate/inbound-webhooks/overview
+public https://mcdi.microclub.info/docs/integrate/inbound-webhooks/errors-and-limits
+public https://mcoli-ui.microclub.info/docs/introduction
+public https://mcoli-ui.microclub.info/docs/installation
+public https://mcoli-ui.microclub.info/docs/components/mc-button
+public https://mcoli-ui.microclub.info/docs/components/mc-data-table
+public https://mcoli-ui.microclub.info/docs/components/mc-dialog
+public https://finfo.usthb.dz/faculté/presentation
+public https://finfo.usthb.dz/faculté/departments
+public https://finfo.usthb.dz/faculté/organization
+public https://finfo.usthb.dz/faculté/secrétariat-générale
+public https://finfo.usthb.dz/faculté/textes-réglementaires
+public https://finfo.usthb.dz/formation/licence
+public https://finfo.usthb.dz/formation/master
+public https://finfo.usthb.dz/formation/ingéniorat
+public https://finfo.usthb.dz/formation/doctorats
+public https://finfo.usthb.dz/scolarité/inscription
+public https://finfo.usthb.dz/scolarité/authentification-des-documents
+public https://finfo.usthb.dz/stage/-pfe-licence-master
+public https://finfo.usthb.dz/etudes/soutenance
+public https://finfo.usthb.dz/news/annonce-pfe-licence-master-ingeniorat
+public https://finfo.usthb.dz/news/quitus-électronique-2026
+public https://finfo.usthb.dz/bibliotheque/bibliothèque-d’informatique
+public https://finfo.usthb.dz/news/-عرض-منحة-دراسية-Fulbright-
+public https://finfo.usthb.dz/news/أدرس-في-السعودية
+public https://finfo.usthb.dz/news/عرض-منحة-دراسية-من-طرف-الحكومة-المكسيكية
+public https://finfo.usthb.dz/news/منح-دراسية-لفائدة-الطلبة-الجزائريين
+public https://finfo.usthb.dz/news/عرض-منحة-دراسية
+public https://ar.wikipedia.org/wiki/جامعة_هواري_بومدين_للعلوم_والتكنولوجيا
+public https://fr.wikipedia.org/wiki/Université_des_sciences_et_de_la_technologie_Houari-Boumediene
+public https://www.usthb.dz/university/presentation
+public https://www.usthb.dz/university/cultural-and-sports-activities
+public https://www.usthb.dz/formation/understand-the-lmd
+public https://ar.wikipedia.org/wiki/ديسكورد
+public https://ar.wikipedia.org/wiki/باب_الزوار
+public https://ar.wikipedia.org/wiki/علم_الحاسوب
+public https://ar.wikipedia.org/wiki/الروبوتات
+public https://finfo.usthb.dz/news/‬منح-دراسية-بجامعة-نواكشوط-العصرية
+# Scans (scripts/make_eval_scans.py): page images of real PDFs, and printed copies of notices
+# that are not otherwise in the corpus.
+members scans/coc-p3-p8-scan.pdf
+members scans/sg-candidacy-p2-photo.jpg
+public scans/ar-nailekhanim-notice-scan.pdf
+public scans/fr-m2-library-notice-scan.png
+public scans/fr-unesco-prize-notice-scan.jpg

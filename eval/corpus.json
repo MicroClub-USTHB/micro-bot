@@ -22,5 +22,341 @@
     "topic": "bbc-arabic-home",
     "title": "الرئيسية - BBC News عربي",
     "visibility": "public"
+  },
+  {
+    "file": "MicroClub_Code_Of_Conduct_2025-2026.md",
+    "topic": "mc-code-of-conduct-2025-2026",
+    "title": "Micro Club Code of Conduct 2025-2026",
+    "visibility": "members"
+  },
+  {
+    "file": "President-Application.md",
+    "topic": "president-candidacy-2026",
+    "title": "Submission For Micro Club President, Elections 2026",
+    "visibility": "members"
+  },
+  {
+    "file": "KENPA_SG_DOC.md",
+    "topic": "sg-candidacy-2026",
+    "title": "Micro Club General Secretary Candidacy, Elections 2026",
+    "visibility": "members"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_start-here_what-is-mcdi.md",
+    "topic": "mcdi-start-here-what-is-mcdi",
+    "title": "MCDI docs: What is MCDI",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_start-here_quickstart.md",
+    "topic": "mcdi-start-here-quickstart",
+    "title": "MCDI docs: Quickstart",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_build_architecture.md",
+    "topic": "mcdi-build-architecture",
+    "title": "MCDI docs: Architecture",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_build_local-setup.md",
+    "topic": "mcdi-build-local-setup",
+    "title": "MCDI docs: Local setup",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_build_glossary.md",
+    "topic": "mcdi-build-glossary",
+    "title": "MCDI docs: Glossary",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_build_decisions.md",
+    "topic": "mcdi-build-decisions",
+    "title": "MCDI docs: Decisions",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_build_contributing.md",
+    "topic": "mcdi-build-contributing",
+    "title": "MCDI docs: Contributing",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_integrate_sso.md",
+    "topic": "mcdi-integrate-sso",
+    "title": "MCDI docs: Login with MicroClub (SSO)",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_integrate_api-keys.md",
+    "topic": "mcdi-integrate-api-keys",
+    "title": "MCDI docs: API keys and server access",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_integrate_roles-and-permissions.md",
+    "topic": "mcdi-integrate-roles-and-permissions",
+    "title": "MCDI docs: Roles, permissions and inheritance",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_integrate_inbound-webhooks_overview.md",
+    "topic": "mcdi-integrate-inbound-webhooks-overview",
+    "title": "MCDI docs: Inbound webhooks overview",
+    "visibility": "public"
+  },
+  {
+    "file": "mcdi.microclub.info_docs_integrate_inbound-webhooks_errors-and-limits.md",
+    "topic": "mcdi-integrate-inbound-webhooks-errors-and-limits",
+    "title": "MCDI docs: Inbound webhooks errors and limits",
+    "visibility": "public"
+  },
+  {
+    "file": "mcoli-ui.microclub.info_docs_introduction.md",
+    "topic": "mcoli-ui-introduction",
+    "title": "mcoli-ui: Introduction",
+    "visibility": "public"
+  },
+  {
+    "file": "mcoli-ui.microclub.info_docs_installation.md",
+    "topic": "mcoli-ui-installation",
+    "title": "mcoli-ui: Installation",
+    "visibility": "public"
+  },
+  {
+    "file": "mcoli-ui.microclub.info_docs_components_mc-button.md",
+    "topic": "mcoli-ui-mc-button",
+    "title": "mcoli-ui: MC Button component",
+    "visibility": "public"
+  },
+  {
+    "file": "mcoli-ui.microclub.info_docs_components_mc-data-table.md",
+    "topic": "mcoli-ui-mc-data-table",
+    "title": "mcoli-ui: MC Data Table component",
+    "visibility": "public"
+  },
+  {
+    "file": "mcoli-ui.microclub.info_docs_components_mc-dialog.md",
+    "topic": "mcoli-ui-mc-dialog",
+    "title": "mcoli-ui: MC Dialog component",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_faculté_presentation.md",
+    "topic": "finfo-faculte-presentation",
+    "title": "Faculté d'informatique USTHB : présentation",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_faculté_departments.md",
+    "topic": "finfo-faculte-departments",
+    "title": "Faculté d'informatique : départements",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_faculté_organization.md",
+    "topic": "finfo-faculte-organization",
+    "title": "Faculté d'informatique : organisation",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_faculté_secrétariat-générale.md",
+    "topic": "finfo-faculte-secretariat-generale",
+    "title": "Faculté d'informatique : secrétariat général, consultations 2026",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_faculté_textes-réglementaires.md",
+    "topic": "finfo-faculte-textes-reglementaires",
+    "title": "Faculté d'informatique : textes réglementaires",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_formation_licence.md",
+    "topic": "finfo-formation-licence",
+    "title": "Faculté d'informatique : formation licence",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_formation_master.md",
+    "topic": "finfo-formation-master",
+    "title": "Faculté d'informatique : formation master",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_formation_ingéniorat.md",
+    "topic": "finfo-formation-ingeniorat",
+    "title": "Faculté d'informatique : formation ingéniorat",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_formation_doctorats.md",
+    "topic": "finfo-formation-doctorats",
+    "title": "Faculté d'informatique : concours de doctorat",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_scolarité_inscription.md",
+    "topic": "finfo-scolarite-inscription",
+    "title": "Faculté d'informatique : inscription",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_scolarité_authentification-des-documents.md",
+    "topic": "finfo-scolarite-authentification-des-documents",
+    "title": "Faculté d'informatique : authentification des documents",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_stage_-pfe-licence-master.md",
+    "topic": "finfo-stage-pfe-licence-master",
+    "title": "Faculté d'informatique : PFE licence et master",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_etudes_soutenance.md",
+    "topic": "finfo-etudes-soutenance",
+    "title": "Faculté d'informatique : soutenances",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_annonce-pfe-licence-master-ingeniorat.md",
+    "topic": "finfo-news-annonce-pfe-licence-master-ingeniorat",
+    "title": "Annonce : dépôt des fiches PFE licence, master, ingéniorat",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_quitus-électronique-2026.md",
+    "topic": "finfo-news-quitus-electronique-2026",
+    "title": "Annonce : quitus électronique 2026",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_bibliotheque_bibliothèque-d_informatique.md",
+    "topic": "finfo-bibliotheque-bibliotheque-d-informatique",
+    "title": "Bibliothèque de la faculté d'informatique",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_-عرض-منحة-دراسية-Fulbright-.md",
+    "topic": "finfo-news-ar-fulbright",
+    "title": "كلية الإعلام الآلي: عرض منحة دراسية Fulbright",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_أدرس-في-السعودية.md",
+    "topic": "finfo-news-ar-saudi",
+    "title": "كلية الإعلام الآلي: أدرس في السعودية",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_عرض-منحة-دراسية-من-طرف-الحكومة-المكسيكية.md",
+    "topic": "finfo-news-ar-mexico",
+    "title": "كلية الإعلام الآلي: منحة دراسية من الحكومة المكسيكية",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_منح-دراسية-لفائدة-الطلبة-الجزائريين.md",
+    "topic": "finfo-news-ar-algerian-students",
+    "title": "كلية الإعلام الآلي: منح دراسية لفائدة الطلبة الجزائريين",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_عرض-منحة-دراسية.md",
+    "topic": "finfo-news-ar-scholarship",
+    "title": "كلية الإعلام الآلي: عرض منحة دراسية",
+    "visibility": "public"
+  },
+  {
+    "file": "ar.wikipedia.org_wiki_جامعة_هواري_بومدين_للعلوم_والتكنولوجيا.md",
+    "topic": "wiki-ar-usthb",
+    "title": "جامعة هواري بومدين للعلوم والتكنولوجيا",
+    "visibility": "public"
+  },
+  {
+    "file": "fr.wikipedia.org_wiki_Université_des_sciences_et_de_la_technologie_Houari-Boumediene.md",
+    "topic": "wiki-fr-usthb",
+    "title": "Université des sciences et de la technologie Houari-Boumédiène",
+    "visibility": "public"
+  },
+  {
+    "file": "www.usthb.dz_university_presentation.md",
+    "topic": "usthb-presentation",
+    "title": "USTHB: university presentation",
+    "visibility": "public"
+  },
+  {
+    "file": "www.usthb.dz_university_cultural-and-sports-activities.md",
+    "topic": "usthb-cultural-and-sports-activities",
+    "title": "USTHB: cultural and sports activities",
+    "visibility": "public"
+  },
+  {
+    "file": "www.usthb.dz_formation_understand-the-lmd.md",
+    "topic": "usthb-understand-the-lmd",
+    "title": "USTHB: understanding the LMD system",
+    "visibility": "public"
+  },
+  {
+    "file": "ar.wikipedia.org_wiki_ديسكورد.md",
+    "topic": "wiki-ar-discord",
+    "title": "ديسكورد",
+    "visibility": "public"
+  },
+  {
+    "file": "ar.wikipedia.org_wiki_باب_الزوار.md",
+    "topic": "wiki-ar-bab-ezzouar",
+    "title": "باب الزوار",
+    "visibility": "public"
+  },
+  {
+    "file": "ar.wikipedia.org_wiki_علم_الحاسوب.md",
+    "topic": "wiki-ar-computer-science",
+    "title": "علم الحاسوب",
+    "visibility": "public"
+  },
+  {
+    "file": "ar.wikipedia.org_wiki_الروبوتات.md",
+    "topic": "wiki-ar-robotics",
+    "title": "روبوت",
+    "visibility": "public"
+  },
+  {
+    "file": "finfo.usthb.dz_news_منح-دراسية-بجامعة-نواكشوط-العصرية.md",
+    "topic": "finfo-news-ar-nouakchott",
+    "title": "كلية الإعلام الآلي: منح دراسية بجامعة نواكشوط العصرية",
+    "visibility": "public"
+  },
+  {
+    "file": "coc-p3-p8-scan.md",
+    "topic": "scan-coc-p3-p8",
+    "title": "Micro Club Code of Conduct, scanned pages (introduction, recognition and exit)",
+    "visibility": "members"
+  },
+  {
+    "file": "sg-candidacy-p2-photo.md",
+    "topic": "photo-sg-candidacy-p2",
+    "title": "General Secretary candidacy, photographed page (About me, My story with MC)",
+    "visibility": "members"
+  },
+  {
+    "file": "ar-nailekhanim-notice-scan.md",
+    "topic": "scan-ar-nailekhanim",
+    "title": "إعلان مطبوع: منحة Nailekhanim Foundation بجامعة خزر",
+    "visibility": "public"
+  },
+  {
+    "file": "fr-m2-library-notice-scan.md",
+    "topic": "scan-fr-m2-library",
+    "title": "Avis imprimé : dépôt du mémoire de 2e année Master à la bibliothèque",
+    "visibility": "public"
+  },
+  {
+    "file": "fr-unesco-prize-notice-scan.md",
+    "topic": "scan-fr-unesco-prize",
+    "title": "Avis imprimé : Prix UNESCO-Roi Hamad Bin Isa Al-Khalifa 2026",
+    "visibility": "public"
   }
 ]
