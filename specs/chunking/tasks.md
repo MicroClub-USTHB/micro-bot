@@ -205,3 +205,8 @@ the golden/perf tests in task 8 need the real `tokenizer.json`.
   - `PROGRESS.md`: dated entry.
   - `AGENTS.md`: mark `chunk.py` as built and update the "Not yet built" list.
   - _Requirements: all (keeps repo docs in sync per AGENTS.md)_
+
+- [x] 10. Chunk size and header measured (Req 9, 2026-10-11)
+  - `eval.run_eval` over target 200/300/400 (max target + 100, cap 400) x header on/off, on the
+    clean corpus (`document_text` drops the `parse.py` dump wrapper). Defaults kept: 300 / 400,
+    header on. Table in `eval/results/README.md`.

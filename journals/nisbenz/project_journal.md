@@ -9,3 +9,11 @@
 - Eval set of 48 questions with verbatim evidence. The small corpus saturates hit@5, so MRR
   decided the defaults: top_k 20, RRF k 2, gate 0.40 for gte.
 - To raise with eequaled: error class mismatch in the app handler, config defaults, ownership.
+
+2026-10-11
+
+- Took over the ingestion side end to end. Every document was titled "Metadata": the corpus files
+  are parse.py dumps and were ingested with their metadata block. Fixed in the eval loader.
+- Ran the chunk size comparison that was never done: 300 tokens with the heading header is best;
+  the header matters more than the size.
+

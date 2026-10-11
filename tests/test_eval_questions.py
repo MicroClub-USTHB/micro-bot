@@ -6,6 +6,7 @@ from collections import Counter
 import pytest
 
 from eval.metrics import fold
+from eval.run_eval import document_text
 from tests.conftest import REPO
 
 EVAL = REPO / "eval"
@@ -20,7 +21,8 @@ KEYS = {"id", "question", "lang", "role", "answerable", "tags", "doc", "evidence
 
 
 def _text(topic: str) -> str:
-    return (REPO / "data" / "parsed" / DOCS[topic]["file"]).read_text(encoding="utf-8")
+    raw = (REPO / "data" / "parsed" / DOCS[topic]["file"]).read_text(encoding="utf-8")
+    return document_text(raw)  # what the eval ingests
 
 
 def test_corpus_manifest_points_at_existing_files():
@@ -28,6 +30,7 @@ def test_corpus_manifest_points_at_existing_files():
     for doc in CORPUS:
         assert (REPO / "data" / "parsed" / doc["file"]).is_file()
         assert doc["visibility"] in ("public", "members")
+        assert doc["title"].strip()  # the dumps carry no usable title of their own
 
 
 @pytest.mark.parametrize("row", QUESTIONS, ids=[r["id"] for r in QUESTIONS])

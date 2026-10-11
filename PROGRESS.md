@@ -1,5 +1,21 @@
 # progress
 
+## 2026-10-11 (chunking eval)
+
+### Shipped
+
+- Found that the eval corpus (`data/parsed`) is `scripts/parse.py` dumps and was ingested whole
+  (metadata dict and section list indexed, every title "Metadata"). The eval now ingests only the
+  document text with titles from `eval/corpus.json`: 61 chunks instead of 70.
+- Chunk size x header comparison (Req 9 of the chunking spec): 300 / 400 with the header kept,
+  reranked MRR 0.986; header off costs 0.025 to 0.039 MRR at every size.
+
+### Next
+
+- Re-measure `INGEST_BM25_AVG_LEN` on the clean chunks (110 was measured on the dumps).
+- Re-ingest the local dev Qdrant from document text with a persistent `DATA_DIR`.
+- Neighbour / section expansion for the LLM context, judged on answers (not MRR).
+
 ## 2026-10-10 (retrieval)
 
 ### Shipped
