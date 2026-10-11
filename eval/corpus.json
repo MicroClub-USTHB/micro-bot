@@ -2,21 +2,25 @@
   {
     "file": "mcoli-ui.microclub.info_docs_theming.md",
     "topic": "mcoli-ui-theming",
+    "title": "Theming",
     "visibility": "public"
   },
   {
     "file": "Micro_Club_VP_Candidacy_Bouras_Mohammed_Reda-1.md",
     "topic": "vp-candidacy",
+    "title": "Candidacy for Vice President | Micro Club Elections 2026/2027",
     "visibility": "members"
   },
   {
     "file": "www.aljazeera.net_blogs_2026_10_8_D8_BA_D8_B2_D8_A9-_D8_A8_D8_B9_D8_AF-7-_D8_A3_D9_83_D8_AA_D9_88_D8_A8_D8_B1-_D9_85_D8_A7-_D9_84_D9_85-_D8_AA_D8_B3_D8_AA_D8_B7_D8_B9-_D8_A5_D8_B3_D8_B1_D8_A7_D8_A6_D9_8A_D9_84.md",
     "topic": "aljazeera-gaza-7-october",
+    "title": "غزة بعد 7 أكتوبر .. ما لم تستطع إسرائيل محوه",
     "visibility": "public"
   },
   {
     "file": "www.bbc.com_arabic.md",
     "topic": "bbc-arabic-home",
+    "title": "الرئيسية - BBC News عربي",
     "visibility": "public"
   }
 ]

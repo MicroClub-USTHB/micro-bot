@@ -18,19 +18,30 @@ QUESTIONS = [
 ]
 DOCS = {d["topic"]: d for d in CORPUS}
 KEYS = {"id", "question", "lang", "role", "answerable", "tags", "doc", "evidence", "history"}
+# data/ is gitignored (members-only and third-party documents), so CI has no corpus files.
+PARSED = REPO / "data" / "parsed"
+needs_corpus = pytest.mark.skipif(
+    not all((PARSED / d["file"]).is_file() for d in CORPUS),
+    reason="eval corpus missing: put the data/parsed dumps listed in eval/corpus.json",
+)
 
 
 def _text(topic: str) -> str:
-    raw = (REPO / "data" / "parsed" / DOCS[topic]["file"]).read_text(encoding="utf-8")
+    raw = (PARSED / DOCS[topic]["file"]).read_text(encoding="utf-8")
     return document_text(raw)  # what the eval ingests
 
 
-def test_corpus_manifest_points_at_existing_files():
+def test_corpus_manifest_is_well_formed():
     assert len(DOCS) == len(CORPUS)
     for doc in CORPUS:
-        assert (REPO / "data" / "parsed" / doc["file"]).is_file()
         assert doc["visibility"] in ("public", "members")
         assert doc["title"].strip()  # the dumps carry no usable title of their own
+
+
+@needs_corpus
+def test_corpus_manifest_points_at_existing_files():
+    for doc in CORPUS:
+        assert (PARSED / doc["file"]).is_file()
 
 
 @pytest.mark.parametrize("row", QUESTIONS, ids=[r["id"] for r in QUESTIONS])
@@ -73,6 +84,7 @@ def test_cross_lingual_goes_both_ways():
     assert ("ar", "en") in langs and ("en", "ar") in langs and ("fr", "ar") in langs
 
 
+@needs_corpus
 @pytest.mark.parametrize("row", [r for r in QUESTIONS if r["answerable"]], ids=lambda r: r["id"])
 def test_evidence_is_verbatim_in_the_document(row):
     text = fold(_text(row["doc"]))
