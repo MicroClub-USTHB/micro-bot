@@ -31,8 +31,9 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
 
 @pytest.fixture(autouse=True)
 def _reset_structlog():
-    # configure_logging() caches loggers on first use; a logger cached under that config
-    # bypasses structlog.testing.capture_logs() in later tests, so restore the defaults.
+    # configure_logging() rewrites the global structlog configuration (JSON processors, stdlib
+    # factory, level filter); restore the defaults after every test so one test's logging setup
+    # cannot leak into the next.
     yield
     structlog.reset_defaults()
 

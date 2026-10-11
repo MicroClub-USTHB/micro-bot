@@ -7,6 +7,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from mcclub_rag.ingest import errors as pipeline_errors
+
 logger = logging.getLogger(__name__)
 
 _INGEST_STATUS_CODES = {
@@ -18,6 +20,9 @@ _INGEST_STATUS_CODES = {
     "parse_error": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "parse_timeout": status.HTTP_422_UNPROCESSABLE_CONTENT,
     "empty_document": status.HTTP_422_UNPROCESSABLE_CONTENT,
+    "index_unavailable": status.HTTP_503_SERVICE_UNAVAILABLE,
+    "embedding_error": status.HTTP_500_INTERNAL_SERVER_ERROR,
+    "rerank_error": status.HTTP_500_INTERNAL_SERVER_ERROR,
 }
 
 
@@ -72,6 +77,13 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(IngestError)
     async def ingest_error_handler(_: Request, exc: IngestError) -> JSONResponse:
+        status_code = _INGEST_STATUS_CODES.get(exc.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+        return error_response(status_code, exc.code, exc.message)
+
+    # The pipeline raises its own IngestError class (EDGE_CASES "Retrieval errors reach the app
+    # as plain 500s"); retrieval failures surface through this handler, not through the adapter.
+    @app.exception_handler(pipeline_errors.IngestError)
+    async def pipeline_error_handler(_: Request, exc: pipeline_errors.IngestError) -> JSONResponse:
         status_code = _INGEST_STATUS_CODES.get(exc.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
         return error_response(status_code, exc.code, exc.message)
 

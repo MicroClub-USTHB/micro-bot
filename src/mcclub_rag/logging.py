@@ -25,7 +25,11 @@ def configure_logging(log_level: str = "INFO") -> None:
         wrapper_class=structlog.make_filtering_bound_logger(
             getattr(logging, log_level.upper(), logging.INFO)
         ),
-        cache_logger_on_first_use=True,
+        # Deliberately False: a cached bound logger keeps the processor chain it first bound
+        # with (structlog monkey-patches its own lazy proxy), so structlog.testing.capture_logs()
+        # and any later reconfigure would never see module-level loggers again. Binding per call
+        # is cheap at this app's log volume.
+        cache_logger_on_first_use=False,
     )
 
 

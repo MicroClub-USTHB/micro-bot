@@ -203,6 +203,9 @@ def test_duplicate_upload_is_a_200(client: TestClient) -> None:
         ("parse_error", 422),
         ("parse_timeout", 422),
         ("empty_document", 422),
+        ("index_unavailable", 503),
+        ("embedding_error", 500),
+        ("rerank_error", 500),
     ],
 )
 def test_typed_ingest_errors_bubble_to_global_json_mapping(

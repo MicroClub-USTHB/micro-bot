@@ -1,4 +1,5 @@
-from collections.abc import AsyncIterator
+import tempfile
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -17,10 +18,14 @@ from mcclub_rag.cache import ExactMatchCache
 from mcclub_rag.config import Settings, get_settings
 from mcclub_rag.conversation import ConversationStore
 from mcclub_rag.errors import IngestError, install_error_handlers
+from mcclub_rag.ingest import errors as ingest_errors
+from mcclub_rag.ingest import pipeline as ingest_pipeline
+from mcclub_rag.ingest.models import DocumentInfo as IngestDocumentInfo
 from mcclub_rag.llm.client import GenerationResult, GenerationUsage
 from mcclub_rag.llm.quota import CircuitBreaker, DailyQuota
 from mcclub_rag.logging import RequestLoggingMiddleware
 from mcclub_rag.rate_limit import SlidingWindowRateLimiter
+from mcclub_rag.retrieval.backend import HybridRetriever
 from mcclub_rag.schemas import (
     ChatResponse,
     DocInfo,
@@ -29,6 +34,7 @@ from mcclub_rag.schemas import (
     Role,
     Visibility,
 )
+from mcclub_rag.text.lang import detect_language
 
 
 class DocumentBackend(Protocol):
@@ -159,6 +165,110 @@ class FakeGenerationService:
         return self.result
 
 
+_INGEST_STATUS_MAP = {
+    "created": "indexed",
+    "replaced": "indexed",
+    "updated": "indexed",
+    "duplicate": "duplicate",
+}
+
+
+class RealDocumentBackend:
+    """Thin adapter over nisbenz's ingest pipeline module functions."""
+
+    async def ingest_file(
+        self,
+        file: UploadFile,
+        *,
+        visibility: Visibility,
+        topic: str | None,
+        expires_at: str | None,
+    ) -> IngestResult:
+        data = await file.read()
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(data)
+            tmp_path = tmp.name
+        try:
+            result = await _run_ingest(
+                ingest_pipeline.ingest_file,
+                tmp_path,
+                file.filename or "document",
+                visibility,
+                topic=topic,
+            )
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+        return _map_ingest_result(result)
+
+    async def list_documents(self) -> list[DocInfo]:
+        docs = await _run_ingest(ingest_pipeline.list_documents)
+        # Topics live only in the docstore JSON; the pipeline's markers don't carry them.
+        pipeline = await ingest_pipeline.get_pipeline()
+        stored, _ = await pipeline.docstore.load_all()
+        topics = {item.doc_id: item.topic for item in stored}
+        return [_map_doc_info(d, topics.get(d.doc_id)) for d in docs]
+
+    async def delete_document(self, doc_id: str) -> bool:
+        return await _run_ingest(ingest_pipeline.delete_document, doc_id)
+
+    async def corpus_version(self) -> str:
+        return await _run_ingest(ingest_pipeline.corpus_version)
+
+
+class RealLanguageDetector:
+    def detect(self, text: str) -> str:
+        return detect_language(text)
+
+
+@dataclass
+class PipelineProbe:
+    async def check(self) -> bool:
+        try:
+            await ingest_pipeline.corpus_version()
+            return True
+        except Exception:
+            return False
+
+
+@dataclass
+class ProviderProbe:
+    settings: Settings
+
+    async def check(self) -> bool:
+        return bool(self.settings.openrouter_api_key)
+
+
+def _map_ingest_result(result: object) -> IngestResult:
+    status = _INGEST_STATUS_MAP.get(getattr(result, "status", "created"), "indexed")
+    return IngestResult(
+        doc_id=result.doc_id,
+        title=result.title,
+        status=status,
+        chunk_count=result.chunk_count,
+    )
+
+
+def _map_doc_info(doc: IngestDocumentInfo, topic: str | None = None) -> DocInfo:
+    return DocInfo(
+        doc_id=doc.doc_id,
+        title=doc.title,
+        visibility=doc.visibility,
+        status="indexed",
+        chunk_count=doc.chunk_count,
+        created_at=doc.ingested_at.isoformat(),
+        topic=topic,
+    )
+
+
+async def _run_ingest(
+    func: Callable[..., Awaitable[object]], *args: object, **kwargs: object
+) -> object:
+    try:
+        return await func(*args, **kwargs)
+    except ingest_errors.IngestError as exc:
+        raise IngestError(exc.code, exc.message) from exc
+
+
 @dataclass
 class ApplicationState:
     settings: Settings
@@ -192,12 +302,13 @@ class ApplicationState:
 
 
 def default_state(settings: Settings) -> ApplicationState:
-    """Build the temporary local-app fallback until nisbenz injects its backend."""
+    """Production state wired to nisbenz's real ingestion and retrieval backends."""
     return ApplicationState(
         settings=settings,
-        documents=FakeDocumentBackend(),
-        document_probe=FakeHealthProbe(),
-        provider_probe=FakeHealthProbe(),
+        documents=RealDocumentBackend(),
+        document_probe=PipelineProbe(),
+        provider_probe=ProviderProbe(settings),
+        language_detector=RealLanguageDetector(),
     )
 
 
@@ -210,7 +321,14 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         app_state.settings.data_dir.mkdir(parents=True, exist_ok=True)
-        yield
+        if isinstance(app_state.documents, RealDocumentBackend):
+            pipeline = await ingest_pipeline.init_pipeline()
+            app_state.retrieval = HybridRetriever.from_pipeline(pipeline)
+        try:
+            yield
+        finally:
+            if isinstance(app_state.documents, RealDocumentBackend):
+                await ingest_pipeline.close_pipeline()
 
     app = FastAPI(lifespan=lifespan)
     app.state.mcclub_state = app_state
