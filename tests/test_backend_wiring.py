@@ -171,12 +171,6 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
     monkeypatch.setattr(
         "mcclub_rag.retrieval.backend.get_reranker", lambda settings: FakeReranker()
     )
-    # RequestLoggingMiddleware calls configure_logging(), whose cache_logger_on_first_use=True
-    # pins the module loggers in chunk.py / pipeline.py / retrieval/backend.py to the JSON
-    # config for the rest of the process (structlog.reset_defaults() cannot unbind them), which
-    # would blind the capture_logs() tests of later files. The middleware's logging setup has
-    # its own tests; here we only exercise the backend wiring.
-    monkeypatch.setattr("mcclub_rag.logging.configure_logging", lambda log_level="INFO": None)
     await ingest_pipeline.init_pipeline(pipeline=make_pipeline(tmp_path))
     try:
         settings = Settings(data_dir=tmp_path, openrouter_api_key="or-key")
