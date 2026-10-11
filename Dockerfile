@@ -22,8 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Embedder + reranker ONNX weights and ara/fra/eng traineddata go here
 RUN mkdir -p /app/models/tessdata
-# TODO: enable once scripts/download_models.py exists
-# RUN /app/.venv/bin/python scripts/download_models.py
+RUN /app/.venv/bin/python scripts/download_models.py
 
 
 FROM python:3.12-slim
