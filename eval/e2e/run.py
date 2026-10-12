@@ -3,6 +3,7 @@
     uv run python -m eval.e2e.run --suite all --label baseline
     uv run python -m eval.e2e.run --suite quality --layer chat --mode record --max-llm-calls 10
     uv run python -m eval.e2e.run --suite quality --mode replay
+    uv run python -m eval.e2e.run --suite quality --llm ollama --max-llm-calls 400   # local
     uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
 
 In-process (default): the real models, an in-memory Qdrant, the real corpus (``data/parsed``,
@@ -123,9 +124,11 @@ async def run(args) -> int:
         await driver.close()
         if pipeline is not None:
             await pipeline.close()
-    return write(
-        args, results, by_id, ctx, info | {"llm_calls_made": getattr(generator, "calls", 0)}, extra
-    )
+    info = info | {"llm_calls_made": getattr(generator, "calls", 0)}
+    rewrites = getattr(getattr(getattr(generator, "inner", None), "client", None), "rewrites", None)
+    if rewrites is not None:  # Ollama stand-in: answers whose citations were rewritten
+        info["citation_rewrites"] = rewrites
+    return write(args, results, by_id, ctx, info, extra)
 
 
 def write(args, results, by_id, ctx, info, extra) -> int:
@@ -176,6 +179,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--mode", choices=["live", "record", "replay"], default="record")
     parser.add_argument("--max-llm-calls", type=int, default=10)
+    parser.add_argument(
+        "--llm",
+        choices=["openrouter", "ollama"],
+        default="openrouter",
+        help="ollama: a local test model (no OpenRouter quota), not the production provider",
+    )
+    parser.add_argument("--ollama-model", default="gemma4:e4b")
     parser.add_argument("--max-judge-calls", type=int, default=20)
     parser.add_argument("--repeat", type=int, default=2)
     parser.add_argument("--concurrency", type=int, default=4)

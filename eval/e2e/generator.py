@@ -88,6 +88,70 @@ class ThreadedClient:
         return await asyncio.to_thread(self.client.generate, system, user)
 
 
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
+
+class OllamaClient:
+    """A local model through Ollama's OpenAI-compatible API: a test stand-in, not the provider.
+
+    Same contract as ``OpenRouterClient.generate`` (one call, failures as results, same parsing
+    and error kinds), so the answer layer sees what it would see from OpenRouter. Temperature 0
+    with a fixed seed keeps reruns comparable. gemma4:e4b often cites ``[doc_id: X]`` or the
+    passage label ``[S1]``, which ``answer.build`` rejects (ungrounded); ``normalize_citations``
+    rewrites both to ``[X]`` and ``rewrites`` counts the answers it changed.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        base_url: str = OLLAMA_BASE_URL,
+        timeout: float = 110,  # under the in-process driver's 120 s request timeout
+        client: object | None = None,
+    ) -> None:
+        self.model = model
+        self.timeout = timeout
+        if client is None:
+            from openai import OpenAI
+
+            client = OpenAI(api_key="ollama", base_url=base_url, timeout=timeout, max_retries=0)
+        self._client = client
+        self.rewrites = 0
+
+    def generate(self, system: str, user: str) -> GenerationResult:
+        from mcclub_rag.llm.client import OpenRouterClient
+
+        try:
+            completion = self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=0,
+                seed=0,
+                timeout=self.timeout,
+            )
+        except Exception as exc:  # same as the real client: failures are results
+            return GenerationResult(None, GenerationUsage(1), OpenRouterClient._error_kind(exc))
+        result = OpenRouterClient._parse_completion(completion, calls=1)
+        if result.text is None:
+            return result
+        text = normalize_citations(result.text, system)
+        if text != result.text:
+            self.rewrites += 1
+        return GenerationResult(text, result.usage, result.error)
+
+
+_PASSAGE = re.compile(r"^\[S(\d+)\]\n```untrusted-source\ndoc_id: (\S+)$", re.MULTILINE)
+_DOC_ID_FORM = re.compile(r"\[doc_id:\s*([^\]\s]+)\s*\]")
+_LABEL_FORM = re.compile(r"\[S(\d+)\]")
+
+
+def normalize_citations(text: str, system: str) -> str:
+    """``[doc_id: X]`` and ``[S<n>]`` (labels from the prompt's passages) -> ``[X]``."""
+    ids = dict(_PASSAGE.findall(system))
+    text = _DOC_ID_FORM.sub(r"[\1]", text)
+    return _LABEL_FORM.sub(lambda m: f"[{ids[m.group(1)]}]" if m.group(1) in ids else m[0], text)
+
+
 FAULTS = {
     "timeout": "timeout",
     "rate_limited": "rate_limited",

@@ -41,6 +41,36 @@ rate 36.9% -> 33.8%. Fixed `x-01`, `x-17`, `x-36`, `adv-06`; broke `x-11`, `cand
 shrinks to noise there. Verdict: bge-m3 is a modest, consistent gain, not a fix for cross-lingual
 retrieval; the first stage (same-language distractors) and gte on darija are the larger levers.
 
+## 2026-10-12: are the proposed retrieval changes worth it?
+
+One change at a time on granite (86 questions), then bge-m3 with the best one. Translated titles:
+each document title translated to ar/fr/en by gemma4:e4b (Ollama) and joined into the title, so
+every chunk header carries all three (`INGEST_CHUNK_MAX_HEADER_TOKENS=96`; the original titles
+are under 48 tokens, so the baseline chunks do not change); a proxy for keywords at ingest.
+
+| Run | hit@5 / MRR (74) | Cross-lingual hit@5 / MRR | Candidates (all) | Rerank p95 ms | Gate suggestion |
+|---|---|---|---|---|---|
+| granite (default) | 0.838 / 0.762 | 0.755 / 0.651 | 85% | 1921 | 0.42 |
+| prefetch 80, top_k 30 | 0.851 / 0.785 | 0.776 / 0.686 | 89% | 2874 | 0.42 |
+| dense weight 2.0 | 0.851 / 0.769 | 0.776 / 0.661 | 86% | 1942 | 0.41 |
+| translated titles | 0.824 / 0.769 | 0.755 / 0.685 | 85% | 1889 | 0.41 |
+| bge reranker | 0.865 / **0.819** | 0.796 / **0.736** | 86% | 4411 | **0.0** |
+| **bge-m3** | **0.878** / 0.789 | **0.816** / 0.691 | **91%** | 1940 | 0.42 |
+| bge-m3, prefetch 80, top_k 30 | 0.865 / 0.786 | 0.796 / 0.687 | 91% | ~2900 | 0.42 |
+
+Dense weight: noise. Translated titles: darija->en 20% -> 40% and en->fr 75% -> 100%, but
+ar->en 73% -> 55% and en->en 100% -> 91%: not worth an LLM call per document. More candidates
+help granite a little for +50% rerank time and add nothing to bge-m3 (91% either way). The bge
+reranker ranks best (darija->en 60%) but scores darija and arabizi answers 0.03-0.16 and some
+unanswerable questions 0.95: no gate threshold works, and it is 2.3x slower.
+
+Answer level (`e2e/*-llm-granite`, `e2e/*-llm-bge-m3`: `--suite quality --llm ollama`,
+gemma4:e4b, 307 cases): a tie. 184 of 237 answerable questions answered by both, 10 gained and
+10 lost by bge-m3, chat pass 112 vs 109. What limits answers now is the LLM, not retrieval:
+31-35 refusals with the evidence retrieved, 11-12 retrieval misses, 5-6 gate refusals (see
+`e2e/ISSUES.md` I22-I24). Verdict: keep granite as the default for now; keep bge-m3 as the A/B
+entry and re-run it with the production LLM once I1 and I22 are fixed.
+
 ## 2026-10-11: chunk size and context header (clean corpus)
 
 The `data/parsed` files are `scripts/parse.py` dumps (`# Metadata` dict, `# Sections` list, then

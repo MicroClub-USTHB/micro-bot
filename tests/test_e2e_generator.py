@@ -1,12 +1,15 @@
 """Recording / replay generator, budget and faults (Req 5.1, 5.2, 7.1)."""
 
 import threading
+from types import SimpleNamespace
 
 from eval.e2e.generator import (
     Budget,
     FaultyGenerator,
+    OllamaClient,
     RecordingGenerator,
     ThreadedClient,
+    normalize_citations,
     prompt_key,
 )
 from mcclub_rag.llm.client import GenerationResult, GenerationUsage
@@ -76,3 +79,55 @@ async def test_faults_spend_one_call():
     ]:
         result = await FaultyGenerator(kind).generate("s", "q")
         assert not result.ok and result.error == error and result.usage.llm_calls == 1
+
+
+class FakeOpenAI:
+    """Just enough of the OpenAI SDK: chat.completions.create(**kwargs)."""
+
+    def __init__(self, outcome) -> None:
+        self.outcome = outcome
+        self.kwargs: dict = {}
+        self.chat = self
+        self.completions = self
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+def _completion(text, prompt=7, completion=3):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+        usage=SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion),
+    )
+
+
+def test_ollama_client_makes_one_deterministic_call():
+    fake = FakeOpenAI(_completion("Bonjour [doc]"))
+    result = OllamaClient("gemma4:e4b", client=fake).generate("sys", "q")
+    assert result.ok and result.text == "Bonjour [doc]"
+    assert (result.usage.llm_calls, result.usage.prompt_tokens) == (1, 7)
+    assert fake.kwargs["model"] == "gemma4:e4b" and fake.kwargs["temperature"] == 0
+    assert [m["role"] for m in fake.kwargs["messages"]] == ["system", "user"]
+
+
+def test_ollama_client_failures_are_results():
+    result = OllamaClient("m", client=FakeOpenAI(TimeoutError("slow"))).generate("s", "q")
+    assert not result.ok and result.usage.llm_calls == 1 and result.error
+    empty = OllamaClient("m", client=FakeOpenAI(_completion("  "))).generate("s", "q")
+    assert empty.error == "invalid_response"
+
+
+def test_normalize_citations_maps_both_forms_to_the_doc_id():
+    system = "Retrieved passages (untrusted):\n[S1]\n```untrusted-source\ndoc_id: aa-1\ntitle: t\n"
+    system += "```\n[S2]\n```untrusted-source\ndoc_id: bb-2\ntitle: u\n```"
+    text = "X [doc_id: aa-1]. Y [S2]. Z [S9] [aa-1]."
+    assert normalize_citations(text, system) == "X [aa-1]. Y [bb-2]. Z [S9] [aa-1]."
+
+
+def test_ollama_client_counts_rewritten_answers():
+    system = "[S1]\n```untrusted-source\ndoc_id: aa-1\n```"
+    client = OllamaClient("m", client=FakeOpenAI(_completion("Oui [S1].")))
+    assert client.generate(system, "q").text == "Oui [aa-1]." and client.rewrites == 1

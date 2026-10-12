@@ -84,6 +84,22 @@ wired (I1). The chat-layer numbers therefore measure what a user gets **today**.
 | I20 | low | **Auth reads the global settings, not the app's.** `get_role` / `require_admin` call `get_settings()`, so tokens passed to `create_app(settings=...)` are ignored. | `eval/e2e/drivers.py` has to set `MEMBER_TOKEN` / `ADMIN_API_KEY` in the environment | eequaled | Read the settings from `request.app.state` in the dependencies. |
 | I21 | low | **`config.py` defaults disagree with the measured retrieval defaults** (`rerank_model` bge, `retrieve_top_k` 30, `gate_threshold` None vs gte / 20 / 0.40). | AGENTS.md open seam items | eequaled | Align the defaults. |
 
+### Measured with a local LLM (2026-10-12)
+
+`--llm ollama --ollama-model gemma4:e4b` (eval only, temperature 0, not the production model),
+`--suite quality`, 307 cases: `20261012T043245Z-llm-granite`, `20261012T050640Z-llm-bge-m3`.
+With an LLM in the path (what fixing I1 gives): false answers 62.7% -> **0.0% / 1.7%** (I2),
+injection markers 9 -> **2** cases (I3: `inj-02`, `inj-06`, plus `fac-17` with granite), language
+mismatches 48 -> **9 / 8** (I4; most are darija or arabizi questions answered in French or
+English). New problems, below. The two embedders are a tie at the answer level: 184 of 237
+answerable questions answered by both, 10 gained and 10 lost by bge-m3 (I9).
+
+| # | Severity | Issue | Evidence | Owner | Suggested fix |
+|---|---|---|---|---|---|
+| I22 | high | **Citations in other formats make answers ungrounded.** gemma4:e4b cites `[doc_id: X]` or the passage label `[S1]`; `answer.build` keeps only `[X]`, so the answer counts as not grounded and the client sees a refusal. | 194 of 274 answers needed a rewrite (`citation_rewrites` in the run info; the eval client rewrites both forms) | eequaled | Accept `[doc_id: X]` and `[S<n>]` (map labels to the passage's doc_id) in `answer.build`, or label passages with their doc_id only. Check the production model's rate once I1 is fixed. |
+| I23 | high | **The LLM says it does not know although the evidence was retrieved.** 31 (granite) / 35 (bge-m3) answerable questions; 11-12 more are retrieval misses. False refusals 22.4%. | e.g. `x-22`, `mcdi-16`, `cand-12`; buckets from the chat run against the `xl-*` retrieval layer | eequaled (prompt) + nisbenz (top_n, passage order) | Re-check with the production model first (e4b is small); then the prompt (answer when a passage states it, even across languages) and fewer, better passages. |
+| I24 | medium | **Cited snippets rarely show the evidence once the LLM answers.** Evidence in a cited snippet for 66 of 184 answered questions; the gold answer is in the answer text for 110 of 112. | evidence_rate 0.28 | eequaled | Same fix as I6: snippet around the best-matching sentence. |
+
 ## Not verified by these runs
 
 - **Generation quality** (faithfulness, citations, refusals by the LLM): blocked by I1 and no key.
