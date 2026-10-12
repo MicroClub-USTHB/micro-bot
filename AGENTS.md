@@ -54,7 +54,9 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   (the pipeline has no expiry; agree the meaning with eequaled or remove the field); `config.py`
   defaults (`rerank_model` bge, `retrieve_top_k` 30, `gate_threshold` None) disagree with the
   retrieval defaults (gte, 20, 0.40 in `.env.example`); ownership of search/rerank/gate by nisbenz
-  is still to confirm.
+  is still to confirm. Ready for eequaled to wire (eval-fixes, `specs/eval-fixes/` tasks 12–14):
+  `text/snippet.best_snippet(text, query)` for `Source.snippet` (I6/I24), the handover designs
+  for I1 (LLM), the fallback (I2–I4), refusal language (I5) and citations (I22).
 
 ## Workflow
 
@@ -116,6 +118,8 @@ uv run python scripts/download_models.py --only reranker --dest models/reranker 
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
+uv run python -m eval.bench_load --workers 1 2 --rerank-top-k 20 15 10   # concurrent users
+uv run python -m eval.calibrate_gate eval/results/e2e/<run>.json --split dev   # offline gate sweep
 uv run python -m eval.e2e.run --suite all --label <name>   # e2e eval, in-process, real models
 uv run python -m eval.e2e.run --suite quality --mode record --max-llm-calls 10   # spends LLM quota
 uv run python -m eval.e2e.compare <a.json> <b.json>   # metric deltas, regressions
@@ -152,6 +156,10 @@ Modules in `src/mcclub_rag/`: `ingest/{models,errors,settings,sniff,ocr,parse,se
 - **Stored text stays faithful** (NFC, controls/zero-width removed, tatweel removed, ZWNJ/ZWJ kept).
   `fold_for_search()` is for the BM25 side only and is never stored.
 - **Hashing:** files = SHA-256 of raw bytes; web HTML = SHA-256 of normalized extracted text.
+- **Web:** `prepare_html` drops share bars (sharer URLs, `mailto:?`, `share` class) and the empty
+  check ignores heading lines, so a title + share bar page is `empty_document`.
+- **Title:** explicit > metadata unless generic (= filename stem, producer default, or a piece of
+  the page-1 title, e.g. "MICRO CLUB") > page-1 headings joined > first heading > stem.
 - **Logging:** structlog, one `document_preprocessed` / `document_rejected` event; never log
   document text; strip query string and fragment from URLs.
 - **Concurrency:** module semaphore `INGEST_MAX_CONCURRENCY` (default 1); CPU-bound pure-Python
@@ -174,6 +182,9 @@ bite:
 - **Store** (`retrieval/store.py`): physical collection `<QDRANT_COLLECTION>__<signature[:12]>`
   behind the `QDRANT_COLLECTION` alias. Always read and write through the alias; a reindex builds a
   new collection and swaps the alias atomically.
+- **Payload schema 2** (`SCHEMA_VERSION`, part of the index signature: bump = reindex):
+  `instruction_like` per chunk from `ingest/injection.looks_like_instruction` (text addressing an AI
+  assistant, en/fr/ar; 0 hits on the real corpus). `language` has a keyword index.
 - **Marker point:** each version's `index == 0` point is written last. Listings and
   `corpus_version()` read markers only, so they see complete documents only.
 - **Identity:** point id = `uuid5(doc_id, f"{content_hash}:{index}")`. Default topics over 200
@@ -200,13 +211,25 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   only (`only_second`); a query too long for that falls back to `longest_first`.
 - Reranker input = `passage(title, heading_path, text)`, the same header as the embedded text
   (text alone when `INGEST_CHUNK_CONTEXT_HEADER=false`). Scores are `sigmoid(logit)`, 0..1, so
-  `GATE_THRESHOLD` means the same for any model. One rerank at a time per process (lock).
+  `GATE_THRESHOLD` means the same for any model. One rerank at a time **per session**: a pool of
+  `RETRIEVAL_RERANK_WORKERS` sessions (threads split between them) serves concurrent requests;
+  `RETRIEVAL_RERANK_TOP_K` reranks only the first k fused candidates.
 - **Gate:** `top_score < GATE_THRESHOLD` -> `refuse` (chunks still returned); unset = open gate,
   logged once (`retrieval_gate_open`). No fallback to fused order if the reranker fails
-  (`rerank_error`).
+  (`rerank_error`). It is a **relevance floor**: answerable and in-domain unknown scores overlap,
+  so refusing unknowns is the LLM's job. Calibrate with `python -m eval.calibrate_gate <e2e run>`
+  (offline, from a run with the robustness variants). The gate sees every reranked score, before
+  the `RETRIEVAL_INSTRUCTION_PENALTY` (ranking only, for `instruction_like` chunks; 1.0 = off).
 - **Dedupe** by `(doc_id, index)`, newest `ingested_at`, before reranking.
-- **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history is searched
-  as previous `user_message` + message. No LLM rewrite.
+- **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history **and a
+  follow-up cue** (`has_followup_cue`: leading and/et/و, pronoun or demonstrative, bare question
+  word; not هو/هي, "ce", "en", "there") is searched as previous `user_message` + message; a short
+  new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. No LLM rewrite.
+- **Query normalization** (`normalize_query`, before the encoder and reranker): repeated
+  punctuation always collapsed; `RETRIEVAL_QUERY_CASEFOLD_SHOUTING`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
+  off until measured on the robustness suite.
+- **Cross-language arm:** `RETRIEVAL_CROSS_LANG_PREFETCH=n` adds a third dense prefetch over
+  chunks whose `language` differs from the question's (`detect_language`), with the role filter.
 - Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,
   `GATE_THRESHOLD`, `RERANK_MODEL`); `config.py` untouched. Qdrant's own RRF default `k` is 2; ours
   is a setting.

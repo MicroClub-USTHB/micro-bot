@@ -17,6 +17,7 @@ Retrieval only (no API, no LLM): the rerank stage is where concurrent requests q
 import argparse
 import asyncio
 import json
+import os
 import resource
 import statistics
 import tempfile
@@ -128,6 +129,8 @@ async def main(args) -> None:
 
 
 if __name__ == "__main__":
+    os.environ.setdefault("MODELS_DIR", str(REPO / "models"))
+    os.environ.setdefault("TESSDATA_PREFIX", str(Path(os.environ["MODELS_DIR"]) / "tessdata"))
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--workers", type=int, nargs="+", default=[1, 2])
     parser.add_argument("--rerank-top-k", type=int, nargs="+", default=[20, 15, 10])

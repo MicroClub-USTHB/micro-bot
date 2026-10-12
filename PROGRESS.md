@@ -1,5 +1,32 @@
 # progress
 
+## 2026-10-12 (eval fixes, retrieval and ingest side)
+
+### Shipped
+
+- `specs/eval-fixes/` (requirements, design, tasks) covering all 24 issues of
+  `eval/results/e2e/ISSUES.md`, with an owner per issue.
+- Retrieval: a short message is merged with history only on a follow-up cue (I10); query
+  normalization settings (I7); optional cross-language dense arm (I9: cross-lingual hit@5
+  0.755 -> 0.776, default off, target 0.85 not met); reranker session pool and rerank cut (I19);
+  optional penalty for instruction-like chunks; gate documented as a relevance floor (I8).
+- Ingest: share-bar pages are `empty_document` (I16); PDF title from page-1 headings when the
+  metadata title is generic (I15, MRR 0.750 -> 0.770); `instruction_like` payload flag, payload
+  schema 2 (reindex needed).
+- `text/snippet.best_snippet` for eequaled (I6/I24: evidence shown 72% -> 82% offline).
+- Eval: gate-score distributions, `--watch`, per-stage load times, `eval.calibrate_gate`
+  (offline sweep), `eval.bench_load`. Results in `eval/results/README.md`.
+
+### Blocked
+
+- I13 OCR warning: no usable signal from xberg; needs a new image dependency (user's call).
+- Answer-layer issues (I1–I6, I17, I18, I20–I23) and `expires_at` (I14): eequaled's files.
+
+### Next
+
+- Rerun the e2e suite (`--suite all --label fixes`) to confirm I10, the noise settings, the
+  injection cases and the load suite; lower the gate with eequaled's I1/I2 fixes.
+
 ## 2026-10-11 (e2e eval built and run)
 
 ### Shipped

@@ -5,6 +5,64 @@ corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files o
 (`eval/corpus.json`), 48 questions (36 answerable), until the sections below say otherwise. Dev
 machine, 4 threads.
 
+## 2026-10-12: eval fixes, retrieval side (`fx-*`, `specs/eval-fixes/`)
+
+Granite, gte, defaults unless named, 86 questions (74 answerable). `fx-base` reproduces `xl86-granite`
+exactly (0.838 / 0.762), so the runs compare to it.
+
+**Cross-language dense arm (I9, Req 10).** `RETRIEVAL_CROSS_LANG_PREFETCH=n` adds a dense arm over
+chunks not in the question's language.
+
+| Run | hit@5 / MRR | Cross-lingual hit@5 / MRR | Darija hit@5 fused / reranked | English hit@5 | Rerank p95 ms |
+|---|---|---|---|---|---|
+| fx-base | 0.838 / 0.762 | 0.755 / 0.651 | 0.71 / 0.43 | 0.90 | 2086 |
+| cross arm 10 | 0.838 / 0.762 | 0.755 / 0.651 | 0.71 / 0.43 | 0.90 | 1901 |
+| **cross arm 20** | **0.851 / 0.770** | **0.776 / 0.663** | 0.71 / 0.43 | 0.95 | 1901 |
+| cross 20 + prefetch 80, top_k 30 | 0.865 / 0.786 | 0.796 / 0.687 | 0.71 / 0.43 | 1.00 | 2750 |
+| bge-m3 + cross 20 | 0.878 / 0.792 | 0.816 / 0.696 | 0.71 / 0.43 | 0.95 | 1879 |
+
+The arm adds candidates (fused MRR 0.582 -> 0.641) and costs nothing measurable at 20; no
+language group gets worse. None reaches the 0.85 cross-lingual target (Req 10.2): bge-m3 + arm is
+the same 0.816 as bge-m3 alone, and gte still drops darija from 0.71 fused to 0.43. **Default left
+at 0** as the plan requires; `RETRIEVAL_CROSS_LANG_PREFETCH=20` is a free +0.02 to turn on. The
+remaining levers are the reranker on darija and ingest-time keywords, out of this branch's scope.
+
+**PDF titles (I15, Req 14).** Same corpus with the three PDF titles set three ways:
+
+| Titles | hit@5 / MRR | Cross-lingual MRR |
+|---|---|---|
+| old (`MICRO CLUB`, `KENPA SG DOC`: what upload gives today) | 0.824 / 0.750 | 0.636 |
+| page-1 heuristic (`fx-auto-titles`) | 0.824 / 0.770 | 0.663 |
+| curated (`eval/corpus.json`) | 0.838 / 0.762 | 0.651 |
+
+**Snippets (I6, Req 6).** Offline, on the chunk holding each answerable question's evidence: the
+first 500 characters show it for 53/74 (72%, ISSUES.md had 70.9%), `best_snippet(chunk, question)`
+for 61/74 (82%). 11 of the 13 misses are cross-lingual (no shared words); the LLM path can pass
+the answer text instead of the question.
+
+**Injection flag (I3/I11, Req 4.5).** `looks_like_instruction` flags 0 of 2,314 paragraphs of the
+real corpus and both adversarial documents.
+
+**Throughput (I19, Req 17).** `python -m eval.bench_load` (`20261012T190242Z-load`): 4 users,
+30 s each, retrieval only, 4 reranker threads in total.
+
+| Workers | Rerank top-k | hit@5 / MRR | req/s | p50 / p95 ms | Peak RSS MB |
+|---|---|---|---|---|---|
+| 1 | 20 (default) | 0.838 / 0.762 | 0.68 | 5552 / 6528 | 2005 |
+| 1 | 15 | 0.824 / 0.760 | 0.90 | 4273 / 4885 | 2006 |
+| 1 | 10 | 0.757 / 0.693 | 1.31 | 2867 / 3744 | 2006 |
+| 2 | 20 | 0.838 / 0.762 | 0.72 | 5251 / 6668 | 4083 (cumulative) |
+| 2 | 15 | 0.824 / 0.760 | 0.93 | 4123 / 4930 | 4113 |
+
+A second session buys almost nothing (+6%): the threads are split, so the CPU work is the same,
+and memory roughly doubles. The cut is the real lever, but 15 loses 0.014 hit@5 (over the 0.01
+limit of Req 1.3) and 10 loses 0.08. p95 is already under the 8 s target at 4 users. **Defaults
+kept** (1 worker, all 20); `RETRIEVAL_RERANK_TOP_K=15` is the knob if load grows.
+
+**OCR warning (I13, Req 12).** No signal: xberg's page confidence is 0.95 for the skewed photo
+and for the flatbed scans; word counts overlap (photo 150, scans 86–344). Blocked on a new
+image dependency.
+
 ## 2026-10-12: gate calibration with the noisy variants (eval-fixes Req 3.4, 9.3)
 
 `python -m eval.calibrate_gate e2e/20261012T021600Z-xl-granite.json --split dev` (granite, gte,
