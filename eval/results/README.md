@@ -2,7 +2,44 @@
 
 One compact JSON per run (`python -m eval.run_eval --label <name>`): settings, model fingerprints,
 corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files of `data/parsed`
-(`eval/corpus.json`), 48 questions (36 answerable). Dev machine, 4 threads.
+(`eval/corpus.json`), 48 questions (36 answerable), until the sections below say otherwise. Dev
+machine, 4 threads.
+
+## 2026-10-12: cross-lingual questions, granite vs bge-m3 (`xl86-*`)
+
+38 cross-lingual questions added (`x-07`..`x-44`, 86 questions, 74 answerable): Arabic, darija
+(Arabic script) and arabizi on English and French documents, English on French, English and
+French on Arabic. Each evidence string is in one document only (`x-41`'s date is also in another
+notice, but the question names Fulbright). Defaults otherwise (gte, top_k 20, RRF k 2, chunk 300 +
+header). bge-m3 is `onnx-community/bge-m3-ONNX` `model_int8.onnx` (568 MB, dense CLS head only),
+`EMBED_MODEL=BAAI/bge-m3 EMBED_DIM=1024 INGEST_EMBED_MAX_LENGTH=1024`; chunks stay cut with the
+granite tokenizer (`INGEST_CHUNK_TOKENIZER_PATH`), so both runs index the same chunks.
+
+| Run | hit@5 reranked | Reranked MRR | Cross-lingual hit@5 / MRR | Gold doc among candidates (x-lingual) | Darija hit@5 | Encode ms |
+|---|---|---|---|---|---|---|
+| granite (default) | 0.838 | 0.762 | 0.755 / 0.651 | 78% | 0.43 | 16 |
+| **bge-m3 int8** | **0.878** | **0.789** | **0.816 / 0.691** | **86%** | 0.57 | 22 |
+
+By direction (hit@5 reranked, granite -> bge-m3): ar->en 73% -> 82% (n 11), darija->en 20% -> 40%
+(n 5), en->ar 80% -> 100% (n 5); ar->fr 50%, en->fr 75%, fr->en 88%, fr->ar 100%, arabizi 100%
+unchanged; same-language unchanged (ar->ar 1.000, en->en 0.955 MRR). Groups are small: read
+directions, not rates. `x-01`, `x-02` (Arabic on English, missed since `corpus55`) reach rank 3.
+
+Still missed with bge-m3: 7 never reach the reranker (`x-08`, `x-16`, `x-19`, `x-24`, `x-26`,
+`x-31`, `x-43`), so the first stage stays the bottleneck. `x-24` and `x-26` lose to the Arabic
+faculty notices, whose titles all start with "كلية الإعلام الآلي:". The reranker drops 2 that were
+fused in the top 5 (`x-18` darija 1 -> 6, `x-11` 4 -> 6); with granite it took darija hit@5 from
+0.71 fused to 0.43, so gte is weak on darija. Rerank scores, hence the gate, are unchanged: same
+overlap of answerable and unanswerable scores, suggested threshold 0.42 for both.
+
+E2E check (`e2e/20261012T021600Z-xl-granite`, `e2e/20261012T030628Z-xl-bge-m3`: `--suite quality
+robustness --max-llm-calls 0`, 307 cases; chat answers are `not_run`, so only the retrieval layer
+and the gate count). Retrieval layer 234 -> 235 of 290 base cases (`cross_lingual` 56 -> 57 of 75,
+`darija` 9/15 both), evidence rate 0.830 -> 0.858, false refusals 10.4% -> 9.9%, robustness flip
+rate 36.9% -> 33.8%. Fixed `x-01`, `x-17`, `x-36`, `adv-06`; broke `x-11`, `cand-12` (darija),
+`usthb-02`. The e2e pass check (evidence in the returned chunks) is coarser than rank, so the gain
+shrinks to noise there. Verdict: bge-m3 is a modest, consistent gain, not a fix for cross-lingual
+retrieval; the first stage (same-language distractors) and gte on darija are the larger levers.
 
 ## 2026-10-11: chunk size and context header (clean corpus)
 

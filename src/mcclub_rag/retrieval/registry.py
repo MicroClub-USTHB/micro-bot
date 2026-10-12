@@ -34,7 +34,23 @@ GRANITE_R2 = EmbedderSpec(
     pooling="cls",
 )
 
-EMBEDDERS: dict[str, EmbedderSpec] = {GRANITE_R2.repo: GRANITE_R2}
+# A/B candidate. BAAI ships no int8 ONNX; onnx-community export, dense head only (CLS).
+BGE_M3 = EmbedderSpec(
+    repo="onnx-community/bge-m3-ONNX",
+    revision="25b9af8e87a38eb120cfe87125383677b9cd309e",
+    onnx_file="onnx/model_int8.onnx",
+    onnx_sha256="2237f770aad5c71bbc1fc2d361a57f9a37400574cc9eff32626f0cdb49234730",
+    tokenizer_sha256="249df0778f236f6ece390de0de746838ef25b9d6954b68c2ee71249e0a9d8fd4",
+    dim=1024,
+    pooling="cls",
+)
+
+# Keyed by the original model name (what .env uses) and by the export's repo.
+EMBEDDERS: dict[str, EmbedderSpec] = {
+    GRANITE_R2.repo: GRANITE_R2,
+    "BAAI/bge-m3": BGE_M3,
+    BGE_M3.repo: BGE_M3,
+}
 
 # Stopword lists only: stemming is off, so nothing else from the repo is needed.
 BM25_REPO = "Qdrant/bm25"

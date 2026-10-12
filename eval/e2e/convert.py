@@ -17,7 +17,13 @@ SOURCE = REPO / "eval" / "questions.jsonl"
 TARGET = REPO / "eval" / "e2e" / "cases_retrieval.jsonl"
 
 _LANG_TAGS = {"arabic", "english", "french"}
-_TAG_SLICES = {"cross_lingual": "cross_lingual", "follow_up": "followup", "access": "access"}
+_TAG_SLICES = {
+    "cross_lingual": "cross_lingual",
+    "follow_up": "followup",
+    "access": "access",
+    "darija": "darija",
+    "arabizi": "arabizi",
+}
 # Read by hand: the only unanswerable question that is not about the club or its documents.
 _OFF_TOPIC = {"un-08"}
 # Facts found in more documents once the corpus grew (2026-10-11): every one is a correct hit.
