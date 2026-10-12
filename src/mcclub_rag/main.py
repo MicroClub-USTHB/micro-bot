@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+import structlog
 from fastapi import FastAPI, UploadFile
 
 from mcclub_rag.api.chat import router as chat_router
@@ -21,7 +23,7 @@ from mcclub_rag.errors import IngestError, install_error_handlers
 from mcclub_rag.ingest import errors as ingest_errors
 from mcclub_rag.ingest import pipeline as ingest_pipeline
 from mcclub_rag.ingest.models import DocumentInfo as IngestDocumentInfo
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
+from mcclub_rag.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
 from mcclub_rag.llm.quota import CircuitBreaker, DailyQuota
 from mcclub_rag.logging import RequestLoggingMiddleware
 from mcclub_rag.rate_limit import SlidingWindowRateLimiter
@@ -35,6 +37,8 @@ from mcclub_rag.schemas import (
     Visibility,
 )
 from mcclub_rag.text.lang import detect_language
+
+_log = structlog.get_logger(__name__)
 
 
 class DocumentBackend(Protocol):
@@ -163,6 +167,16 @@ class FakeGenerationService:
 
     async def generate(self, system: str, user: str) -> GenerationResult:
         return self.result
+
+
+@dataclass
+class OpenRouterGenerationService:
+    """Async adapter over the sync ``OpenRouterClient``: one provider call, off the event loop."""
+
+    client: OpenRouterClient
+
+    async def generate(self, system: str, user: str) -> GenerationResult:
+        return await asyncio.to_thread(self.client.generate, system, user)
 
 
 _INGEST_STATUS_MAP = {
@@ -309,7 +323,15 @@ def default_state(settings: Settings) -> ApplicationState:
         document_probe=PipelineProbe(),
         provider_probe=ProviderProbe(settings),
         language_detector=RealLanguageDetector(),
+        generator=_generator(settings),
     )
+
+
+def _generator(settings: Settings) -> GenerationService:
+    if settings.openrouter_api_key:
+        return OpenRouterGenerationService(OpenRouterClient(settings))
+    _log.warning("llm_disabled", reason="OPENROUTER_API_KEY not set: extractive fallback only")
+    return FakeGenerationService()
 
 
 def create_app(

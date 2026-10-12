@@ -18,7 +18,10 @@ from mcclub_rag.config import Settings, get_settings
 from mcclub_rag.errors import IngestError
 from mcclub_rag.ingest import errors as ingest_errors
 from mcclub_rag.ingest import pipeline as ingest_pipeline
+from mcclub_rag.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
 from mcclub_rag.main import (
+    FakeGenerationService,
+    OpenRouterGenerationService,
     PipelineProbe,
     RealDocumentBackend,
     RealLanguageDetector,
@@ -66,6 +69,46 @@ def test_default_state_wires_the_real_backends(tmp_path: Path) -> None:
     assert isinstance(state.documents, RealDocumentBackend)
     assert isinstance(state.document_probe, PipelineProbe)
     assert isinstance(state.language_detector, RealLanguageDetector)
+    assert isinstance(state.generator, FakeGenerationService)  # no key: no LLM
+
+
+def test_default_state_wires_the_llm_when_a_key_is_set(tmp_path: Path) -> None:
+    state = default_state(Settings(data_dir=tmp_path, openrouter_api_key="sk-test"))
+    assert isinstance(state.generator, OpenRouterGenerationService)
+    assert isinstance(state.generator.client, OpenRouterClient)
+
+
+class _Completions:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def create(self, **kwargs):
+        self.calls += 1
+
+        class Message:
+            content = "Answer [doc-1]."
+
+        class Choice:
+            message = Message()
+
+        class Completion:
+            choices = [Choice()]
+            usage = None
+
+        return Completion()
+
+
+async def test_generation_service_calls_the_client_once_off_the_event_loop() -> None:
+    completions = _Completions()
+
+    class Client:
+        chat = type("Chat", (), {"completions": completions})()
+
+    settings = Settings(openrouter_api_key="sk-test")
+    service = OpenRouterGenerationService(OpenRouterClient(settings, client=Client()))
+    result = await service.generate("system", "user")
+    assert result.ok and result.text == "Answer [doc-1]." and result.usage.llm_calls == 1
+    assert completions.calls == 1
 
 
 async def test_ingest_file_maps_created_to_indexed(backend: RealDocumentBackend) -> None:
@@ -207,14 +250,19 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
             health = client.get("/api/v1/health")
             assert health.json() == {"status": "ok", "documents": 1}
 
+            # a key is set, so the real OpenRouter service is wired; stub its answer (no network)
+            assert isinstance(state.generator, OpenRouterGenerationService)
+            state.generator = FakeGenerationService(
+                GenerationResult(f"Samedi au local du club [{doc_id}].", GenerationUsage(1))
+            )
             member = {"Authorization": "Bearer member-secret"}
             message = {"message": "Quand a lieu le prochain atelier ?"}
             first = client.post("/api/v1/chat", json=message, headers=member)
             assert first.status_code == 200
             body = first.json()
-            assert body["grounded"] is True  # disabled generator -> extractive fallback
+            assert body["grounded"] is True
             assert body["sources"][0]["doc_id"] == doc_id
-            assert body["usage"]["llm_calls"] == 0
+            assert body["usage"]["llm_calls"] == 1
 
             # Same question without a conversation_id hits the exact-match cache.
             second = client.post("/api/v1/chat", json=message, headers=member)

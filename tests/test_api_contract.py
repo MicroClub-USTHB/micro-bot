@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from mcclub_rag.answer import REFUSAL, UNAVAILABLE
 from mcclub_rag.config import Settings, get_settings
 from mcclub_rag.llm.client import GenerationResult, GenerationUsage
 from mcclub_rag.main import (
@@ -193,3 +194,36 @@ def test_invalid_answer_citations_are_not_grounded(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["grounded"] is False
     assert response.json()["sources"] == []
+
+
+@pytest.mark.parametrize("language", ["ar", "fr", "en"])
+def test_gate_refusal_is_in_the_question_language(tmp_path: Path, language: str) -> None:
+    retrieval = FakeRetrieval(Retrieval(chunks=[], top_score=0.0, decision="refuse"))
+    with build_client(
+        tmp_path, retrieval=retrieval, detector=RecordingDetector(language)
+    ) as client:
+        body = client.post("/api/v1/chat", json={"message": "?"}).json()
+    assert body["answer"] == REFUSAL[language] and body["grounded"] is False
+
+
+@pytest.mark.parametrize("message", ["", "   \n\t "])
+def test_blank_message_skips_retrieval_and_keeps_the_contract(tmp_path: Path, message) -> None:
+    retrieval = FakeRetrieval(Retrieval(chunks=[chunk()], top_score=0.9, decision="answer"))
+    generator = FakeGenerator(GenerationResult("unexpected", GenerationUsage(1)))
+    with build_client(tmp_path, retrieval=retrieval, generator=generator) as client:
+        response = client.post("/api/v1/chat", json={"message": message})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["grounded"] is False and body["sources"] == []
+    assert body["usage"]["llm_calls"] == 0
+    assert retrieval.calls == 0 and generator.calls == 0
+
+
+def test_llm_failure_gives_a_localised_notice_not_chunks(tmp_path: Path) -> None:
+    generator = FakeGenerator(GenerationResult(None, GenerationUsage(1), "timeout"))
+    with build_client(tmp_path, generator=generator, detector=RecordingDetector("fr")) as client:
+        body = client.post("/api/v1/chat", json={"message": "Quand ferment les inscriptions ?"})
+    body = body.json()
+    assert body["answer"] == UNAVAILABLE["fr"]
+    assert body["grounded"] is False
+    assert body["sources"][0]["snippet"] == "Registration closes Friday."

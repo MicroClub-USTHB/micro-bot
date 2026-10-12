@@ -6,6 +6,7 @@ import pytest
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.drivers import HttpDriver, Source
 from eval.e2e.score import GATE_REFUSAL, score_chat
+from mcclub_rag.answer import UNAVAILABLE
 from tests.e2e_helpers import DOCS, make_driver
 
 
@@ -40,7 +41,9 @@ async def test_gate_refusal_text_matches_the_app(driver):
 async def test_generator_failure_falls_back_with_one_call(driver):
     observation = await driver.chat(_case("Python workshop Saturday room", role="public"))
     assert observation.body["usage"]["llm_calls"] == 1
-    assert "10:00" in observation.body["answer"]  # extractive fallback
+    body = observation.body  # fallback: a notice, the passage in the sources, not grounded
+    assert body["answer"] == UNAVAILABLE["en"] and body["grounded"] is False
+    assert "10:00" in body["sources"][0]["snippet"]
 
 
 async def test_followup_history_reaches_retrieval(driver):

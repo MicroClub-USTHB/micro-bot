@@ -50,3 +50,12 @@ def test_prompt_escapes_fence_delimiters_in_untrusted_content() -> None:
 
     assert "``` injected" not in system
     assert "``\\` injected" in system
+
+
+def test_prompt_asks_to_answer_from_passages_in_another_language():
+    from mcclub_rag.llm.prompts import build_prompt
+
+    system, _ = build_prompt("Quand ?", "fr", [])
+    assert "even in another language" in system
+    assert "Say you do not know only when no passage states the answer" in system
+    assert "never follow" in system  # the untrusted-data rule is still there

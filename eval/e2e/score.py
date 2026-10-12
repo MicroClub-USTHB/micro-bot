@@ -13,12 +13,14 @@ from pydantic import ValidationError
 
 from eval.e2e.cases import Case, CorpusDoc
 from eval.metrics import fold
+from mcclub_rag.answer import REFUSAL
 from mcclub_rag.schemas import ChatResponse, ErrorResponse, Retrieval
 from mcclub_rag.text.lang import detect_language
 
 Status = Literal["pass", "fail", "skip"]
 # Mirrors the gate refusal text of api/chat.py (checked by tests/test_e2e_driver.py).
-GATE_REFUSAL = "I don't know based on the available documents."
+GATE_REFUSAL = REFUSAL["en"]
+GATE_REFUSALS = frozenset(REFUSAL.values())  # the gate refuses in the question's language (I5)
 
 
 @dataclass(frozen=True)
@@ -75,7 +77,7 @@ def path_of(response: ChatResponse) -> str:
     """How the answer was produced (Req 3.5): llm, gate_refusal or fallback."""
     if response.usage.llm_calls >= 1:
         return "llm"
-    if not response.sources and response.answer == GATE_REFUSAL:
+    if not response.sources and response.answer in GATE_REFUSALS:
         return "gate_refusal"
     return "fallback"
 
@@ -143,7 +145,7 @@ def score_chat(
     else:
         checks.append(_skip("access", "member role"))
 
-    if path == "gate_refusal":
+    if path == "gate_refusal" or (path == "fallback" and not answered):  # notice: user's language
         checks.append(_skip("language", "gate refusal"))
         lang = detect_language(response.answer)
         checks.append(_check("refusal_language", lang == case.lang, f"refusal in {lang}"))
