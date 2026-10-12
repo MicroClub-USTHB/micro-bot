@@ -64,7 +64,8 @@ def test_real_language_detector_delegates_to_detect_language(text: str, expected
 
 
 def test_default_state_wires_the_real_backends(tmp_path: Path) -> None:
-    state = default_state(Settings(data_dir=tmp_path))
+    # Explicit None: a developer's .env or environment may hold a real key.
+    state = default_state(Settings(data_dir=tmp_path, openrouter_api_key=None))
 
     assert isinstance(state.documents, RealDocumentBackend)
     assert isinstance(state.document_probe, PipelineProbe)

@@ -28,6 +28,8 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
             completion_tokens=8,
             corpus_version="42",
             conversation_id="c_123",
+            language="ar",
+            answer_language="fr",
         )
         return {"ok": True}
 
@@ -47,6 +49,7 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
     assert event["completion_tokens"] == 8
     assert event["corpus_version"] == "42"
     assert event["conversation_id"] == "c_123"
+    assert (event["language"], event["answer_language"]) == ("ar", "fr")
 
 
 def test_request_logging_emits_one_line_for_a_handled_exception(caplog: object) -> None:

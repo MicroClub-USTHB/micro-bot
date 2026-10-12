@@ -129,9 +129,6 @@ async def run(args) -> int:
         if pipeline is not None:
             await pipeline.close()
     info = info | {"llm_calls_made": getattr(generator, "calls", 0)}
-    rewrites = getattr(getattr(getattr(generator, "inner", None), "client", None), "rewrites", None)
-    if rewrites is not None:  # Ollama stand-in: answers whose citations were rewritten
-        info["citation_rewrites"] = rewrites
     return write(args, results, by_id, ctx, info, extra)
 
 

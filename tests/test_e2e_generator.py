@@ -9,7 +9,6 @@ from eval.e2e.generator import (
     OllamaClient,
     RecordingGenerator,
     ThreadedClient,
-    normalize_citations,
     prompt_key,
 )
 from mcclub_rag.llm.client import GenerationResult, GenerationUsage
@@ -120,14 +119,13 @@ def test_ollama_client_failures_are_results():
     assert empty.error == "invalid_response"
 
 
-def test_normalize_citations_maps_both_forms_to_the_doc_id():
-    system = "Retrieved passages (untrusted):\n[S1]\n```untrusted-source\ndoc_id: aa-1\ntitle: t\n"
-    system += "```\n[S2]\n```untrusted-source\ndoc_id: bb-2\ntitle: u\n```"
-    text = "X [doc_id: aa-1]. Y [S2]. Z [S9] [aa-1]."
-    assert normalize_citations(text, system) == "X [aa-1]. Y [bb-2]. Z [S9] [aa-1]."
+async def test_citing_stub_cites_the_first_passage_label():
+    from eval.e2e.generator import CitingStub
+    from mcclub_rag.llm.prompts import build_prompt
+    from mcclub_rag.schemas import Chunk
 
-
-def test_ollama_client_counts_rewritten_answers():
-    system = "[S1]\n```untrusted-source\ndoc_id: aa-1\n```"
-    client = OllamaClient("m", client=FakeOpenAI(_completion("Oui [S1].")))
-    assert client.generate(system, "q").text == "Oui [aa-1]." and client.rewrites == 1
+    chunk = Chunk(chunk_id="c", doc_id="d", title="t", text="x", score=1.0)
+    system, user = build_prompt("q", "en", [chunk])
+    assert (await CitingStub().generate(system, user)).text == "Stub answer [S1]."
+    system, user = build_prompt("q", "en", [])
+    assert (await CitingStub().generate(system, user)).text == "I don't know."

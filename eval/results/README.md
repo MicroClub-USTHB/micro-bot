@@ -5,6 +5,35 @@ corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files o
 (`eval/corpus.json`), 48 questions (36 answerable), until the sections below say otherwise. Dev
 machine, 4 threads.
 
+## 2026-10-13: darija set, embedders and rerankers
+
+128 questions (111 answerable): 42 darija and arabizi questions added, split `darija_dev` /
+`darija_test` (the 11 older darija and arabizi ones are dev). hit@5 after reranking, first stage
+in brackets. Chunks cut with the granite tokenizer in every run, so all runs index the same chunks.
+
+| Run | All (111) | MRR | Cross-lingual (80) | Darija (48) | Darija test (19) | Arabizi (19) | Rerank p50 / p95 ms |
+|---|---|---|---|---|---|---|---|
+| granite + gte (`darija53-nomap`) | 0.793 (0.70) | 0.660 | 0.738 | 0.667 (0.65) | 0.737 | 0.737 (0.79) | 1533 / 1902 |
+| harrier-270m + gte (`emb-harrier`) | 0.775 (0.72) | 0.669 | 0.725 | 0.625 (0.65) | 0.684 | 0.737 (0.84) | 1412 / 1832 |
+| bge-m3 + gte (`emb-bge-m3`) | 0.811 (0.79) | 0.671 | 0.750 | 0.667 (0.73) | 0.737 | 0.737 (0.89) | 1545 / 1935 |
+| bge-m3 + bge reranker, top 20 (`m3-bgererank`) | 0.847 (0.79) | 0.747 | 0.787 | 0.750 (0.73) | 0.842 | 0.895 (0.89) | 3415 / 4377 |
+| bge-m3 + bge reranker, top 12 (`m3-bge-k12`) | 0.838 (0.79) | 0.740 | 0.787 | 0.750 (0.73) | 0.842 | 0.895 (0.89) | 2031 / 2593 |
+| **bge-m3 + bge reranker, top 10** (`m3-bge-k10`) | **0.847** (0.79) | 0.741 | **0.800** | **0.771** (0.73) | **0.842** | **0.895** (0.89) | 1676 / 2195 |
+
+- **The darija word map** (`darija53-map`): 0.74 -> 0.74 on the test split. Removed.
+- **harrier-oss-v1-270m** (onnx-community int8, last-token pooling, query instruction): worse on
+  darija, French and overall, 4x slower to encode (70 ms). Dropped. **F2LLM-v2-330M** has no ONNX
+  export: not tested.
+- **bge-m3 fixes the first stage, gte undoes it on darija.** With bge-m3, gte loses 8 darija
+  questions it was given in the top 5 (5 of them at rank 1-2) and gains 5; on the 63 other
+  questions it loses 0 and gains 5. bge-reranker-v2-m3 keeps the darija and arabizi gains.
+- **Reranking the top 10 only** makes bge as fast as gte on all 20 and loses nothing measurable.
+- **Gate:** bge scores right darija matches very low (median top score 0.032, unanswerable 0.018);
+  even 0.0005 refuses 8% of darija questions. gte at 0.31 stopped 1 of 17 unanswerable questions.
+  With bge the gate is off (`GATE_THRESHOLD` unset); refusing is the LLM's job.
+
+Decision: bge-m3 + bge-reranker-v2-m3, `RETRIEVAL_RERANK_TOP_K=10`, gate off.
+
 ## 2026-10-12: eval fixes, retrieval side (`fx-*`, `specs/eval-fixes/`)
 
 Granite, gte, defaults unless named, 86 questions (74 answerable). `fx-base` reproduces `xl86-granite`

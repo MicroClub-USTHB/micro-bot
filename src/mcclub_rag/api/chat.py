@@ -5,7 +5,7 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from mcclub_rag.answer import EMPTY_MESSAGE, REFUSAL, build, extractive_fallback
+from mcclub_rag.answer import EMPTY_MESSAGE, REFUSAL, build, extractive_fallback, strip_references
 from mcclub_rag.conversation import Conversation, Turn
 from mcclub_rag.deps import get_role
 from mcclub_rag.llm.client import GenerationUsage
@@ -21,6 +21,7 @@ from mcclub_rag.schemas import (
     Source,
     Usage,
 )
+from mcclub_rag.text.lang import detect_language
 
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
@@ -202,6 +203,9 @@ def _save_and_log(
         completion_tokens=response.usage.completion_tokens,
         corpus_version=corpus_version,
         conversation_id=response.conversation_id,
+        # Both logged so a reply in the wrong language is countable (titles are not counted).
+        language=conversation.language,
+        answer_language=detect_language(strip_references(response.answer)),
     )
 
 

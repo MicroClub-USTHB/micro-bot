@@ -96,9 +96,8 @@ class OllamaClient:
 
     Same contract as ``OpenRouterClient.generate`` (one call, failures as results, same parsing
     and error kinds), so the answer layer sees what it would see from OpenRouter. Temperature 0
-    with a fixed seed keeps reruns comparable. gemma4:e4b often cites ``[doc_id: X]`` or the
-    passage label ``[S1]``, which ``answer.build`` rejects (ungrounded); ``normalize_citations``
-    rewrites both to ``[X]`` and ``rewrites`` counts the answers it changed.
+    with a fixed seed keeps reruns comparable. Its citations (``[S1]``, ``[doc_id: X]``, ...) go
+    to ``answer.build`` unchanged, as a provider's would.
     """
 
     def __init__(
@@ -116,7 +115,6 @@ class OllamaClient:
 
             client = OpenAI(api_key="ollama", base_url=base_url, timeout=timeout, max_retries=0)
         self._client = client
-        self.rewrites = 0
 
     def generate(self, system: str, user: str) -> GenerationResult:
         from mcclub_rag.llm.client import OpenRouterClient
@@ -131,25 +129,7 @@ class OllamaClient:
             )
         except Exception as exc:  # same as the real client: failures are results
             return GenerationResult(None, GenerationUsage(1), OpenRouterClient._error_kind(exc))
-        result = OpenRouterClient._parse_completion(completion, calls=1)
-        if result.text is None:
-            return result
-        text = normalize_citations(result.text, system)
-        if text != result.text:
-            self.rewrites += 1
-        return GenerationResult(text, result.usage, result.error)
-
-
-_PASSAGE = re.compile(r"^\[S(\d+)\]\n```untrusted-source\ndoc_id: (\S+)$", re.MULTILINE)
-_DOC_ID_FORM = re.compile(r"\[doc_id:\s*([^\]\s]+)\s*\]")
-_LABEL_FORM = re.compile(r"\[S(\d+)\]")
-
-
-def normalize_citations(text: str, system: str) -> str:
-    """``[doc_id: X]`` and ``[S<n>]`` (labels from the prompt's passages) -> ``[X]``."""
-    ids = dict(_PASSAGE.findall(system))
-    text = _DOC_ID_FORM.sub(r"[\1]", text)
-    return _LABEL_FORM.sub(lambda m: f"[{ids[m.group(1)]}]" if m.group(1) in ids else m[0], text)
+        return OpenRouterClient._parse_completion(completion, calls=1)
 
 
 FAULTS = {
@@ -171,20 +151,19 @@ class FaultyGenerator:
 
 
 class CitingStub:
-    """Answers by citing the first passage's doc_id, one 'call' each, no network.
+    """Answers by citing the first passage's label, one 'call' each, no network.
 
     For the cache and load suites, which test the system around generation, not generation.
     """
 
-    _DOC_ID = re.compile(r"^doc_id: (\S+)$", re.MULTILINE)
+    _FIRST_PASSAGE = "[S1]\n```untrusted-source"
 
     def __init__(self) -> None:
         self.calls = 0
 
     async def generate(self, system: str, user: str) -> GenerationResult:
         self.calls += 1
-        match = self._DOC_ID.search(system)
-        text = f"Stub answer [{match.group(1)}]." if match else "I don't know."
+        text = "Stub answer [S1]." if self._FIRST_PASSAGE in system else "I don't know."
         return GenerationResult(text, GenerationUsage(1, 0, 0))
 
 

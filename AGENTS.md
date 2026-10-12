@@ -54,8 +54,10 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   files, to review with eequaled):** `default_state()` wires `OpenRouterGenerationService` when
   `OPENROUTER_API_KEY` is set; the fallback answers with a localized notice and the passages as
   sources (`grounded=false`, never pasted chunks); refusals in the question's language
-  (`answer.REFUSAL`); `answer.build` accepts `[doc_id: X]`, `[S1]`, `[X, Y]`; snippets come from
-  `text/snippet.best_snippet`; `get_role` / `require_admin` read the app's settings; `config.py`
+  (`answer.REFUSAL`); the prompt shows passage labels only (no doc_id) and asks for `[S1]`;
+  `answer.build` also accepts a bare number, `[doc_id: X]`, `[X, Y]` and `【】` / `［］`, and
+  rewrites citations as the document title, `[Title]` / `[Title A; Title B]`, written by the
+  app, not the model (one source per document, snippet from its first cited chunk); snippets come from `text/snippet.best_snippet`; `get_role` / `require_admin` read the app's settings; `config.py`
   retrieval defaults equal `RetrievalSettings`; `expires_at` is parsed (ISO 8601, a bare date
   ends that day UTC), stored, listed, and expired documents are filtered in every query. Routes,
   params and response shapes are unchanged (a blank message gets a 200 prompt, delete of an
