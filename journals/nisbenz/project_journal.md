@@ -27,3 +27,6 @@
   target; gte on darija is the next lever.
 - OCR on phone photos is blocked: xberg reports the same confidence for a bad photo as for a clean
   scan.
+- Then fixed the rest, eequaled's side included, as the user asked: the app finally calls the
+  LLM, and without it the user gets a short notice and sources instead of pasted chunks. The
+  photo OCR problem turned out to be skew alone: straightening took it from 41% to 99%.

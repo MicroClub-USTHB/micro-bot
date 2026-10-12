@@ -198,7 +198,7 @@ class RealDocumentBackend:
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
-        expiry = _parse_expiry(expires_at)  # before reading the upload: a bad date is a 422
+        expiry = parse_expiry(expires_at)  # before reading the upload: a bad date is a 422
         data = await file.read()
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp.write(data)
@@ -264,7 +264,7 @@ def _map_ingest_result(result: object) -> IngestResult:
     )
 
 
-def _parse_expiry(value: str | None) -> datetime | None:
+def parse_expiry(value: str | None) -> datetime | None:
     """``expires_at`` form field: ISO 8601 date or datetime; a date ends at its last second UTC,
     a time without an offset is UTC. Blank = no expiry."""
     if value is None or not value.strip():

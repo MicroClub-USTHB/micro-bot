@@ -1,5 +1,31 @@
 # progress
 
+## 2026-10-12 (eval fixes, answer layer and the rest)
+
+### Shipped
+
+- On the user's request, eequaled's issues fixed on the same branch (to review with eequaled):
+  the live app calls the LLM when a key is set (I1); the fallback no longer pastes chunks, it
+  answers with a notice in the user's language and the passages as sources (I2–I4); refusals in
+  the question's language (I5); citations `[doc_id: X]` / `[S1]` / `[X, Y]` accepted (I22);
+  snippets around the best sentence (I6/I24); prompt answers across languages (I23); auth reads
+  the app's settings (I20); `config.py` defaults aligned (I21); blank message skips retrieval
+  (I18); `expires_at` kept, listed and enforced in every query (I14).
+- Photo deskew before OCR (I13): 41% -> 99% word recall on the skewed photo; Pillow is now a
+  runtime dependency.
+- Defaults from measurements: `GATE_THRESHOLD=0.31` (I8), cross-language arm 20 (I9), query case
+  and harakat normalization on (I7: flips 9.6% -> 6.6%).
+- System e2e suites: contract 22/22, faults 9/9, cache 5/5, ingest 16/16.
+
+### Blocked
+
+- I17 / I15 (upload title): the frozen API. I9 target (0.85) and typos (I7) not reached.
+
+### Next
+
+- Full e2e with an LLM (`--suite all`, record mode, the production model) to measure I23 and the
+  answer-level numbers; reindex deployments (payload schema 2).
+
 ## 2026-10-12 (eval fixes, retrieval and ingest side)
 
 ### Shipped

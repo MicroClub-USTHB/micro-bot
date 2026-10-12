@@ -230,7 +230,7 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. No LLM rewrite.
 - **Query normalization** (`normalize_query`, before the encoder and reranker): repeated
   punctuation always collapsed; `RETRIEVAL_QUERY_FIX_CASE`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
-  off until measured on the robustness suite.
+  on (`eval.bench_robust`: noise flips 9.6% -> 6.6%, clean questions unchanged).
 - **Cross-language arm:** `RETRIEVAL_CROSS_LANG_PREFETCH` (default 20, 0 = off) adds a third dense prefetch over
   chunks whose `language` differs from the question's (`detect_language`), with the role filter.
 - Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,

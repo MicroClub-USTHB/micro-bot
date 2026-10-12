@@ -31,6 +31,7 @@ from eval.e2e.drivers import HttpDriver
 from eval.e2e.generator import CitingStub
 from eval.e2e.ingest_suite import ingest
 from eval.e2e.suites import Context, quality, robustness
+from mcclub_rag.llm.quota import CircuitBreaker
 
 REPO = Path(__file__).resolve().parents[2]
 E2E = REPO / "eval" / "e2e"
@@ -100,7 +101,9 @@ async def run(args) -> int:
             elif suite == "faults":
                 results += await system.faults(driver, probe)
             elif suite == "cache":
-                driver.state.generator = CitingStub()
+                # Fresh breaker: earlier suites may have opened it (a spent LLM budget fails
+                # every call), and an open breaker would skip the stub (0 calls).
+                driver.state.generator, driver.state.breaker = CitingStub(), CircuitBreaker()
 
                 async def bump() -> object:  # any upload changes the corpus version
                     return await driver.upload(loaded[0], "eval-cache-bump")
@@ -111,7 +114,7 @@ async def run(args) -> int:
                 results += await ingest(driver)
             elif suite == "load":
                 if args.target == "inprocess":
-                    driver.state.generator = CitingStub()
+                    driver.state.generator, driver.state.breaker = CitingStub(), CircuitBreaker()
                 found, extra["load"] = await system.load(
                     driver, cases, concurrency=args.concurrency, duration_s=args.duration
                 )

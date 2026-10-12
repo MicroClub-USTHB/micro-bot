@@ -43,6 +43,28 @@ the answer text instead of the question.
 **Injection flag (I3/I11, Req 4.5).** `looks_like_instruction` flags 0 of 2,314 paragraphs of the
 real corpus and both adversarial documents.
 
+**Noisy questions (I7, Req 9).** `python -m eval.bench_robust` (`20261012T200450Z-robust`): the
+86 questions (82 without history) and their variants from `eval/e2e/perturb.py`, gate 0.40.
+
+| Query normalization | Flip rate | Flips typo / noise / filler / diacritics | hit@5 base / noise / diacritics |
+|---|---|---|---|
+| none | 9.6% | 16/82, 8/82, 1/82, 4/55 | 0.829 / 0.729 / 0.673 |
+| fix case | 8.0% | 16, 3, 1, 4 | 0.829 / 0.814 / 0.673 |
+| strip harakat | 8.3% | 16, 8, 1, 0 | 0.829 / 0.729 / 0.776 |
+| **both (default)** | **6.6%** | 16, 3, 1, 0 | 0.829 / 0.814 / 0.776 |
+
+Clean questions are unchanged. Typos are what is left (16 flips, hit@5 0.54): no normalization
+fixes them.
+
+**E2E after all fixes** (`e2e/20261012T201158Z-fixes-system`, `e2e/20261012T202250Z-fixes-retrieval`,
+no LLM): contract 22/22, faults 9/9, cache 5/5, ingest **16/16** (was 15/16: `expires_at`).
+Retrieval layer, quality suite, gate 0.40 as before: 249/307; on the 290 cases shared with
+`xl-granite` 234 -> 234 (`x-31` fixed; `usthb-02` broken by the cross-language arm, whose Arabic
+USTHB chunks push the French evidence chunk out of the top 5); evidence in returned chunks 92%,
+0 leaks, 0 injection hits. `conv-06` ("Who is the dean?" after a hackathon question) is no
+longer glued to the hackathon question, but the message alone still misses: it does not say
+which dean (same result with the arm off); `conv-05`, the full question, passes.
+
 **Throughput (I19, Req 17).** `python -m eval.bench_load` (`20261012T190242Z-load`): 4 users,
 30 s each, retrieval only, 4 reranker threads in total.
 

@@ -59,8 +59,8 @@ class RetrievalSettings(BaseSettings):
     # Query and context
     followup_max_words: int = Field(default=8, ge=0)
     followup_cues: bool = True  # merge only cued messages (eval-fixes Req 11)
-    query_fix_case: bool = False  # lower-case an ALL-CAPS query (eval-fixes Req 9)
-    query_strip_harakat: bool = False  # drop Arabic diacritics from the query
+    query_fix_case: bool = True  # lower-case an ALL-CAPS query (eval-fixes Req 9)
+    query_strip_harakat: bool = True  # drop Arabic diacritics from the query
     neighbours: bool = False
     # Rank multiplier for chunks flagged ``instruction_like`` at ingest; 1.0 = off (Req 4.4)
     instruction_penalty: float = Field(default=1.0, gt=0, le=1)

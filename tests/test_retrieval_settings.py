@@ -97,3 +97,8 @@ def test_blank_rerank_top_k_is_none(monkeypatch):
 
 def test_cross_language_arm_is_on_by_default():
     assert RetrievalSettings().cross_lang_prefetch == 20
+
+
+def test_query_normalization_is_on_by_default():
+    s = RetrievalSettings()
+    assert s.query_fix_case is True and s.query_strip_harakat is True
