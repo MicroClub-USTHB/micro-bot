@@ -35,7 +35,6 @@ async def inprocess(args, work: Path):
     from mcclub_rag.llm.client import OpenRouterClient
     from mcclub_rag.retrieval.backend import HybridRetriever
     from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-    from mcclub_rag.retrieval.rerank import get_reranker
     from mcclub_rag.retrieval.settings import RetrievalSettings
 
     settings = IngestSettings(data_dir=work / "data")
@@ -49,7 +48,7 @@ async def inprocess(args, work: Path):
     )
     await pipeline.start()
     retrieval = RetrievalSettings(qdrant_collection=settings.qdrant_collection)
-    retriever = HybridRetriever.from_pipeline(pipeline, retrieval, get_reranker(retrieval))
+    retriever = HybridRetriever.from_pipeline(pipeline, retrieval)  # RERANK_WORKERS sessions
     budget = Budget(args.max_llm_calls)
     if args.llm == "ollama":
         # Local stand-in for output tests; recordings are keyed apart from OpenRouter's.

@@ -50,6 +50,10 @@ class RetrievalSettings(BaseSettings):
     # Reranker
     rerank_max_length: int = MIN_RERANK_MAX_LENGTH
     rerank_threads: int = Field(default=4, gt=0)
+    # Reranker sessions used in parallel (eval-fixes Req 17); each adds ~350 MB of RAM (gte)
+    rerank_workers: int = Field(default=1, gt=0)
+    # Rerank only the first k fused candidates; None = all RETRIEVE_TOP_K
+    rerank_top_k: int | None = Field(default=None, gt=0)
 
     # Query and context
     followup_max_words: int = Field(default=8, ge=0)
@@ -60,7 +64,7 @@ class RetrievalSettings(BaseSettings):
     # Rank multiplier for chunks flagged ``instruction_like`` at ingest; 1.0 = off (Req 4.4)
     instruction_penalty: float = Field(default=1.0, gt=0, le=1)
 
-    @field_validator("gate_threshold", mode="before")
+    @field_validator("gate_threshold", "rerank_top_k", mode="before")
     @classmethod
     def _blank_threshold_is_none(cls, value: object) -> object:
         return None if value == "" else value
@@ -69,6 +73,10 @@ class RetrievalSettings(BaseSettings):
     def _check(self) -> Self:
         if self.prefetch_limit < self.top_k:
             raise ValueError("RETRIEVAL_PREFETCH_LIMIT must be at least RETRIEVE_TOP_K")
+        if self.rerank_workers > self.rerank_threads:
+            raise ValueError("RETRIEVAL_RERANK_WORKERS must be at most RETRIEVAL_RERANK_THREADS")
+        if self.rerank_top_k is not None and self.rerank_top_k > self.top_k:
+            raise ValueError("RETRIEVAL_RERANK_TOP_K must be at most RETRIEVE_TOP_K")
         if self.rerank_max_length < MIN_RERANK_MAX_LENGTH:
             raise ValueError(f"RETRIEVAL_RERANK_MAX_LENGTH must be >= {MIN_RERANK_MAX_LENGTH}")
         return self

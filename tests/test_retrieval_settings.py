@@ -79,3 +79,17 @@ def test_invalid_combinations_raise(monkeypatch, env):
         monkeypatch.setenv(key, value)
     with pytest.raises(ValidationError):
         RetrievalSettings()
+
+
+def test_rerank_pool_and_cut_are_bounded():
+    s = RetrievalSettings()
+    assert s.rerank_workers == 1 and s.rerank_top_k is None
+    with pytest.raises(ValidationError, match="RERANK_WORKERS"):
+        RetrievalSettings(rerank_workers=8, rerank_threads=4)
+    with pytest.raises(ValidationError, match="RERANK_TOP_K"):
+        RetrievalSettings(rerank_top_k=25)
+
+
+def test_blank_rerank_top_k_is_none(monkeypatch):
+    monkeypatch.setenv("RETRIEVAL_RERANK_TOP_K", "")
+    assert RetrievalSettings().rerank_top_k is None

@@ -6,6 +6,8 @@ from structlog.testing import capture_logs
 
 from mcclub_rag.conversation import Turn
 from mcclub_rag.ingest.errors import EmbeddingError, IndexUnavailable, RerankError
+from mcclub_rag.retrieval.backend import HybridRetriever
+from mcclub_rag.retrieval.settings import RetrievalSettings
 from mcclub_rag.schemas import Retrieval
 from tests.pipeline_helpers import make_pipeline
 from tests.retrieval_helpers import FakeReranker, make_retriever
@@ -250,3 +252,38 @@ async def test_cross_language_arm_gets_the_question_language(pipe, rules, monkey
     await retriever.retrieve("Quand ont lieu les élections du bureau ?", "public", [])
     await make_retriever(pipe).retrieve("élections", "public", [])  # off: not detected
     assert seen == ["fr"]
+
+
+async def test_reranker_pool_serves_requests_in_parallel(pipe, rules):
+    first, second = FakeReranker(delay=0.05), FakeReranker(delay=0.05)
+    s = RetrievalSettings(
+        qdrant_collection=pipe.settings.qdrant_collection, rerank_workers=2, rerank_threads=4
+    )
+    retriever = HybridRetriever(
+        s,
+        dense=pipe.dense,
+        sparse=pipe.sparse,
+        client=pipe.client,
+        reranker=first,
+        more_rerankers=[second],
+    )
+    await asyncio.gather(*(retriever.retrieve(q, "public", []) for q in ("cotisation", "vote")))
+    assert len(first.calls) == 1 and len(second.calls) == 1
+
+
+async def test_a_failing_session_goes_back_to_the_pool(pipe, rules):
+    reranker = FakeReranker(error=RerankError("boom"))
+    retriever = make_retriever(pipe, reranker)
+    for _ in range(2):  # the second call would hang if the session were lost
+        with pytest.raises(RerankError):
+            await asyncio.wait_for(retriever.retrieve("cotisation", "public", []), 1)
+
+
+async def test_rerank_top_k_scores_only_the_first_candidates(pipe, rules, tmp_path):
+    for i in range(4):
+        await pipe.ingest_file(
+            _write(tmp_path, f"d{i}.md", f"# D{i}\n\ncotisation {i}"), f"d{i}.md", "public"
+        )
+    reranker = FakeReranker()
+    await make_retriever(pipe, reranker, rerank_top_k=2).retrieve("cotisation", "public", [])
+    assert len(reranker.calls[0][1]) == 2

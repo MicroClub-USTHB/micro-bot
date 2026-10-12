@@ -123,16 +123,23 @@ def reranker_spec(model: str) -> RerankerSpec:
 
 
 @lru_cache
-def _reranker(model: str, root: Path, threads: int, max_length: int) -> OnnxReranker:
+def _reranker(
+    model: str, root: Path, threads: int, max_length: int, worker: int = 0
+) -> OnnxReranker:
     spec = reranker_spec(model)
     return OnnxReranker(spec, root / spec.slug, threads=threads, max_length=max_length)
 
 
-def get_reranker(settings: RetrievalSettings) -> OnnxReranker:
-    """One loaded ONNX session per configuration."""
+def get_reranker(settings: RetrievalSettings, worker: int = 0) -> OnnxReranker:
+    """One loaded ONNX session per configuration and worker.
+
+    With ``RETRIEVAL_RERANK_WORKERS`` > 1 each session gets its share of
+    ``RETRIEVAL_RERANK_THREADS``, so the pool uses the same cores as one session.
+    """
     return _reranker(
         settings.rerank_model,
         settings.models_dir / "reranker",
-        settings.rerank_threads,
+        max(1, settings.rerank_threads // settings.rerank_workers),
         settings.rerank_max_length,
+        worker,
     )

@@ -39,6 +39,7 @@ class HybridRetriever:
         client: AsyncQdrantClient,
         reranker: Reranker,
         chunk_header: bool = True,  # INGEST_CHUNK_CONTEXT_HEADER: rerank what was embedded
+        more_rerankers: Sequence[Reranker] = (),  # RETRIEVAL_RERANK_WORKERS > 1
     ) -> None:
         self.settings = settings
         self.dense = dense
@@ -46,7 +47,10 @@ class HybridRetriever:
         self.reranker = reranker
         self.chunk_header = chunk_header
         self.search = HybridSearch(client, settings.qdrant_collection, settings)
-        self._rerank_lock = asyncio.Lock()
+        # One rerank per session at a time; a pool of sessions serves concurrent requests.
+        self._sessions: asyncio.Queue[Reranker] = asyncio.Queue()
+        for session in (reranker, *more_rerankers):
+            self._sessions.put_nowait(session)
         if settings.gate_threshold is None:
             log.warning("retrieval_gate_open", reason="GATE_THRESHOLD not calibrated")
 
@@ -70,6 +74,9 @@ class HybridRetriever:
             client=pipeline.client,
             reranker=reranker or get_reranker(settings),
             chunk_header=pipeline.settings.chunk_context_header,
+            more_rerankers=()
+            if reranker
+            else [get_reranker(settings, worker=i) for i in range(1, settings.rerank_workers)],
         )
 
     def search_query(self, query: str, history: Sequence[object]) -> tuple[str, bool]:
@@ -101,13 +108,17 @@ class HybridRetriever:
         Chunks flagged ``instruction_like`` are ranked by ``score * instruction_penalty``; the
         returned score stays the model's, so the gate is not moved by the penalty.
         """
+        candidates = candidates[: self.settings.rerank_top_k]  # None keeps them all
         if not candidates:
             return []
         texts = [
             passage(c.title, c.heading_path, c.text, header=self.chunk_header) for c in candidates
         ]
-        async with self._rerank_lock:
-            scores = await asyncio.to_thread(self.reranker.score, query, texts)
+        session = await self._sessions.get()
+        try:
+            scores = await asyncio.to_thread(session.score, query, texts)
+        finally:
+            self._sessions.put_nowait(session)
         penalty = self.settings.instruction_penalty
 
         def rank(pair: tuple[Candidate, float]) -> tuple[float, int]:
