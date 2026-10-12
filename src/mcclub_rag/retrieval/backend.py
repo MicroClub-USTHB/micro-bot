@@ -88,7 +88,11 @@ class HybridRetriever:
     async def rerank(
         self, query: str, candidates: Sequence[Candidate]
     ) -> list[tuple[Candidate, float]]:
-        """Candidates with their reranker score, best first (tie: better fused rank)."""
+        """Candidates with their reranker score, best first (tie: better fused rank).
+
+        Chunks flagged ``instruction_like`` are ranked by ``score * instruction_penalty``; the
+        returned score stays the model's, so the gate is not moved by the penalty.
+        """
         if not candidates:
             return []
         texts = [
@@ -96,7 +100,13 @@ class HybridRetriever:
         ]
         async with self._rerank_lock:
             scores = await asyncio.to_thread(self.reranker.score, query, texts)
-        return sorted(zip(candidates, scores, strict=True), key=lambda p: (-p[1], p[0].fused_rank))
+        penalty = self.settings.instruction_penalty
+
+        def rank(pair: tuple[Candidate, float]) -> tuple[float, int]:
+            candidate, score = pair
+            return -score * (penalty if candidate.instruction_like else 1.0), candidate.fused_rank
+
+        return sorted(zip(candidates, scores, strict=True), key=rank)
 
     async def _expand(self, hits: list[Candidate], role: Role) -> dict[str, str]:
         found = await self.search.neighbours(hits, role)
@@ -120,11 +130,13 @@ class HybridRetriever:
         candidates = await self.search.search(dense, sparse, role)
         ms_search = _ms(step)
         step = time.perf_counter()
-        ranked = (await self.rerank(search_query, candidates))[: s.top_n]
+        reranked = await self.rerank(search_query, candidates)
+        ranked = reranked[: s.top_n]
         ms_rerank = _ms(step)
         hits = [c for c, _ in ranked]
         texts = await self._expand(hits, role) if s.neighbours and hits else {}
-        top_score, decision = decide([score for _, score in ranked], s.gate_threshold)
+        # every reranked score: a penalised chunk pushed out of top_n still counts for the gate
+        top_score, decision = decide([score for _, score in reranked], s.gate_threshold)
         chunks = [
             Chunk(
                 chunk_id=c.point_id,

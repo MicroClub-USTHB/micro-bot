@@ -32,6 +32,7 @@ from mcclub_rag.ingest.errors import (
     InvalidInput,
 )
 from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id, url_topic
+from mcclub_rag.ingest.injection import looks_like_instruction
 from mcclub_rag.ingest.models import (
     Chunk,
     DocumentInfo,
@@ -53,7 +54,8 @@ from mcclub_rag.retrieval.store import DENSE, SPARSE, VectorStore
 
 log = structlog.get_logger(__name__)
 
-SCHEMA_VERSION = 1  # bump when the point payload or vector layout changes
+# Bump when the point payload or vector layout changes. 2: ``instruction_like`` (eval-fixes Req 4)
+SCHEMA_VERSION = 2
 _REINDEX_COMMAND = "uv run python scripts/reindex.py"
 
 
@@ -94,6 +96,7 @@ def _payload(
         "source": doc.source,
         "source_type": doc.source_type,
         "ingested_at": ingested_at.isoformat(),
+        "instruction_like": looks_like_instruction(chunk.text),
     }
 
 

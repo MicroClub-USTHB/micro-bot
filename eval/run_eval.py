@@ -171,6 +171,8 @@ def print_summary(summary: dict, label: str) -> None:
     lat = summary["latency_ms"]
     print("latency ms   : " + "  ".join(f"{s} {v['median']}/{v['p95']}" for s, v in lat.items()))
     print(f"access violations: {summary['access_violations']}")
+    if "instruction_like_chunks" in summary:
+        print(f"chunks flagged instruction_like: {summary['instruction_like_chunks']}")
     print(
         f"suggested GATE_THRESHOLD: {summary['suggested_gate_threshold']} "
         f"(false refusals <= {summary['max_false_refusal']:.0%})"
@@ -206,6 +208,7 @@ def _settings_record(retriever: HybridRetriever, pipeline: IngestPipeline) -> di
 
 async def _run(args: argparse.Namespace) -> Path:
     from qdrant_client import AsyncQdrantClient
+    from qdrant_client import models as qm
 
     corpus = json.loads(args.manifest.read_text(encoding="utf-8"))
     questions = [
@@ -230,6 +233,13 @@ async def _run(args: argparse.Namespace) -> Path:
         retriever = HybridRetriever.from_pipeline(pipeline, settings, get_reranker(settings))
         rows = await evaluate(retriever, questions, doc_ids)
         summary = summarize(rows, max_false_refusal=args.max_false_refusal)
+        flagged = await pipeline.client.count(
+            pipeline.store.alias,
+            count_filter=qm.Filter(
+                must=[qm.FieldCondition(key="instruction_like", match=qm.MatchValue(value=True))]
+            ),
+        )
+        summary["instruction_like_chunks"] = flagged.count  # real corpus: target 0 (Req 4.5)
         payload = {
             "label": args.label,
             "settings": _settings_record(retriever, pipeline),

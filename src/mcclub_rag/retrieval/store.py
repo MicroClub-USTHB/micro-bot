@@ -24,7 +24,7 @@ from mcclub_rag.ingest.models import SourceType, Visibility
 
 DENSE = "dense"
 SPARSE = "bm25"
-_KEYWORD_FIELDS = ("doc_id", "content_hash", "visibility")
+_KEYWORD_FIELDS = ("doc_id", "content_hash", "visibility", "language")
 _MARKER_FIELDS = [
     "doc_id",
     "content_hash",

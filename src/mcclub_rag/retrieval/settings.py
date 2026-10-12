@@ -55,6 +55,8 @@ class RetrievalSettings(BaseSettings):
     query_casefold_shouting: bool = False  # lower-case an ALL-CAPS query (eval-fixes Req 9)
     query_strip_harakat: bool = False  # drop Arabic diacritics from the query
     neighbours: bool = False
+    # Rank multiplier for chunks flagged ``instruction_like`` at ingest; 1.0 = off (Req 4.4)
+    instruction_penalty: float = Field(default=1.0, gt=0, le=1)
 
     @field_validator("gate_threshold", mode="before")
     @classmethod

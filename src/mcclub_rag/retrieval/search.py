@@ -25,6 +25,7 @@ _PAYLOAD = [
     "heading_path",
     "visibility",
     "ingested_at",
+    "instruction_like",
 ]
 
 
@@ -41,6 +42,7 @@ class Candidate:
     ingested_at: datetime
     fused_score: float
     fused_rank: int
+    instruction_like: bool = False  # payload schema 2; absent on older points
 
     @classmethod
     def from_point(cls, point: qm.ScoredPoint | qm.Record, rank: int) -> "Candidate":
@@ -57,6 +59,7 @@ class Candidate:
             ingested_at=datetime.fromisoformat(p["ingested_at"]),
             fused_score=float(getattr(point, "score", 0.0) or 0.0),
             fused_rank=rank,
+            instruction_like=bool(p.get("instruction_like", False)),
         )
 
 
