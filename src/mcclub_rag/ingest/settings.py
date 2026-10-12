@@ -41,6 +41,7 @@ class IngestSettings(BaseSettings):
     max_pages: int = Field(default=300, gt=0)
     parse_timeout_s: int = Field(default=60, gt=0)  # hang guard per document
     ocr_page_timeout_s: int = Field(default=10, ge=0)  # extra budget per PDF page / image
+    ocr_deskew: bool = True  # straighten skewed photos before OCR (eval-fixes Req 12)
     max_concurrency: int = Field(default=1, gt=0)
 
     # Web fetching
