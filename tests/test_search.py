@@ -248,8 +248,22 @@ async def test_cross_language_prefetch_keeps_the_visibility_filter(pipe, tmp_pat
     found = await cross.search(dense, sparse, "public", query_language="fr")
     assert other.doc_id not in {c.doc_id for c in found}
     third = seen["prefetch"][2]
-    assert third.filter.must[0] == visibility_filter("public")
+    assert third.filter.must[0].must[0] == visibility_filter("public").must[0]
     assert third.filter.must_not[0].match == qm.MatchValue(value="fr")
     assert seen["query"].rrf.weights is None or len(seen["query"].rrf.weights) == 3
     await cross.search(dense, sparse, "public")  # no language: two arms, as before
     assert len(seen["prefetch"]) == 2
+
+
+async def test_expired_documents_are_not_retrieved(pipe, tmp_path):
+    kept = await _ingest(pipe, tmp_path, "a.md", "# A\n\nLa cotisation.", "public")
+    gone = await _ingest(pipe, tmp_path, "b.md", "# B\n\nLa cotisation annuelle.", "public")
+    await pipe.store.set_fields(gone.doc_id, {"expires_at": 1.0})  # 1970: long expired
+    future = await _ingest(pipe, tmp_path, "c.md", "# C\n\nCotisation future.", "members")
+    await pipe.store.set_fields(future.doc_id, {"expires_at": 4_000_000_000.0})
+    for role in ("public", "member"):
+        found = {c.doc_id for c in await run(pipe, searcher(pipe), "cotisation", role)}
+        assert gone.doc_id not in found and kept.doc_id in found
+    assert future.doc_id in {
+        c.doc_id for c in await run(pipe, searcher(pipe), "cotisation", "member")
+    }

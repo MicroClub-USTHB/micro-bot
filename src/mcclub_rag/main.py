@@ -198,6 +198,7 @@ class RealDocumentBackend:
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
+        expiry = _parse_expiry(expires_at)  # before reading the upload: a bad date is a 422
         data = await file.read()
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp.write(data)
@@ -209,6 +210,7 @@ class RealDocumentBackend:
                 file.filename or "document",
                 visibility,
                 topic=topic,
+                expires_at=expiry,
             )
         finally:
             Path(tmp_path).unlink(missing_ok=True)
@@ -262,6 +264,22 @@ def _map_ingest_result(result: object) -> IngestResult:
     )
 
 
+def _parse_expiry(value: str | None) -> datetime | None:
+    """``expires_at`` form field: ISO 8601 date or datetime; a date ends at its last second UTC,
+    a time without an offset is UTC. Blank = no expiry."""
+    if value is None or not value.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise IngestError(
+            "invalid_input", "expires_at must be an ISO 8601 date or datetime"
+        ) from None
+    if len(value.strip()) == 10:  # a bare date: valid until the end of that day
+        moment = moment.replace(hour=23, minute=59, second=59)
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def _map_doc_info(doc: IngestDocumentInfo, topic: str | None = None) -> DocInfo:
     return DocInfo(
         doc_id=doc.doc_id,
@@ -271,6 +289,7 @@ def _map_doc_info(doc: IngestDocumentInfo, topic: str | None = None) -> DocInfo:
         chunk_count=doc.chunk_count,
         created_at=doc.ingested_at.isoformat(),
         topic=topic,
+        expires_at=doc.expires_at.isoformat() if doc.expires_at else None,
     )
 
 

@@ -272,3 +272,20 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
     finally:
         await ingest_pipeline.close_pipeline()
         get_settings.cache_clear()
+
+
+async def test_expires_at_is_kept_and_listed(backend: RealDocumentBackend) -> None:
+    result = await backend.ingest_file(
+        upload("guide.md", GUIDE), visibility="public", topic=None, expires_at="2027-06-30"
+    )
+    assert result.status == "indexed"
+    (info,) = await backend.list_documents()
+    assert info.expires_at == "2027-06-30T23:59:59+00:00"
+
+
+async def test_invalid_expires_at_is_invalid_input(backend: RealDocumentBackend) -> None:
+    with pytest.raises(IngestError) as caught:
+        await backend.ingest_file(
+            upload("guide.md", GUIDE), visibility="public", topic=None, expires_at="next week"
+        )
+    assert caught.value.code == "invalid_input"

@@ -79,8 +79,9 @@ async def test_ingest_file_creates_points_and_stored_json(pipe, tmp_path):
         "source_type",
         "ingested_at",
         "instruction_like",
+        "expires_at",
     }
-    assert payload["instruction_like"] is False
+    assert payload["instruction_like"] is False and payload["expires_at"] is None
     assert payload["visibility"] == "members" and payload["source"] == "rules.md"
     stored = await pipe.docstore.load(result.doc_id)
     assert stored.topic == "rules" and stored.document.content_hash == result.content_hash
@@ -393,3 +394,36 @@ async def test_module_level_list_and_delete(tmp_path):
     a = await p.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
     assert [d.doc_id for d in await pl.list_documents()] == [a.doc_id]
     assert await pl.delete_document(a.doc_id) is True
+
+
+async def test_expiry_is_stored_listed_and_updated(pipe, tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    when = datetime(2027, 1, 1, tzinfo=UTC)
+    path = _write(tmp_path, "rules.md", RULES)
+    first = await pipe.ingest_file(path, "rules.md", "public", expires_at=when)
+    assert first.status == "created"
+    (listed,) = await pipe.list_documents()
+    assert listed.expires_at == when
+    assert {p.payload["expires_at"] for p in await _points(pipe)} == {when.timestamp()}
+    assert (await pipe.docstore.load(first.doc_id)).expires_at == when
+
+    later = when + timedelta(days=30)
+    again = await pipe.ingest_file(path, "rules.md", "public", expires_at=later)
+    assert again.status == "updated"
+    assert (await pipe.list_documents())[0].expires_at == later
+    assert (await pipe.ingest_file(path, "rules.md", "public", expires_at=later)).status == (
+        "duplicate"
+    )
+
+
+async def test_corpus_version_changes_when_a_document_expires(pipe, tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    soon = datetime.now(UTC) + timedelta(seconds=0.5)
+    await pipe.ingest_file(
+        _write(tmp_path, "rules.md", RULES), "rules.md", "public", expires_at=soon
+    )
+    before = await pipe.corpus_version()
+    await asyncio.sleep(0.6)
+    assert await pipe.corpus_version() != before

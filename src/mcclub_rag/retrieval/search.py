@@ -5,6 +5,7 @@ is set on each prefetch and on the fused query (the server would push the top-le
 anyway, measured on 1.19.2; being explicit costs nothing).
 """
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,15 +64,24 @@ class Candidate:
         )
 
 
-def visibility_filter(role: Role) -> qm.Filter:
-    """public sees ``public`` only; member sees ``public`` and ``members``."""
+def visibility_filter(role: Role, now: float | None = None) -> qm.Filter:
+    """public sees ``public`` only; member sees ``public`` and ``members``. Either way, only
+    documents without ``expires_at`` or not yet expired (eval-fixes Req 13)."""
     if role == "public":
         match: qm.MatchValue | qm.MatchAny = qm.MatchValue(value="public")
     elif role == "member":
         match = qm.MatchAny(any=["public", "members"])
     else:
         raise ValueError(f"unknown role {role!r}")
-    return qm.Filter(must=[qm.FieldCondition(key="visibility", match=match)])
+    current = time.time() if now is None else now
+    not_expired = qm.Filter(
+        should=[
+            qm.IsEmptyCondition(is_empty=qm.PayloadField(key="expires_at")),
+            qm.IsNullCondition(is_null=qm.PayloadField(key="expires_at")),
+            qm.FieldCondition(key="expires_at", range=qm.Range(gt=current)),
+        ]
+    )
+    return qm.Filter(must=[qm.FieldCondition(key="visibility", match=match), not_expired])
 
 
 def dedupe(candidates: Sequence[Candidate]) -> list[Candidate]:
