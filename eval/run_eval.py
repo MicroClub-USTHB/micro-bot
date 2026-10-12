@@ -78,8 +78,9 @@ async def evaluate(
     rows = []
     for q in questions:
         history = [Turn(**t) for t in q.get("history", [])]
+        s = retriever.settings
         query, used = build_search_query(
-            q["question"], history, retriever.settings.followup_max_words
+            q["question"], history, s.followup_max_words, cues=s.followup_cues
         )
         start = time.perf_counter()
         dense, sparse = await retriever.encode(query)

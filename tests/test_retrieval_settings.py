@@ -41,6 +41,7 @@ def test_defaults_match_design():
     assert s.rerank_max_length == 640
     assert s.rerank_threads == 4
     assert s.followup_max_words == 8
+    assert s.followup_cues is True
     assert s.neighbours is False
 
 

@@ -104,7 +104,9 @@ class HybridRetriever:
     async def retrieve(self, query: str, role: Role, history: list[object]) -> Retrieval:
         s = self.settings
         visibility_filter(role)  # unknown role: ValueError before any work
-        search_query, used_history = build_search_query(query, history, s.followup_max_words)
+        search_query, used_history = build_search_query(
+            query, history, s.followup_max_words, cues=s.followup_cues
+        )
         if not search_query:
             return Retrieval(chunks=[], top_score=0.0, decision="refuse")
         started = time.perf_counter()

@@ -51,6 +51,7 @@ class RetrievalSettings(BaseSettings):
 
     # Query and context
     followup_max_words: int = Field(default=8, ge=0)
+    followup_cues: bool = True  # merge only cued messages (eval-fixes Req 11)
     neighbours: bool = False
 
     @field_validator("gate_threshold", mode="before")

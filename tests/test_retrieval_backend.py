@@ -126,6 +126,19 @@ async def test_short_follow_up_searches_with_the_previous_question(pipe, rules):
     assert "élections" in result.chunks[0].text.lower()
 
 
+async def test_short_new_question_is_searched_alone(pipe, rules):
+    reranker = FakeReranker()
+    history = [Turn(user_message="Quand ont lieu les élections ?", assistant_message="En juin.")]
+    await make_retriever(pipe, reranker).retrieve("cotisation annuelle ?", "public", history)
+    await make_retriever(pipe, reranker, followup_cues=False).retrieve(
+        "cotisation annuelle ?", "public", history
+    )
+    assert [c[0] for c in reranker.calls] == [
+        "cotisation annuelle ?",
+        "Quand ont lieu les élections ?\ncotisation annuelle ?",
+    ]
+
+
 LONG = "# Statuts\n\n" + "\n\n".join(
     f"## Article {i}\n\narticle{i} " + f"mot{i} " * 25 for i in range(4)
 )

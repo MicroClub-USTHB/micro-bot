@@ -147,7 +147,7 @@ scope (needs a translation model).
 ### 6. Injection flag (Req 4.3–4.5) [N] — `ingest/injection.py`, `ingest/pipeline.py`, `retrieval/*`
 
 ```python
-def looks_like_instruction(text: str) -> bool: ...   # pure, deterministic
+def looks_like_instruction(text: str) -> bool: ...  # pure, deterministic
 ```
 
 Regexes on `fold_for_search(text)`, requiring an **imperative aimed at the assistant**, e.g.:
@@ -187,8 +187,8 @@ Today `_pick_title(explicit, metadata, first heading, stem)` takes the metadata 
 New order: **explicit > page-1 heading title > metadata title (unless generic) > stem**.
 
 ```python
-def page_one_title(sections: Sequence[Section]) -> str | None: ...   # pure
-def is_generic_title(title: str, filename_stem: str) -> bool: ...    # pure
+def page_one_title(sections: Sequence[Section]) -> str | None: ...  # pure
+def is_generic_title(title: str, filename_stem: str) -> bool: ...  # pure
 ```
 
 - `page_one_title`: the headings of page-1 sections in order, deduplicated, joined with ": "
