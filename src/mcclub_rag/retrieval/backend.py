@@ -15,7 +15,7 @@ from qdrant_client import AsyncQdrantClient
 from mcclub_rag.ingest.pipeline import IngestPipeline
 from mcclub_rag.retrieval.embed import DenseEncoder, SparseEncoder
 from mcclub_rag.retrieval.gate import decide
-from mcclub_rag.retrieval.query import build_search_query
+from mcclub_rag.retrieval.query import build_search_query, normalize_query
 from mcclub_rag.retrieval.rerank import Reranker, get_reranker, passage
 from mcclub_rag.retrieval.search import Candidate, HybridSearch, visibility_filter
 from mcclub_rag.retrieval.settings import RetrievalSettings, get_retrieval_settings
@@ -71,6 +71,12 @@ class HybridRetriever:
             chunk_header=pipeline.settings.chunk_context_header,
         )
 
+    def search_query(self, query: str, history: Sequence[object]) -> tuple[str, bool]:
+        """The text that is encoded and reranked: follow-up merge, then query normalization."""
+        s = self.settings
+        text, used = build_search_query(query, history, s.followup_max_words, cues=s.followup_cues)
+        return normalize_query(text, s.query_casefold_shouting, s.query_strip_harakat), used
+
     async def encode(self, query: str):
         dense = await asyncio.to_thread(self.dense.embed_query, query)
         sparse = await asyncio.to_thread(self.sparse.embed_query, query)
@@ -104,9 +110,7 @@ class HybridRetriever:
     async def retrieve(self, query: str, role: Role, history: list[object]) -> Retrieval:
         s = self.settings
         visibility_filter(role)  # unknown role: ValueError before any work
-        search_query, used_history = build_search_query(
-            query, history, s.followup_max_words, cues=s.followup_cues
-        )
+        search_query, used_history = self.search_query(query, history)
         if not search_query:
             return Retrieval(chunks=[], top_score=0.0, decision="refuse")
         started = time.perf_counter()

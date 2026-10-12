@@ -9,7 +9,7 @@ merged. Only the last turn is used: older turns drift to old topics.
 import re
 from collections.abc import Sequence
 
-from mcclub_rag.text.normalize import fold_for_search, normalize_text
+from mcclub_rag.text.normalize import fold_for_search, normalize_text, strip_arabic_marks
 
 
 def _folded(words: str) -> frozenset[str]:
@@ -36,6 +36,9 @@ _QUESTION_WORDS = _folded(
 )
 _IMPERSONAL = re.compile(r"\by\W+a\W+t\W+il\b")  # "y a-t-il": impersonal, not a pointer
 _TOKEN = re.compile(r"\w+")
+_REPEATED_PUNCT = re.compile(r"([?!؟.,;:])[?!؟,;:]+")  # "??!!" -> "?"; "..." kept
+_HSPACE = re.compile(r"[^\S\n]+")
+_MIN_SHOUT_LETTERS = 6
 
 
 def _clean(text: str) -> str:
@@ -76,3 +79,19 @@ def build_search_query(
     if not isinstance(previous, str) or not (previous := _clean(previous)):
         return query, False
     return f"{previous}\n{query}", True
+
+
+def normalize_query(query: str, casefold_shouting: bool, strip_harakat: bool) -> str:
+    """Query sent to the dense encoder and the reranker (eval-fixes Req 9). Pure.
+
+    Repeated punctuation is always collapsed. ``casefold_shouting`` lower-cases a query written
+    mostly in capitals (mixed case such as "USTHB" in a sentence is kept); ``strip_harakat``
+    removes Arabic diacritics, since the corpus is mostly unvowelled. BM25 folds on its own.
+    """
+    query = _HSPACE.sub(" ", _REPEATED_PUNCT.sub(r"\1", query)).strip()  # keeps the "\n"
+    if casefold_shouting:
+        cased = [ch for ch in query if ch.isupper() or ch.islower()]
+        upper = sum(ch.isupper() for ch in cased)
+        if len(cased) >= _MIN_SHOUT_LETTERS and upper >= 0.6 * len(cased):
+            query = query.lower()
+    return strip_arabic_marks(query) if strip_harakat else query

@@ -1,7 +1,7 @@
 import pytest
 
 from mcclub_rag.conversation import Turn
-from mcclub_rag.retrieval.query import build_search_query, has_followup_cue
+from mcclub_rag.retrieval.query import build_search_query, has_followup_cue, normalize_query
 
 
 def turn(user: str, assistant: str = "answer") -> Turn:
@@ -120,3 +120,23 @@ def test_cue_rule_can_be_switched_off():
     history = [turn("When is the MC Hackathon 2026?")]
     query, used = build_search_query("Who is the dean?", history, 8, cues=False)
     assert used and query.endswith("Who is the dean?")
+
+
+def test_normalize_query_collapses_repeated_punctuation_always():
+    assert normalize_query("Quand ??!!  est   l'élection...", False, False) == (
+        "Quand ? est l'élection..."
+    )
+
+
+def test_normalize_query_lowers_shouting_only():
+    assert normalize_query("WHEN IS THE HACKATHON?", True, False) == "when is the hackathon?"
+    assert normalize_query("Where is the USTHB library?", True, False) == (
+        "Where is the USTHB library?"
+    )
+    assert normalize_query("WHEN IS THE HACKATHON?", False, False) == "WHEN IS THE HACKATHON?"
+    assert normalize_query("MCDI", True, False) == "MCDI"  # too short to call it shouting
+
+
+def test_normalize_query_strips_harakat_when_asked():
+    assert normalize_query("أَيْنَ المَكْتَبَةُ؟", False, True) == "أين المكتبة؟"
+    assert normalize_query("أَيْنَ", False, False) == "أَيْنَ"

@@ -30,7 +30,6 @@ from mcclub_rag.ingest.pipeline import IngestPipeline
 from mcclub_rag.ingest.settings import IngestSettings
 from mcclub_rag.retrieval.backend import HybridRetriever
 from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.query import build_search_query
 from mcclub_rag.retrieval.rerank import get_reranker
 from mcclub_rag.retrieval.settings import RetrievalSettings
 
@@ -78,10 +77,7 @@ async def evaluate(
     rows = []
     for q in questions:
         history = [Turn(**t) for t in q.get("history", [])]
-        s = retriever.settings
-        query, used = build_search_query(
-            q["question"], history, s.followup_max_words, cues=s.followup_cues
-        )
+        query, used = retriever.search_query(q["question"], history)
         start = time.perf_counter()
         dense, sparse = await retriever.encode(query)
         ms_encode = _ms(start)

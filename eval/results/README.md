@@ -5,6 +5,27 @@ corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files o
 (`eval/corpus.json`), 48 questions (36 answerable), until the sections below say otherwise. Dev
 machine, 4 threads.
 
+## 2026-10-12: gate calibration with the noisy variants (eval-fixes Req 3.4, 9.3)
+
+`python -m eval.calibrate_gate e2e/20261012T021600Z-xl-granite.json --split dev` (granite, gte,
+1,051 retrieval scores: dev cases and their robustness variants; no new run needed).
+
+| GATE_THRESHOLD | False refusals | False answers | Flip rate |
+|---|---|---|---|
+| 0.28 | 0.6% | 91.5% | 8.8% |
+| 0.31 (suggested: fewest false answers + flips, refusals ≤ 10%) | 1.1% | 83.0% | 11.8% |
+| 0.35 | 1.1% | 74.5% | 21.8% |
+| **0.40 (current)** | 2.2% | 61.7% | 37.8% |
+| 0.45 | 9.4% | 48.9% | 49.2% |
+
+The flip rate at 0.40 matches the e2e robustness result (38.5%, ISSUES.md I7), so the offline
+sweep is a fair stand-in. No threshold keeps flips ≤ 10% and false answers low: the scores of
+answerable and refuse-expected questions overlap (I8). Below 0.29 the gate is a relevance floor
+that almost never flips; refusing unknowns is then the LLM's job. **Kept at 0.40 for now:** with
+no LLM wired (I1) a lower gate sends more unrelated chunks to users through the extractive
+fallback (I2) and spends more of the 50 calls a day once wired. Lower it (0.28–0.31) together
+with the I1/I2 fixes.
+
 ## 2026-10-12: cross-lingual questions, granite vs bge-m3 (`xl86-*`)
 
 38 cross-lingual questions added (`x-07`..`x-44`, 86 questions, 74 answerable): Arabic, darija

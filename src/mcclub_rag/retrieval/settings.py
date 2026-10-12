@@ -52,6 +52,8 @@ class RetrievalSettings(BaseSettings):
     # Query and context
     followup_max_words: int = Field(default=8, ge=0)
     followup_cues: bool = True  # merge only cued messages (eval-fixes Req 11)
+    query_casefold_shouting: bool = False  # lower-case an ALL-CAPS query (eval-fixes Req 9)
+    query_strip_harakat: bool = False  # drop Arabic diacritics from the query
     neighbours: bool = False
 
     @field_validator("gate_threshold", mode="before")

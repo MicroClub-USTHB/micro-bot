@@ -196,3 +196,13 @@ async def test_qdrant_failure_becomes_index_unavailable(pipe, rules, monkeypatch
     monkeypatch.setattr(pipe.client, "query_points", down)
     with pytest.raises(IndexUnavailable):
         await make_retriever(pipe).retrieve("cotisation", "public", [])
+
+
+async def test_query_normalization_settings_reach_the_reranker(pipe, rules):
+    reranker = FakeReranker()
+    retriever = make_retriever(
+        pipe, reranker, query_casefold_shouting=True, query_strip_harakat=True
+    )
+    await retriever.retrieve("COTISATION ANNUELLE ??", "public", [])
+    await retriever.retrieve("مَا الاشْتِرَاك", "public", [])
+    assert [c[0] for c in reranker.calls] == ["cotisation annuelle ?", "ما الاشتراك"]
