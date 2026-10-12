@@ -44,6 +44,8 @@ class RetrievalSettings(BaseSettings):
     dense_weight: float = Field(default=1.0, gt=0)
     sparse_weight: float = Field(default=1.0, gt=0)
     prefetch_limit: int = Field(default=40, gt=0)  # per arm
+    # Dense arm restricted to chunks NOT in the query's language; 0 = off (eval-fixes Req 10)
+    cross_lang_prefetch: int = Field(default=0, ge=0)
 
     # Reranker
     rerank_max_length: int = MIN_RERANK_MAX_LENGTH

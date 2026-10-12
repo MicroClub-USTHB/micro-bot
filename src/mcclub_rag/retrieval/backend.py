@@ -20,6 +20,7 @@ from mcclub_rag.retrieval.rerank import Reranker, get_reranker, passage
 from mcclub_rag.retrieval.search import Candidate, HybridSearch, visibility_filter
 from mcclub_rag.retrieval.settings import RetrievalSettings, get_retrieval_settings
 from mcclub_rag.schemas import Chunk, Retrieval, Role
+from mcclub_rag.text.lang import detect_language
 
 log = structlog.get_logger(__name__)
 
@@ -82,8 +83,15 @@ class HybridRetriever:
         sparse = await asyncio.to_thread(self.sparse.embed_query, query)
         return dense, sparse
 
+    def query_language(self, query: str) -> str | None:
+        """Language for the cross-language arm, or None when that arm is off."""
+        return detect_language(query) if self.settings.cross_lang_prefetch else None
+
     async def candidates(self, query: str, role: Role) -> list[Candidate]:
-        return await self.search.search(*await self.encode(query), role)
+        dense, sparse = await self.encode(query)
+        return await self.search.search(
+            dense, sparse, role, query_language=self.query_language(query)
+        )
 
     async def rerank(
         self, query: str, candidates: Sequence[Candidate]
@@ -127,7 +135,9 @@ class HybridRetriever:
         dense, sparse = await self.encode(search_query)
         ms_encode = _ms(started)
         step = time.perf_counter()
-        candidates = await self.search.search(dense, sparse, role)
+        candidates = await self.search.search(
+            dense, sparse, role, query_language=self.query_language(query)
+        )
         ms_search = _ms(step)
         step = time.perf_counter()
         reranked = await self.rerank(search_query, candidates)

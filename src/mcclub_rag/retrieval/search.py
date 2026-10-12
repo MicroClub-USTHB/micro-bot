@@ -98,27 +98,49 @@ class HybridSearch:
         self.alias = alias
         self.settings = settings
 
-    def _fusion(self) -> qm.RrfQuery | qm.FusionQuery:
+    def _fusion(self, arms: int = 2) -> qm.RrfQuery | qm.FusionQuery:
         s = self.settings
         if s.fusion == "dbsf":
             return qm.FusionQuery(fusion=qm.Fusion.DBSF)
-        weights = None if s.dense_weight == s.sparse_weight else [s.dense_weight, s.sparse_weight]
+        weights = None
+        if s.dense_weight != s.sparse_weight:  # the cross-language arm is a dense arm
+            weights = [s.dense_weight, s.sparse_weight, s.dense_weight][:arms]
         return qm.RrfQuery(rrf=qm.Rrf(k=s.rrf_k, weights=weights))
 
     async def search(
-        self, dense: list[float], sparse: qm.SparseVector, role: Role
+        self,
+        dense: list[float],
+        sparse: qm.SparseVector,
+        role: Role,
+        *,
+        query_language: str | None = None,
     ) -> list[Candidate]:
-        """Fused candidates (at most ``top_k``) visible to ``role``, deduplicated."""
+        """Fused candidates (at most ``top_k``) visible to ``role``, deduplicated.
+
+        With ``RETRIEVAL_CROSS_LANG_PREFETCH`` > 0 and the query's language, a third dense arm
+        brings chunks in *other* languages: both main arms favour same-language chunks, so an
+        English answer to an Arabic question often never reached the reranker (ISSUES.md I9).
+        """
         flt = visibility_filter(role)
         limit = self.settings.prefetch_limit
+        prefetch = [
+            qm.Prefetch(query=dense, using=DENSE, limit=limit, filter=flt),
+            qm.Prefetch(query=sparse, using=SPARSE, limit=limit, filter=flt),
+        ]
+        cross = self.settings.cross_lang_prefetch
+        if cross and query_language:
+            other = qm.Filter(
+                must=[flt],
+                must_not=[
+                    qm.FieldCondition(key="language", match=qm.MatchValue(value=query_language))
+                ],
+            )
+            prefetch.append(qm.Prefetch(query=dense, using=DENSE, limit=cross, filter=other))
         async with guard("search"):
             response = await self.client.query_points(
                 self.alias,
-                prefetch=[
-                    qm.Prefetch(query=dense, using=DENSE, limit=limit, filter=flt),
-                    qm.Prefetch(query=sparse, using=SPARSE, limit=limit, filter=flt),
-                ],
-                query=self._fusion(),
+                prefetch=prefetch,
+                query=self._fusion(len(prefetch)),
                 query_filter=flt,
                 limit=self.settings.top_k,
                 with_payload=_PAYLOAD,

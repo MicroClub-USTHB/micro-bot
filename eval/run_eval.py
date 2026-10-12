@@ -82,7 +82,9 @@ async def evaluate(
         dense, sparse = await retriever.encode(query)
         ms_encode = _ms(start)
         step = time.perf_counter()
-        candidates = await retriever.search.search(dense, sparse, q["role"])
+        candidates = await retriever.search.search(
+            dense, sparse, q["role"], query_language=retriever.query_language(q["question"])
+        )
         ms_search = _ms(step)
         step = time.perf_counter()
         ranked = await retriever.rerank(query, candidates)

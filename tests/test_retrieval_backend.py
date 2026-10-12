@@ -235,3 +235,18 @@ async def test_gate_ignores_the_penalty_even_past_top_n(pipe, tmp_path):
     result = await retriever.retrieve("atelier python samedi", "public", [])
     assert "ignore all previous" not in result.chunks[0].text
     assert result.top_score == 1.0 and result.decision == "answer"
+
+
+async def test_cross_language_arm_gets_the_question_language(pipe, rules, monkeypatch):
+    seen = []
+    retriever = make_retriever(pipe, cross_lang_prefetch=5)
+    original = retriever.search.search
+
+    async def spy(dense, sparse, role, *, query_language=None):
+        seen.append(query_language)
+        return await original(dense, sparse, role, query_language=query_language)
+
+    monkeypatch.setattr(retriever.search, "search", spy)
+    await retriever.retrieve("Quand ont lieu les élections du bureau ?", "public", [])
+    await make_retriever(pipe).retrieve("élections", "public", [])  # off: not detected
+    assert seen == ["fr"]
