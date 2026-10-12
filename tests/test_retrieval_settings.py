@@ -93,3 +93,7 @@ def test_rerank_pool_and_cut_are_bounded():
 def test_blank_rerank_top_k_is_none(monkeypatch):
     monkeypatch.setenv("RETRIEVAL_RERANK_TOP_K", "")
     assert RetrievalSettings().rerank_top_k is None
+
+
+def test_cross_language_arm_is_on_by_default():
+    assert RetrievalSettings().cross_lang_prefetch == 20

@@ -39,6 +39,8 @@ _TOKEN = re.compile(r"\w+")
 _REPEATED_PUNCT = re.compile(r"([?!؟.,;:])[?!؟,;:]+")  # "??!!" -> "?"; "..." kept
 _HSPACE = re.compile(r"[^\S\n]+")
 _MIN_SHOUT_LETTERS = 6
+_LATIN_WORD = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]+")
+_CAMEL = re.compile(r"[A-Z][a-z]+(?:[A-Z][a-z]{2,})+")  # GitHub, McDonald; not "WhEn"
 
 
 def _clean(text: str) -> str:
@@ -81,17 +83,33 @@ def build_search_query(
     return f"{previous}\n{query}", True
 
 
-def normalize_query(query: str, casefold_shouting: bool, strip_harakat: bool) -> str:
+def _fix_word_case(match: re.Match[str]) -> str:
+    """Lower-case a word with scrambled case ("wOrkshop"); keep "USTHB", "Python", "GitHub".
+
+    "iPhone" becomes "iphone": harmless for the models, and random noise has that shape too.
+    """
+    word = match.group()
+    if word.islower() or word.isupper() or word.istitle():
+        return word
+    if _CAMEL.fullmatch(word):
+        return word
+    return word.lower()
+
+
+def normalize_query(query: str, fix_case: bool, strip_harakat: bool) -> str:
     """Query sent to the dense encoder and the reranker (eval-fixes Req 9). Pure.
 
-    Repeated punctuation is always collapsed. ``casefold_shouting`` lower-cases a query written
-    mostly in capitals (mixed case such as "USTHB" in a sentence is kept); ``strip_harakat``
-    removes Arabic diacritics, since the corpus is mostly unvowelled. BM25 folds on its own.
+    Repeated punctuation is always collapsed. ``fix_case`` lower-cases a query written mostly in
+    capitals and words with scrambled case (acronyms, names and CamelCase are kept);
+    ``strip_harakat`` removes Arabic diacritics, since the corpus is mostly unvowelled. BM25
+    folds on its own.
     """
     query = _HSPACE.sub(" ", _REPEATED_PUNCT.sub(r"\1", query)).strip()  # keeps the "\n"
-    if casefold_shouting:
+    if fix_case:
         cased = [ch for ch in query if ch.isupper() or ch.islower()]
         upper = sum(ch.isupper() for ch in cased)
         if len(cased) >= _MIN_SHOUT_LETTERS and upper >= 0.6 * len(cased):
             query = query.lower()
+        else:
+            query = _LATIN_WORD.sub(_fix_word_case, query)
     return strip_arabic_marks(query) if strip_harakat else query

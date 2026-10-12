@@ -50,13 +50,16 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   our `ingest.errors.IngestError` (`index_unavailable` 503, `embedding_error` / `rerank_error` 500).
   Pipeline errors reach the client as the JSON error, not as `status="failed"`. The fakes stay for
   tests (`ApplicationState` still takes any backend).
-- **Open seam items:** `expires_at` is accepted by `POST /documents` but the adapter drops it
-  (the pipeline has no expiry; agree the meaning with eequaled or remove the field); `config.py`
-  defaults (`rerank_model` bge, `retrieve_top_k` 30, `gate_threshold` None) disagree with the
-  retrieval defaults (gte, 20, 0.40 in `.env.example`); ownership of search/rerank/gate by nisbenz
-  is still to confirm. Ready for eequaled to wire (eval-fixes, `specs/eval-fixes/` tasks 12–14):
-  `text/snippet.best_snippet(text, query)` for `Source.snippet` (I6/I24), the handover designs
-  for I1 (LLM), the fallback (I2–I4), refusal language (I5) and citations (I22).
+- **Eval fixes (2026-10-12, `specs/eval-fixes/`, nisbenz with the user's go-ahead on eequaled's
+  files, to review with eequaled):** `default_state()` wires `OpenRouterGenerationService` when
+  `OPENROUTER_API_KEY` is set; the fallback answers with a localized notice and the passages as
+  sources (`grounded=false`, never pasted chunks); refusals in the question's language
+  (`answer.REFUSAL`); `answer.build` accepts `[doc_id: X]`, `[S1]`, `[X, Y]`; snippets come from
+  `text/snippet.best_snippet`; `get_role` / `require_admin` read the app's settings; `config.py`
+  retrieval defaults equal `RetrievalSettings`; `expires_at` is parsed (ISO 8601, a bare date
+  ends that day UTC), stored, listed, and expired documents are filtered in every query. Routes,
+  params and response shapes are unchanged (a blank message gets a 200 prompt, delete of an
+  unknown id keeps `{"ok": false}`).
 
 ## Workflow
 
@@ -226,9 +229,9 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   word; not هو/هي, "ce", "en", "there") is searched as previous `user_message` + message; a short
   new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. No LLM rewrite.
 - **Query normalization** (`normalize_query`, before the encoder and reranker): repeated
-  punctuation always collapsed; `RETRIEVAL_QUERY_CASEFOLD_SHOUTING`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
+  punctuation always collapsed; `RETRIEVAL_QUERY_FIX_CASE`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
   off until measured on the robustness suite.
-- **Cross-language arm:** `RETRIEVAL_CROSS_LANG_PREFETCH=n` adds a third dense prefetch over
+- **Cross-language arm:** `RETRIEVAL_CROSS_LANG_PREFETCH` (default 20, 0 = off) adds a third dense prefetch over
   chunks whose `language` differs from the question's (`detect_language`), with the role filter.
 - Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,
   `GATE_THRESHOLD`, `RERANK_MODEL`); `config.py` untouched. Qdrant's own RRF default `k` is 2; ours
@@ -305,7 +308,7 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 ## Configuration
 
 Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
-token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD=0.40` calibrated for gte,
+token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD=0.31` calibrated for gte (relevance floor, `eval.calibrate_gate`),
 `MAX_MESSAGE_CHARS`, `LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
 in `.env.example`. Never commit `.env` or real keys.
 

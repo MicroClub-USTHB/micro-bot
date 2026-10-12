@@ -140,3 +140,12 @@ def test_normalize_query_lowers_shouting_only():
 def test_normalize_query_strips_harakat_when_asked():
     assert normalize_query("أَيْنَ المَكْتَبَةُ؟", False, True) == "أين المكتبة؟"
     assert normalize_query("أَيْنَ", False, False) == "أَيْنَ"
+
+
+def test_fix_case_repairs_scrambled_words_only():
+    assert normalize_query("WhEn is the pYthon wOrkshop ??", True, False) == (
+        "when is the python workshop ?"
+    )
+    assert normalize_query("Is USTHB on GitHub or McDonald?", True, False) == (
+        "Is USTHB on GitHub or McDonald?"
+    )

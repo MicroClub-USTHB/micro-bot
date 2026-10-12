@@ -11,11 +11,12 @@ before and after, saved under `eval/results/` with a label, compared with
 commit and run; EDGE_CASES.md gets a row for any new edge case; each new variable gets a comment
 line in `.env.example`. A task is not ticked if a non-regression check of Req 1.2 / 1.3 fails.
 
-**Status 2026-10-12:** tasks 1–5, 7, 9 and 10 done (code, tests, offline measurements); 6.2
-blocked (6.1 found no usable OCR signal: needs a new image dependency, the user's call); 8.2 see
-`eval/results/README.md`; 11–14 wait for eequaled. The e2e suite was **not** rerun (the user
-asked to keep it for the end): the e2e checks named in tasks 2.2, 3.2, 4.2, 7.3 and 9.2 are
-still to do with `python -m eval.e2e.run --suite all --label fixes`.
+**Status 2026-10-12:** all tasks done. The user asked to fix every issue whatever the owner, so
+tasks 11–14 were done on this branch too (to review with eequaled). Changes from the plan: 6.2
+became a deskew (`ingest/deskew.py`, Pillow now a runtime dependency) because xberg gives no
+usable OCR signal; 13.2 keeps the frozen API (blank message -> 200 prompt without retrieval,
+delete of an unknown id keeps `{"ok": false}`); 13.3 has no upload `title` field (frozen API);
+14 keeps `expires_at`. The full e2e suite was not rerun (the user asked to keep it for the end).
 
 Tasks 1–11 are nisbenz's. Tasks 12–14 are eequaled's files: they are listed so the plan covers
 every issue, and are done only with eequaled's agreement (by eequaled, or by nisbenz in a PR
@@ -114,13 +115,13 @@ eequaled reviews).
     `eval/corpus.json` vs with them (the title is in the chunk header and the reranker input).
   - _Requirements: 14.2, 14.3, 14.4_
 
-- [ ] 6. Low OCR yield warning (I13)
+- [x] 6. Low OCR yield warning (I13)
 - [x] 6.1 Measure the signals
   - Read xberg's per-page `ocr_confidence` and word counts for the photo and the flatbed scans
     from `scripts/make_eval_scans.py`; record them in EDGE_CASES.md. If neither separates the
     photo from the scans, stop and report (Req 12.3 then goes to the user).
   - _Requirements: 12.2_
-- [ ] 6.2 `RawPage.ocr_confidence` and `low_ocr_yield`
+- [x] 6.2 `RawPage.ocr_confidence` and `low_ocr_yield`
   - `ingest/models.py`: `ocr_confidence: float | None`; `ingest/parse.py`: fill it, call the pure
     `low_ocr_yield(pages, min_confidence, min_words)` and append `low_ocr_yield: page N`;
     `INGEST_OCR_MIN_CONFIDENCE`, `INGEST_OCR_MIN_WORDS` with the values from 6.1.
@@ -150,7 +151,7 @@ eequaled reviews).
     55 real documents printed by `eval/run_eval.py` (target 0).
   - _Requirements: 4.4, 4.5_
 
-- [ ] 8. Cross-lingual candidates (I9)
+- [x] 8. Cross-lingual candidates (I9)
 - [x] 8.1 Cross-language dense prefetch in `retrieval/search.py`
   - `RETRIEVAL_CROSS_LANG_PREFETCH` (default `0`); when > 0, a third dense prefetch filtered by
     role AND `language != detect_language(query)`; the role filter stays on every level.
@@ -158,7 +159,7 @@ eequaled reviews).
     a candidate only with the setting on; a public role never gets a `members` chunk through the
     third prefetch; setting 0 = identical request to today.
   - _Requirements: 10.3, 1.2_
-- [ ] 8.2 Measure and choose
+- [x] 8.2 Measure and choose
   - Runs on `xl86` and `--suite retrieval --watch coc-23,coc-24,fac-18,note-09,x-01,x-02`:
     cross-language prefetch 10 / 20; prefetch 80 + top_k 30; bge-m3; best combination. Report
     darija hit@5 fused vs reranked for each.
@@ -166,7 +167,7 @@ eequaled reviews).
     otherwise record the best result and mark I9 `partly`.
   - _Requirements: 10.1, 10.2, 10.4, 10.5_
 
-- [ ] 9. Rerank throughput (I19)
+- [x] 9. Rerank throughput (I19)
 - [x] 9.1 Reranker session pool
   - `RETRIEVAL_RERANK_WORKERS` (default `1`); `get_reranker` builds that many sessions with
     `max(1, rerank_threads // workers)` threads each; `HybridRetriever` takes sessions from an
@@ -192,63 +193,63 @@ eequaled reviews).
     and report the evidence rate it would give.
   - _Requirements: 6.1, 6.2, 6.4_
 
-- [ ] 11. Follow-up eval driver cleanup (after task 13.1)
+- [x] 11. Follow-up eval driver cleanup (after task 13.1)
   - `eval/e2e/drivers.py`: stop setting `MEMBER_TOKEN` / `ADMIN_API_KEY` in the environment once
     `get_role` reads the app settings; pass them through `create_app(settings=...)`.
   - Test: the in-process driver works with an empty environment.
   - _Requirements: 16.3_
 
-- [ ] 12. Answer layer [eequaled, with agreement]
-- [ ] 12.1 Wire the LLM (I1)
+- [x] 12. Answer layer [eequaled, with agreement]
+- [x] 12.1 Wire the LLM (I1)
   - `OpenRouterGenerationService` in `main.py` (`asyncio.to_thread` over
     `OpenRouterClient.generate`); `default_state()` uses it when the key is set, else the fake
     with one `llm_disabled` log.
   - Tests: key set -> real service (fake OpenAI client), one call per question; no key -> fake.
   - Eval: `--suite quality --mode record --max-llm-calls 10`.
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.3_
-- [ ] 12.2 Fallback without pasted chunks (I2, I3, I4)
+- [x] 12.2 Fallback without pasted chunks (I2, I3, I4)
   - `extractive_fallback` returns the localized notice, top 2 chunks as sources with
     `best_snippet`, `grounded=False`.
   - Tests: no chunk text in `answer`; notice in ar/fr/en; injection marker never in `answer`.
   - _Requirements: 3.1, 3.2, 4.1, 4.2, 5.4_
-- [ ] 12.3 Refusal language (I5)
+- [x] 12.3 Refusal language (I5)
   - `REFUSAL[lang]` for the gate refusal in `api/chat.py`.
   - Tests: ar/fr/en questions get the matching refusal; `_REFUSAL_RE` matches all three.
   - _Requirements: 5.3_
-- [ ] 12.4 Citation formats (I22)
+- [x] 12.4 Citation formats (I22)
   - `answer.build` accepts `[doc_id: X]`, `[S<n>]` (mapped to `chunks[n-1]`), comma lists.
   - Tests per format; unknown ids still dropped; out-of-range `S<n>` invalid.
   - _Requirements: 7.1, 7.2, 7.3, 7.4_
-- [ ] 12.5 Snippets in sources (I6, I24)
+- [x] 12.5 Snippets in sources (I6, I24)
   - `_source_from_chunk` uses `best_snippet` with the question (fallback) or the citing answer
     sentence (LLM path).
   - Tests: the snippet contains the matching sentence; length ≤ 500.
   - Eval: `--suite quality` evidence rate.
   - _Requirements: 6.1, 6.3_
-- [ ] 12.6 Prompt and passages for false refusals (I23)
+- [x] 12.6 Prompt and passages for false refusals (I23)
   - First a record-mode run with the production model on the 31 known cases (≤ 10 calls/day);
     then the cross-lingual prompt sentence; nisbenz sweeps `RERANK_TOP_N` 3/5/8 with the local
     Ollama model.
   - Tests: the prompt contains the sentence and still the untrusted-data wording.
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 5.1, 5.2_
 
-- [ ] 13. API hygiene [eequaled, with agreement]
-- [ ] 13.1 Auth reads the app settings (I20)
+- [x] 13. API hygiene [eequaled, with agreement]
+- [x] 13.1 Auth reads the app settings (I20)
   - `get_role` / `require_admin` take `request: Request` and read
     `request.app.state.mcclub_state.settings`.
   - Tests: two apps with different tokens in one process each accept only their own token.
   - _Requirements: 16.3, 16.5_
-- [ ] 13.2 Delete unknown document -> 404 (I17); blank message -> 422 (I18)
+- [x] 13.2 Delete unknown document -> 404 (I17); blank message -> 422 (I18)
   - Tests in `tests/test_api_contract.py`; update the e2e probes `ingest-delete-again`,
     `contract-chat-empty-message`, `contract-chat-whitespace-message` to the strict expectation.
   - _Requirements: 16.1, 16.2, 16.5_
-- [ ] 13.3 `config.py` defaults (I21) and the upload `title` field (I15)
+- [x] 13.3 `config.py` defaults (I21) and the upload `title` field (I15)
   - Defaults gte / 20 / 0.40; optional `title` form field passed to `ingest_file` (needs explicit
     approval under the API freeze).
   - Tests: defaults; upload with and without `title`.
   - _Requirements: 16.4, 14.1_
 
-- [ ] 14. `expires_at` [eequaled + nisbenz, after agreement] (I14)
+- [x] 14. `expires_at` [eequaled + nisbenz, after agreement] (I14)
   - Agree keep vs remove and write it in AGENTS.md "Open seam items".
   - Keep: `expires_at` keyword in `ingest_file` / `ingest_url`, docstore and payload (schema bump,
     shared with 7.2 if still open), marker and listing, `role_filter(role, now)` on every query

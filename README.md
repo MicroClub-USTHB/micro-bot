@@ -91,9 +91,11 @@ tests/          one test module per source module, plus contract, access and wir
 - Retrieval ([spec](specs/retrieval/)): one Qdrant query with dense + BM25 prefetches fused by
   RRF (k=2), the visibility filter on every level, dedupe by document and chunk index, then the
   gte-multilingual-reranker-base int8 cross-encoder (one pair per run: batching moved scores by
-  up to 1.8 logits) on the top 20, and a gate that refuses below a sigmoid score of 0.40 with
-  **0 LLM calls**. Short follow-ups are searched together with the previous question (no LLM
-  rewrite). bge-reranker-v2-m3 stays an A/B option: +0.014 MRR for 2.2x the latency.
+  up to 1.8 logits) on the top 20, and a relevance-floor gate that refuses below a sigmoid score
+  of 0.31 with **0 LLM calls** (the LLM refuses in-domain unknowns). Short follow-ups with a
+  follow-up cue ("and…", "it", "وكم") are searched together with the previous question (no LLM
+  rewrite). Without the LLM (no key, budget spent, provider error) the answer is a notice in the
+  user's language with the best passages as sources, never pasted chunks. bge-reranker-v2-m3 stays an A/B option: +0.014 MRR for 2.2x the latency.
 
 ## Evaluation
 

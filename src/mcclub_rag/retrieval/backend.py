@@ -83,7 +83,7 @@ class HybridRetriever:
         """The text that is encoded and reranked: follow-up merge, then query normalization."""
         s = self.settings
         text, used = build_search_query(query, history, s.followup_max_words, cues=s.followup_cues)
-        return normalize_query(text, s.query_casefold_shouting, s.query_strip_harakat), used
+        return normalize_query(text, s.query_fix_case, s.query_strip_harakat), used
 
     async def encode(self, query: str):
         dense = await asyncio.to_thread(self.dense.embed_query, query)

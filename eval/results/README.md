@@ -23,8 +23,8 @@ chunks not in the question's language.
 
 The arm adds candidates (fused MRR 0.582 -> 0.641) and costs nothing measurable at 20; no
 language group gets worse. None reaches the 0.85 cross-lingual target (Req 10.2): bge-m3 + arm is
-the same 0.816 as bge-m3 alone, and gte still drops darija from 0.71 fused to 0.43. **Default left
-at 0** as the plan requires; `RETRIEVAL_CROSS_LANG_PREFETCH=20` is a free +0.02 to turn on. The
+the same 0.816 as bge-m3 alone, and gte still drops darija from 0.71 fused to 0.43. **Default set
+to 20** (free +0.02; the 0.85 target is still not met). The
 remaining levers are the reranker on darija and ingest-time keywords, out of this branch's scope.
 
 **PDF titles (I15, Req 14).** Same corpus with the three PDF titles set three ways:
@@ -82,7 +82,7 @@ answerable and refuse-expected questions overlap (I8). Below 0.29 the gate is a 
 that almost never flips; refusing unknowns is then the LLM's job. **Kept at 0.40 for now:** with
 no LLM wired (I1) a lower gate sends more unrelated chunks to users through the extractive
 fallback (I2) and spends more of the 50 calls a day once wired. Lower it (0.28–0.31) together
-with the I1/I2 fixes.
+with the I1/I2 fixes. **Done** with them (eval-fixes, same branch): `GATE_THRESHOLD=0.31` in `.env.example`.
 
 ## 2026-10-12: cross-lingual questions, granite vs bge-m3 (`xl86-*`)
 
