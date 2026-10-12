@@ -13,6 +13,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 
 import httpx
+import structlog
 
 from eval.e2e.cases import Case
 from eval.e2e.contract import check, expect, json_body
@@ -92,6 +93,20 @@ async def cache(driver, probe: Case, upload: Callable[[], Awaitable[object]]) ->
     return results
 
 
+STAGES = ("ms_encode", "ms_search", "ms_rerank")
+
+
+def stage_times(events: Sequence[dict]) -> dict[str, dict[str, float]]:
+    """p50 / p95 per retrieval stage from captured ``retrieval_done`` events (fixes Req 17.3)."""
+    done = [e for e in events if e.get("event") == "retrieval_done"]
+    out = {}
+    for stage in STAGES if done else ():
+        values = sorted(e[stage] for e in done)
+        p95 = values[min(len(values) - 1, round(0.95 * (len(values) - 1)))]
+        out[stage] = {"n": len(values), "p50": statistics.median(values), "p95": p95}
+    return out
+
+
 async def load(
     driver, cases: Sequence[Case], *, concurrency: int, duration_s: float
 ) -> tuple[list[CaseResult], dict]:
@@ -108,8 +123,13 @@ async def load(
             statuses.append(observation.status)
             i += concurrency
 
+    # In-process only: the app's own log events give the time per stage (none over HTTP).
+    # The first request builds the middleware, which reconfigures structlog: do it before the
+    # capture, or the capture is replaced.
+    await driver.request("GET", "/api/v1/health")
     started = time.monotonic()
-    await asyncio.gather(*(user(n) for n in range(concurrency)))
+    with structlog.testing.capture_logs() as events:
+        await asyncio.gather(*(user(n) for n in range(concurrency)))
     elapsed = time.monotonic() - started
     ordered = sorted(latencies) or [0.0]
 
@@ -127,6 +147,7 @@ async def load(
         "error_rate": round(errors / len(statuses), 4) if statuses else None,
         "rate_limited": statuses.count(429),
         "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
+        "stages": stage_times(events),
     }
     ok = errors == 0
     no_errors = check("no_errors", ok, f"{errors} errors")

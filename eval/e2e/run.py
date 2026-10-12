@@ -83,6 +83,7 @@ async def run(args) -> int:
         ctx = Context(driver, corpus, topics, budget, judge.from_env(args.max_judge_calls))
         cases = select(all_cases, {s.doc.topic for s in loaded}, args)
         by_id = {c.id: c for c in all_cases}
+        report.check_watch(getattr(args, "watch", None) or [], by_id)
         probe = by_id.get("adv-09") or next(c for c in cases if c.expect == "answer")
         results, extra = [], {}
         for suite in suites:
@@ -140,6 +141,8 @@ def write(args, results, by_id, ctx, info, extra) -> int:
             ),
         )
     summary = report.summarize(results, by_id)
+    if getattr(args, "watch", None):
+        summary["watched"] = report.watch(results, args.watch)
     rows = report.scorecard(summary["metrics"], report.load_thresholds())
     payload = {
         "label": args.label,
@@ -160,6 +163,8 @@ def write(args, results, by_id, ctx, info, extra) -> int:
     stem = out / f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{args.label}"
     stem.with_suffix(".json").write_text(json.dumps(payload, ensure_ascii=False) + "\n")
     text = report.markdown(summary, rows, f"E2E run {args.label}")
+    if "load" in extra:
+        text += "\n" + report.load_markdown(extra["load"])
     notes = "".join(f"\n> {note}\n" for note in ctx.notes)
     stem.with_suffix(".md").write_text(text.replace("\n\n", notes + "\n", 1) if notes else text)
     print(text[:3000] + notes + f"\nresults: {stem}.json")
@@ -177,6 +182,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--split", choices=["dev", "test", "all"], default="all")
     parser.add_argument("--ids", nargs="*", help="only cases whose id starts with one of these")
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--watch", type=lambda v: v.split(","), help="comma-separated case ids to report one by one"
+    )
     parser.add_argument("--mode", choices=["live", "record", "replay"], default="record")
     parser.add_argument("--max-llm-calls", type=int, default=10)
     parser.add_argument(

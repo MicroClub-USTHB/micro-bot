@@ -51,3 +51,19 @@ def test_access_violations_count_public_rows_with_members_chunks():
         {"role": "public", "visibilities": []},
     ]
     assert m.access_violations(rows) == 1
+
+
+def test_score_distribution_gives_quartiles():
+    dist = m.score_distribution([0.1, 0.2, 0.3, 0.4, 0.5])
+    assert dist == {"n": 5, "min": 0.1, "q1": 0.2, "median": 0.3, "q3": 0.4, "max": 0.5}
+    assert m.score_distribution([0.7])["q1"] == 0.7
+    assert m.score_distribution([]) == {"n": 0}
+
+
+def test_score_overlap_is_the_share_of_refuse_scores_above_answerable_q1():
+    answerable = [0.3, 0.5, 0.7, 0.9, 0.95]  # q1 = 0.5
+    assert m.score_overlap(answerable, [0.1, 0.2]) == 0.0
+    assert m.score_overlap(answerable, [0.6, 0.9]) == 1.0
+    assert m.score_overlap(answerable, [0.5, 0.4, 0.1, 0.8]) == 0.5
+    assert m.score_overlap([], [0.5]) is None
+    assert m.score_overlap([0.5], []) is None

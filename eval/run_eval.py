@@ -140,7 +140,8 @@ def summarize(
     answerable = [r for r in rows if r["answerable"]]
     unanswerable = [r for r in rows if not r["answerable"]]
     tags = sorted({t for r in answerable for t in r["tags"]})
-    sweep = m.sweep([r["top_score"] for r in answerable], [r["top_score"] for r in unanswerable])
+    scores = [r["top_score"] for r in answerable], [r["top_score"] for r in unanswerable]
+    sweep = m.sweep(*scores)
     return {
         "overall": _quality(answerable, k, depth),
         "by_tag": {t: _quality([r for r in answerable if t in r["tags"]], k, depth) for t in tags},
@@ -149,6 +150,11 @@ def summarize(
         "max_false_refusal": max_false_refusal,
         "latency_ms": _latency(rows),
         "sweep": sweep,
+        "gate_scores": {
+            "answerable": m.score_distribution(scores[0]),
+            "unanswerable": m.score_distribution(scores[1]),
+            "overlap": m.score_overlap(*scores),
+        },
     }
 
 
@@ -172,6 +178,11 @@ def print_summary(summary: dict, label: str) -> None:
         f"suggested GATE_THRESHOLD: {summary['suggested_gate_threshold']} "
         f"(false refusals <= {summary['max_false_refusal']:.0%})"
     )
+    gate = summary["gate_scores"]
+    for group in ("answerable", "unanswerable"):
+        cells = "  ".join(f"{k} {v}" for k, v in gate[group].items())
+        print(f"gate scores {group:>12}: {cells}")
+    print(f"gate score overlap (unanswerable >= answerable q1): {gate['overlap']}")
     for row in summary["sweep"][::5]:
         print(
             f"  t={row['threshold']:.2f} refuses {row['refused_unanswerable']:.0%} unanswerable, "

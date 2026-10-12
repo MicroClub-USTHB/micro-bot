@@ -13,6 +13,7 @@ from pathlib import Path
 
 from eval.e2e.cases import Case
 from eval.e2e.score import CaseResult
+from eval.metrics import score_distribution, score_overlap
 
 THRESHOLDS = Path(__file__).with_name("thresholds.json")
 _INJECTION = {"injection", "indirect_injection", "history_injection", "system_prompt_leak"}
@@ -103,10 +104,19 @@ def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
         "latency_p99_ms": _percentile(latencies, 0.99),
     }
     checks = Counter((c.name, c.status) for r in results for c in r.checks)
+    gate = {
+        e: [r.extra["top_score"] for r in expect(e) if "top_score" in r.extra]
+        for e in ("answer", "refuse")
+    }
     return {
         "metrics": metrics,
         "paths": dict(Counter(r.path for r in results)),
         "checks": {f"{name}:{status}": n for (name, status), n in sorted(checks.items())},
+        "gate_scores": {
+            "answer": score_distribution(gate["answer"]),
+            "refuse": score_distribution(gate["refuse"]),
+            "overlap": score_overlap(gate["answer"], gate["refuse"]),
+        },
         "by_slice": _group(results, lambda r: case[r.id].slices),
         "by_lang": _group(results, lambda r: [case[r.id].lang]),
         "by_role": _group(results, lambda r: [case[r.id].role]),
@@ -116,6 +126,24 @@ def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
             if not r.passed
         ],
     }
+
+
+def check_watch(ids: Sequence[str], cases: Mapping[str, Case]) -> None:
+    """``--watch`` ids must be real case ids (a typo would silently watch nothing)."""
+    unknown = [i for i in ids if i not in cases]
+    if unknown:
+        raise ValueError(f"unknown --watch case ids: {', '.join(unknown)}")
+
+
+def watch(results: Sequence[CaseResult], ids: Sequence[str]) -> dict[str, dict[str, str]]:
+    """Pass/fail per layer of named cases (fixes Req 10.4, 11.4); variants are not included."""
+    out: dict[str, dict[str, str]] = {i: {} for i in ids}
+    for r in results:
+        if r.id not in out or r.extra.get("repeat", 0) != 0:  # first run only
+            continue
+        status = "not_run" if r.path == "not_run" else ("pass" if r.passed else "fail")
+        out[r.id].setdefault(r.layer, status)
+    return out
 
 
 def scorecard(metrics: Mapping, thresholds: Sequence[Mapping]) -> list[dict]:
@@ -149,14 +177,42 @@ def markdown(summary: Mapping, rows: Sequence[Mapping], title: str) -> str:
         mark = {True: "yes", False: "**NO**", None: "n/a"}[row["ok"]]
         lines.append(f"| {row['metric']} | {row['value']} | {row['op']} {row['limit']} | {mark} |")
     lines += ["", "Paths: " + ", ".join(f"{k} {v}" for k, v in summary["paths"].items()), ""]
+    gate = summary.get("gate_scores", {})
+    if any(gate.get(name, {}).get("n") for name in ("answer", "refuse")):
+        lines += ["| Gate score | n | min | q1 | median | q3 | max |", "|---" * 7 + "|"]
+        for name in ("answer", "refuse"):
+            d = gate[name]
+            cells = " | ".join(str(d.get(k, "")) for k in ("n", "min", "q1", "median", "q3", "max"))
+            lines.append(f"| expect {name} | {cells} |")
+        lines += ["", f"Overlap (refuse-expected >= answerable q1): {gate['overlap']}", ""]
     lines += ["| Slice | Pass |", "|---|---|"]
     for name, g in sorted(summary["by_slice"].items(), key=lambda kv: kv[1]["rate"] or 0):
         lines.append(f"| {name} | {g['passed']}/{g['n']} |")
     lines += ["", "| Language | Pass |", "|---|---|"]
     lines += [f"| {k} | {g['passed']}/{g['n']} |" for k, g in summary["by_lang"].items()]
+    if summary.get("watched"):
+        lines += ["", "## Watched cases", "", "| Case | Chat | Retrieval |", "|---|---|---|"]
+        for case_id, layers in summary["watched"].items():
+            chat, retrieval = layers.get("chat", "-"), layers.get("retrieval", "-")
+            lines.append(f"| {case_id} | {chat} | {retrieval} |")
     if summary["failures"]:
         lines += ["", "## Failed cases", "", "| Case | Path | Failed checks |", "|---|---|---|"]
         for f in summary["failures"]:
             reasons = "; ".join(f"{k}: {v}" for k, v in f["failed"].items()).replace("|", "/")
             lines.append(f"| {f['id']} | {f['path']} | {reasons} |")
+    return "\n".join(lines) + "\n"
+
+
+def load_markdown(stats: Mapping) -> str:
+    """Load suite block: throughput, latency, and where the time goes per retrieval stage."""
+    lines = [
+        "## Load",
+        "",
+        f"{stats['requests']} requests, {stats['throughput_rps']} req/s, "
+        f"p50 {stats['p50_ms']} ms, p95 {stats['p95_ms']} ms",
+    ]
+    if stats.get("stages"):
+        lines += ["", "| Stage | n | p50 ms | p95 ms |", "|---|---|---|---|"]
+        for stage, t in stats["stages"].items():
+            lines.append(f"| {stage} | {t['n']} | {t['p50']} | {t['p95']} |")
     return "\n".join(lines) + "\n"

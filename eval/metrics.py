@@ -67,6 +67,29 @@ def suggest_threshold(rows: Sequence[dict[str, float]], max_false_refusal: float
     return max(ok) if ok else None
 
 
+def _quantile(ordered: Sequence[float], q: float) -> float:
+    return ordered[round(q * (len(ordered) - 1))]
+
+
+def score_distribution(scores: Iterable[float]) -> dict[str, float]:
+    """Gate-score spread (nearest-rank quartiles) for one group of questions (fixes Req 3.5)."""
+    ordered = sorted(scores)
+    if not ordered:
+        return {"n": 0}
+    return {"n": len(ordered)} | {
+        name: _quantile(ordered, q)
+        for name, q in (("min", 0), ("q1", 0.25), ("median", 0.5), ("q3", 0.75), ("max", 1))
+    }
+
+
+def score_overlap(answerable: Sequence[float], refuse: Sequence[float]) -> float | None:
+    """Share of refuse-expected scores at or above the answerable Q1: what no gate can separate."""
+    if not answerable or not refuse:
+        return None
+    q1 = _quantile(sorted(answerable), 0.25)
+    return sum(s >= q1 for s in refuse) / len(refuse)
+
+
 def access_violations(rows: Iterable[dict]) -> int:
     """Public questions that got any members-only chunk, whatever its rank."""
     return sum(r["role"] == "public" and "members" in r.get("visibilities", ()) for r in rows)
