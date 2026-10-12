@@ -184,7 +184,9 @@ The 20-letter check then sees no content and raises `EmptyDocument`. Fixture:
 ### 8. PDF titles (Req 14.2–14.4) [N] — `ingest/preprocess.py`
 
 Today `_pick_title(explicit, metadata, first heading, stem)` takes the metadata title first.
-New order: **explicit > page-1 heading title > metadata title (unless generic) > stem**.
+New order: **explicit > metadata title (unless generic) > page-1 heading title > first
+heading > stem**. (Implemented with metadata before page 1: a real author-set title such as
+the fixture's "MC Club Handbook" beats the page headings; only a generic one is skipped.)
 
 ```python
 def page_one_title(sections: Sequence[Section]) -> str | None: ...  # pure

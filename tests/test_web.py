@@ -349,3 +349,37 @@ def test_prepare_html_leaves_plain_pages_alone():
 def test_prepare_html_unparsable_is_empty():
     with pytest.raises(EmptyDocument):
         prepare_html(b"", "https://club.example/")
+
+
+# --- share bars (eval-fixes Req 15) ---------------------------------------------
+
+SHARE_HTML = (Path(__file__).parent / "fixtures" / "web" / "share_bar_only.html").read_bytes()
+
+
+def test_share_bar_only_page_is_empty():
+    with pytest.raises(EmptyDocument):
+        extract_html(SHARE_HTML, "https://finfo.example/r")
+
+
+def test_share_links_dropped_content_kept():
+    page = (
+        b"<html><body><main><article><h1>Inscription</h1>"
+        b"<p>Les inscriptions se font au bureau de la scolarite du lundi au jeudi, de 9h a 15h,"
+        b" avec la carte d'etudiant et le certificat de scolarite de l'annee precedente.</p>"
+        b"<p>Voir aussi <a href='https://twitter.com/intent/tweet?u=x'>Twitter</a>.</p>"
+        b"<ul class='share'><li><a href='https://www.facebook.com/sharer/sharer.php?u=x'>"
+        b"Partager sur Facebook</a></li><li><a href='https://wa.me/?text=x'>WhatsApp</a></li></ul>"
+        b"</article></main></body></html>"
+    )
+    md = _md(page)
+    assert "bureau de la scolarite" in md and "Voir aussi Twitter" in md
+    assert "Partager sur Facebook" not in md and "WhatsApp" not in md and "wa.me" not in md
+
+
+def test_heading_only_page_is_empty():
+    page = (
+        b"<html><body><main><article><h1>Une page sans aucun contenu utile</h1>"
+        b"</article></main></body></html>"
+    )
+    with pytest.raises(EmptyDocument):
+        extract_html(page, "https://club.example/empty")
