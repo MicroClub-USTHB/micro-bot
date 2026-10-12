@@ -139,3 +139,14 @@ def test_every_standard_error_is_json(client: TestClient) -> None:
     assert_error(client.post("/role"), 405, "method_not_allowed")
     assert_error(client.get("/http-error"), 418, "http_error")
     assert_error(client.get("/crash"), 500, "internal")
+
+
+def test_app_defaults_match_the_retrieval_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcclub_rag.retrieval.settings import RetrievalSettings
+
+    for name in ("RERANK_MODEL", "RETRIEVE_TOP_K", "RERANK_TOP_N", "GATE_THRESHOLD"):
+        monkeypatch.delenv(name, raising=False)
+    app, retrieval = Settings(_env_file=None), RetrievalSettings()
+    assert app.rerank_model == retrieval.rerank_model
+    assert app.retrieve_top_k == retrieval.top_k and app.rerank_top_n == retrieval.top_n
+    assert app.gate_threshold == retrieval.gate_threshold

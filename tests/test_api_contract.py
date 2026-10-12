@@ -227,3 +227,18 @@ def test_llm_failure_gives_a_localised_notice_not_chunks(tmp_path: Path) -> None
     assert body["answer"] == UNAVAILABLE["fr"]
     assert body["grounded"] is False
     assert body["sources"][0]["snippet"] == "Registration closes Friday."
+
+
+def test_auth_reads_each_apps_own_settings(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("MEMBER_TOKEN", raising=False)
+    get_settings.cache_clear()
+    with build_client(tmp_path / "a") as first:
+        ok = first.post(
+            "/api/v1/chat",
+            json={"message": "hi"},
+            headers={"Authorization": "Bearer member-secret"},
+        )
+        bad = first.post(
+            "/api/v1/chat", json={"message": "hi"}, headers={"Authorization": "Bearer other"}
+        )
+    assert ok.status_code == 200 and bad.status_code == 401

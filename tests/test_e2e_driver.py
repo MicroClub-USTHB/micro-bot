@@ -83,3 +83,11 @@ async def test_http_driver_paces_and_uploads_with_eval_topics(tmp_path, monkeypa
     assert observation.status == 429  # recorded per case, not raised
     assert seen[-1].headers["Authorization"] == "Bearer m-token"
     await drv.close()
+
+
+async def test_driver_leaves_the_environment_alone(driver):
+    import os
+
+    assert os.environ.get("MEMBER_TOKEN") != driver.member_token  # tokens live in the app settings
+    response = await driver.request("GET", "/api/v1/documents", headers=driver.headers(admin=True))
+    assert response.status_code == 200

@@ -21,7 +21,7 @@ import httpx
 from eval.e2e.backends import PipelineDocuments, Ready
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.score import Observation
-from mcclub_rag.config import Settings, get_settings
+from mcclub_rag.config import Settings
 from mcclub_rag.conversation import Turn
 from mcclub_rag.ingest.pipeline import IngestPipeline
 from mcclub_rag.main import ApplicationState, RealLanguageDetector, create_app
@@ -111,12 +111,7 @@ class InProcessDriver(_Api):
         state_overrides: dict | None = None,
     ) -> None:
         member, admin = secrets.token_hex(16), secrets.token_hex(16)
-        # get_role / require_admin read the global settings, not the app's (see ISSUES.md), so
-        # the tokens go in the environment until close().
-        self._saved_env = {k: os.environ.get(k) for k in ("MEMBER_TOKEN", "ADMIN_API_KEY")}
-        os.environ["MEMBER_TOKEN"], os.environ["ADMIN_API_KEY"] = member, admin
-        get_settings.cache_clear()
-        settings = Settings(
+        settings = Settings(  # auth reads the app's settings: no environment needed (I20)
             member_token=member, admin_api_key=admin, data_dir=data_dir, llm_daily_limit=10_000
         )
         self.pipeline = pipeline
@@ -141,12 +136,6 @@ class InProcessDriver(_Api):
 
     async def close(self) -> None:
         await super().close()
-        for key, value in self._saved_env.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-        get_settings.cache_clear()
 
     async def setup(self, sources: Sequence[Source]) -> dict[str, str]:
         """Ingest each source with its manifest title and topic; doc_id -> topic."""
