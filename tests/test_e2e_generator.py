@@ -1,10 +1,12 @@
 """Recording / replay generator, budget and faults (Req 5.1, 5.2, 7.1)."""
 
 import threading
+from types import SimpleNamespace
 
 from eval.e2e.generator import (
     Budget,
     FaultyGenerator,
+    OllamaClient,
     RecordingGenerator,
     ThreadedClient,
     prompt_key,
@@ -76,3 +78,55 @@ async def test_faults_spend_one_call():
     ]:
         result = await FaultyGenerator(kind).generate("s", "q")
         assert not result.ok and result.error == error and result.usage.llm_calls == 1
+
+
+class FakeOpenAI:
+    """Just enough of the OpenAI SDK: chat.completions.create(**kwargs)."""
+
+    def __init__(self, outcome) -> None:
+        self.outcome = outcome
+        self.kwargs: dict = {}
+        self.chat = self
+        self.completions = self
+
+    def create(self, **kwargs):
+        self.kwargs = kwargs
+        if isinstance(self.outcome, Exception):
+            raise self.outcome
+        return self.outcome
+
+
+def _completion(text, prompt=7, completion=3):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=text))],
+        usage=SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion),
+    )
+
+
+def test_ollama_client_makes_one_deterministic_call():
+    fake = FakeOpenAI(_completion("Bonjour [doc]"))
+    result = OllamaClient("gemma4:e4b", client=fake).generate("sys", "q")
+    assert result.ok and result.text == "Bonjour [doc]"
+    assert (result.usage.llm_calls, result.usage.prompt_tokens) == (1, 7)
+    assert fake.kwargs["model"] == "gemma4:e4b" and fake.kwargs["temperature"] == 0
+    assert [m["role"] for m in fake.kwargs["messages"]] == ["system", "user"]
+    assert fake.kwargs["extra_body"] == {"reasoning_effort": "none"}  # no thinking pass
+
+
+def test_ollama_client_failures_are_results():
+    result = OllamaClient("m", client=FakeOpenAI(TimeoutError("slow"))).generate("s", "q")
+    assert not result.ok and result.usage.llm_calls == 1 and result.error
+    empty = OllamaClient("m", client=FakeOpenAI(_completion("  "))).generate("s", "q")
+    assert empty.error == "invalid_response"
+
+
+async def test_citing_stub_cites_the_first_passage_label():
+    from eval.e2e.generator import CitingStub
+    from mcclub_rag.llm.prompts import build_prompt
+    from mcclub_rag.schemas import Chunk
+
+    chunk = Chunk(chunk_id="c", doc_id="d", title="t", text="x", score=1.0)
+    system, user = build_prompt("q", "en", [chunk])
+    assert (await CitingStub().generate(system, user)).text == "Stub answer [S1]."
+    system, user = build_prompt("q", "en", [])
+    assert (await CitingStub().generate(system, user)).text == "NOT_FOUND I don't know."

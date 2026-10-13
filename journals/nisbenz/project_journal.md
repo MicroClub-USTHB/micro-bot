@@ -17,3 +17,16 @@
 - Ran the chunk size comparison that was never done: 300 tokens with the heading header is best;
   the header matters more than the size.
 
+2026-10-12
+
+- Spec'd fixes for all 24 issues the e2e eval found, then built my side. The follow-up bug was
+  the easiest win: "Who is the dean?" was glued to the hackathon question just for being short.
+- The gate cannot be fixed by tuning: answerable and unanswerable scores overlap. It becomes a
+  relevance floor, lowered once the LLM is wired.
+- Cross-lingual retrieval improved a little (0.755 -> 0.776, 0.816 with bge-m3) but not to the
+  target; gte on darija is the next lever.
+- OCR on phone photos is blocked: xberg reports the same confidence for a bad photo as for a clean
+  scan.
+- Then fixed the rest, eequaled's side included, as the user asked: the app finally calls the
+  LLM, and without it the user gets a short notice and sources instead of pasted chunks. The
+  photo OCR problem turned out to be skew alone: straightening took it from 41% to 99%.

@@ -8,9 +8,10 @@ semaphore bounds how many documents are processed at once.
 
 import asyncio
 import hashlib
+import re
 import time
 import weakref
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
@@ -28,7 +29,7 @@ from mcclub_rag.ingest.sniff import detect_type
 from mcclub_rag.ingest.url_guard import Resolver, default_resolver
 from mcclub_rag.ingest.web import extract_html, fetch
 from mcclub_rag.text.lang import assign_languages
-from mcclub_rag.text.normalize import normalize_text
+from mcclub_rag.text.normalize import fold_for_search, normalize_text
 
 log = structlog.get_logger(__name__)
 
@@ -36,6 +37,13 @@ _VISIBILITIES = ("public", "members")
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
 _TEXT_TYPE_EXT = {"text/plain": ".txt", "text/markdown": ".md"}
 _MAX_TITLE = 200
+_TITLE_HEADINGS = 3  # page-1 headings joined into a title
+_TOC_HEADINGS = {"contents", "table of contents", "sommaire", "table des matieres", "الفهرس"}
+_MD_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!>|])")
+_NON_ALNUM = re.compile(r"[\W_]+")
+_PRODUCER_DEFAULT = re.compile(
+    r"^(untitled( document)?|document ?\d*|presentation ?\d*|microsoft (word|powerpoint) .*)$"
+)
 
 _semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = (
     weakref.WeakKeyDictionary()
@@ -87,6 +95,47 @@ def _filename_from_url(url: str, content_type: str) -> str:
     return name
 
 
+def _title_key(text: str) -> str:
+    return " ".join(_NON_ALNUM.sub(" ", fold_for_search(text)).split())
+
+
+def page_one_title(sections: Sequence[Section]) -> str | None:
+    """Title made of the first page's headings ("MICRO CLUB: Code of Conduct 2025–2026 Season").
+
+    Skips table-of-contents headings, headings with fewer than 3 letters (page numbers, dates)
+    and repeats. Pure; ``None`` for formats without pages or without a page-1 heading.
+    """
+    headings: list[str] = []
+    seen: set[str] = set()
+    for section in sections:
+        if section.page != 1 or not section.heading:
+            continue
+        heading = " ".join(_MD_ESCAPE.sub(r"\1", section.heading).split())
+        key = _title_key(heading)
+        if sum(ch.isalpha() for ch in heading) < 3 or key in _TOC_HEADINGS or key in seen:
+            continue
+        seen.add(key)
+        headings.append(heading)
+        if len(headings) == _TITLE_HEADINGS:
+            break
+    if not headings:
+        return None
+    first, *rest = headings
+    return f"{first}: {' '.join(rest)}" if rest else first
+
+
+def is_generic_title(title: str, filename_stem: str, page_one: str | None) -> bool:
+    """A metadata title that says nothing: the filename, a producer default ("Untitled",
+    "Microsoft Word - x.docx"), or a fragment of the page-1 title ("MICRO CLUB")."""
+    key = _title_key(title)
+    return (
+        not key
+        or key == _title_key(filename_stem)
+        or bool(_PRODUCER_DEFAULT.match(key))
+        or (page_one is not None and key in _title_key(page_one))
+    )
+
+
 def _pick_title(*candidates: str | None) -> str:
     for candidate in candidates:
         if candidate and (clean := normalize_text(candidate).replace("\n", " ")):
@@ -121,11 +170,17 @@ async def _document(
         detail = " (OCR found no readable text)" if raw.ocr_used else ""
         raise EmptyDocument(f"no readable text found{detail}")
     text = "\n\n".join(section.text for section in sections)
+    # explicit > metadata (unless generic) > page-1 headings > first heading > fallback
+    page_one = page_one_title(sections)
+    metadata_title = raw.metadata_title
+    if metadata_title and is_generic_title(metadata_title, fallback_title, page_one):
+        metadata_title = None
     return ParsedDocument(
         content_hash=content_hash or _sha256(text.encode()),
         title=_pick_title(
             title,
-            raw.metadata_title,
+            metadata_title,
+            page_one,
             next((section.heading for section in sections if section.heading), None),
             fallback_title,
         ),

@@ -1,14 +1,19 @@
 """Summary, flip rate, instability, scorecard and markdown (Req 9.1 to 9.3)."""
 
+import pytest
+
 from eval.e2e.cases import Case
 from eval.e2e.report import (
+    check_watch,
     exit_code,
     flip_rate,
     instability,
+    load_markdown,
     load_thresholds,
     markdown,
     scorecard,
     summarize,
+    watch,
 )
 from eval.e2e.score import CaseResult, Check
 
@@ -92,3 +97,48 @@ def test_markdown_lists_failures_and_escapes_pipes():
     results[1].checks[2] = Check("evidence", "fail", "not in | snippet")
     text = markdown(summarize(results, CASES), scorecard({}, []), "Run")
     assert "| b | llm | evidence: not in / snippet |" in text and text.startswith("# Run")
+
+
+def test_gate_scores_split_by_expectation_and_shown_in_markdown():
+    results = [
+        _result("a", top_score=0.8),
+        _result("b", top_score=0.4),
+        _result("r", top_score=0.6),
+        _result("a~typo"),  # chat-level result: no gate score
+    ]
+    s = summarize(results, CASES)
+    gate = s["gate_scores"]
+    assert gate["answer"]["n"] == 2 and gate["answer"]["min"] == 0.4
+    assert gate["refuse"] == {"n": 1, "min": 0.6, "q1": 0.6, "median": 0.6, "q3": 0.6, "max": 0.6}
+    assert gate["overlap"] == 1.0
+    text = markdown(s, [], "t")
+    assert "| expect refuse | 1 | 0.6 |" in text and "Overlap" in text
+    assert "Gate score" not in markdown(summarize([_result("a")], CASES), [], "t")
+
+
+def test_watched_cases_report_each_layer():
+    results = [
+        _result("a"),
+        CaseResult("a", "retrieval", "answer", [Check("behaviour", "pass", "")], 1.0, {}),
+        _result("b", "behaviour"),
+    ]
+    watched = watch(results, ["a", "b", "r"])
+    assert watched == {
+        "a": {"chat": "pass", "retrieval": "pass"},
+        "b": {"chat": "fail"},
+        "r": {},
+    }
+    text = markdown(summarize(results, CASES) | {"watched": watched}, [], "t")
+    assert "## Watched cases" in text and "| b | fail | - |" in text and "| r | - | - |" in text
+
+
+def test_unknown_watched_id_is_an_error():
+    with pytest.raises(ValueError, match="zz"):
+        check_watch(["a", "zz"], CASES)
+
+
+def test_load_markdown_shows_stage_times():
+    stats = {"requests": 8, "throughput_rps": 0.7, "p50_ms": 5900, "p95_ms": 7000}
+    stats["stages"] = {"ms_rerank": {"n": 8, "p50": 4000, "p95": 5000}}
+    text = load_markdown(stats)
+    assert "| ms_rerank | 8 | 4000 | 5000 |" in text and "0.7 req/s" in text

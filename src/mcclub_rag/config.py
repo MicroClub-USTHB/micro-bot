@@ -14,15 +14,16 @@ class Settings(BaseSettings):
     admin_api_key: str | None = None
     qdrant_url: str = "http://qdrant:6333"
     qdrant_collection: str = "mcclub"
-    embed_model: str = "ibm-granite/granite-embedding-311m-multilingual-r2"
-    embed_dim: int = Field(default=768, gt=0)
+    embed_model: str = "BAAI/bge-m3"
+    embed_dim: int = Field(default=1024, gt=0)
+    # Retrieval reads these through RetrievalSettings (retrieval/settings.py); keep them equal (I21)
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
     models_dir: Path = Path("/app/models")
     data_dir: Path = Path("/data")
     llm_daily_limit: int = Field(default=50, gt=0)
     llm_reserve: int = Field(default=5, ge=0)
     llm_timeout_s: int = Field(default=25, gt=0)
-    retrieve_top_k: int = Field(default=30, gt=0)
+    retrieve_top_k: int = Field(default=20, gt=0)
     rerank_top_n: int = Field(default=5, gt=0)
     gate_threshold: float | None = None
     max_message_chars: int = Field(default=2000, gt=0)

@@ -24,6 +24,7 @@ CASES = load_cases(E2E / "cases.jsonl", CORPUS)
 # ids must stay unique with the generated retrieval cases, which the harness loads too
 ALL = load_cases([E2E / "cases_retrieval.jsonl", E2E / "cases.jsonl"], CORPUS)
 LABELLED = [c for c in CASES if c.evidence]
+QUESTIONS = (REPO / "eval" / "questions.jsonl").read_text(encoding="utf-8").splitlines()
 
 
 def _texts(topic: str) -> list[str] | None:
@@ -42,7 +43,7 @@ def _texts(topic: str) -> list[str] | None:
 
 
 def test_size_and_balance():
-    assert len(CASES) >= 200 and len(ALL) == len(CASES) + 48
+    assert len(CASES) >= 200 and len(ALL) == len(CASES) + sum(1 for q in QUESTIONS if q.strip())
     langs = Counter(c.lang for c in CASES)
     assert min(langs.values()) >= 30, langs
     assert sum(c.expect == "refuse" for c in CASES) >= 40

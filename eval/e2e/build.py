@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from eval.e2e.drivers import InProcessDriver, Source
-from eval.e2e.generator import Budget, RecordingGenerator, ThreadedClient
+from eval.e2e.generator import Budget, OllamaClient, RecordingGenerator, ThreadedClient
 from eval.run_eval import document_text
 
 REPO = Path(__file__).resolve().parents[2]
@@ -35,7 +35,6 @@ async def inprocess(args, work: Path):
     from mcclub_rag.llm.client import OpenRouterClient
     from mcclub_rag.retrieval.backend import HybridRetriever
     from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-    from mcclub_rag.retrieval.rerank import get_reranker
     from mcclub_rag.retrieval.settings import RetrievalSettings
 
     settings = IngestSettings(data_dir=work / "data")
@@ -49,17 +48,22 @@ async def inprocess(args, work: Path):
     )
     await pipeline.start()
     retrieval = RetrievalSettings(qdrant_collection=settings.qdrant_collection)
-    retriever = HybridRetriever.from_pipeline(pipeline, retrieval, get_reranker(retrieval))
+    retriever = HybridRetriever.from_pipeline(pipeline, retrieval)  # RERANK_WORKERS sessions
     budget = Budget(args.max_llm_calls)
-    key = get_settings().openrouter_api_key
-    inner = ThreadedClient(OpenRouterClient()) if key else None
-    model = get_settings().openrouter_model
+    if args.llm == "ollama":
+        # Local stand-in for output tests; recordings are keyed apart from OpenRouter's.
+        inner = ThreadedClient(OllamaClient(args.ollama_model))
+        model = f"ollama/{args.ollama_model}"
+    else:
+        key = get_settings().openrouter_api_key
+        inner = ThreadedClient(OpenRouterClient()) if key else None
+        model = get_settings().openrouter_model
     generator = RecordingGenerator(inner, E2E / "recordings", args.mode, budget, model)
     driver = InProcessDriver(pipeline, retriever, generator, work / "app")
     info = {
         "gate_threshold": retrieval.gate_threshold,
         "rerank_model": retrieval.rerank_model,
-        "llm_configured": bool(key),
+        "llm_configured": inner is not None,
         "mode": args.mode,
         "model": model,
     }

@@ -88,6 +88,53 @@ class ThreadedClient:
         return await asyncio.to_thread(self.client.generate, system, user)
 
 
+OLLAMA_BASE_URL = "http://localhost:11434/v1"
+
+
+class OllamaClient:
+    """A local model through Ollama's OpenAI-compatible API: a test stand-in, not the provider.
+
+    Same contract as ``OpenRouterClient.generate`` (one call, failures as results, same parsing
+    and error kinds), so the answer layer sees what it would see from OpenRouter. Temperature 0
+    with a fixed seed keeps reruns comparable. Its citations (``[S1]``, ``[doc_id: X]``, ...) go
+    to ``answer.build`` unchanged, as a provider's would.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        *,
+        base_url: str = OLLAMA_BASE_URL,
+        timeout: float = 110,  # under the in-process driver's 120 s request timeout
+        client: object | None = None,
+    ) -> None:
+        self.model = model
+        self.timeout = timeout
+        if client is None:
+            from openai import OpenAI
+
+            client = OpenAI(api_key="ollama", base_url=base_url, timeout=timeout, max_retries=0)
+        self._client = client
+
+    def generate(self, system: str, user: str) -> GenerationResult:
+        from mcclub_rag.llm.client import OpenRouterClient
+
+        try:
+            completion = self._client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=0,
+                seed=0,
+                timeout=self.timeout,
+                # Thinking models (gemma4 12B) otherwise reason first: 152 tokens instead of 11
+                # for a one-line answer. Production makes one direct call, so the eval does too.
+                extra_body={"reasoning_effort": "none"},
+            )
+        except Exception as exc:  # same as the real client: failures are results
+            return GenerationResult(None, GenerationUsage(1), OpenRouterClient._error_kind(exc))
+        return OpenRouterClient._parse_completion(completion, calls=1)
+
+
 FAULTS = {
     "timeout": "timeout",
     "rate_limited": "rate_limited",
@@ -107,20 +154,19 @@ class FaultyGenerator:
 
 
 class CitingStub:
-    """Answers by citing the first passage's doc_id, one 'call' each, no network.
+    """Answers by citing the first passage's label, one 'call' each, no network.
 
     For the cache and load suites, which test the system around generation, not generation.
     """
 
-    _DOC_ID = re.compile(r"^doc_id: (\S+)$", re.MULTILINE)
+    _FIRST_PASSAGE = "[S1]\n```untrusted-source"
 
     def __init__(self) -> None:
         self.calls = 0
 
     async def generate(self, system: str, user: str) -> GenerationResult:
         self.calls += 1
-        match = self._DOC_ID.search(system)
-        text = f"Stub answer [{match.group(1)}]." if match else "I don't know."
+        text = "Stub answer [S1]." if self._FIRST_PASSAGE in system else "NOT_FOUND I don't know."
         return GenerationResult(text, GenerationUsage(1, 0, 0))
 
 

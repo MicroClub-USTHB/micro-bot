@@ -11,7 +11,7 @@ import warnings
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
@@ -24,7 +24,8 @@ from mcclub_rag.ingest.models import SourceType, Visibility
 
 DENSE = "dense"
 SPARSE = "bm25"
-_KEYWORD_FIELDS = ("doc_id", "content_hash", "visibility")
+_KEYWORD_FIELDS = ("doc_id", "content_hash", "visibility", "language")
+_MARKER_PAYLOAD_EXTRA = ["expires_at"]  # optional marker fields
 _MARKER_FIELDS = [
     "doc_id",
     "content_hash",
@@ -52,11 +53,14 @@ class Marker:
     source_type: SourceType
     language: str
     ingested_at: datetime
+    expires_at: datetime | None = None
 
     @classmethod
     def from_payload(cls, payload: dict) -> "Marker":
         fields = {name: payload[name] for name in _MARKER_FIELDS}
         fields["ingested_at"] = datetime.fromisoformat(payload["ingested_at"])
+        expires = payload.get("expires_at")  # epoch seconds; absent on schema-1 points
+        fields["expires_at"] = None if expires is None else datetime.fromtimestamp(expires, UTC)
         return cls(**fields)
 
 
@@ -179,10 +183,14 @@ class VectorStore:
             return (await self.client.count(self.alias, count_filter=flt, exact=True)).count
 
     async def set_visibility(self, doc_id: str, visibility: Visibility) -> None:
-        async with guard("visibility update"):
+        await self.set_fields(doc_id, {"visibility": visibility})
+
+    async def set_fields(self, doc_id: str, payload: dict) -> None:
+        """Update document-level payload fields on every point of ``doc_id``."""
+        async with guard("payload update"):
             await self.client.set_payload(
                 self.alias,
-                payload={"visibility": visibility},
+                payload=payload,
                 points=qm.Filter(must=_match(doc_id=doc_id)),
                 wait=True,
             )
@@ -232,7 +240,7 @@ class VectorStore:
                     scroll_filter=qm.Filter(must=must),
                     limit=_SCROLL_PAGE,
                     offset=offset,
-                    with_payload=_MARKER_FIELDS,
+                    with_payload=_MARKER_FIELDS + _MARKER_PAYLOAD_EXTRA,
                     with_vectors=False,
                 )
                 found.extend(Marker.from_payload(p.payload or {}) for p in points)

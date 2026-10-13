@@ -3,7 +3,16 @@
     uv run python -m eval.e2e.run --suite all --label baseline
     uv run python -m eval.e2e.run --suite quality --layer chat --mode record --max-llm-calls 10
     uv run python -m eval.e2e.run --suite quality --mode replay
+    uv run python -m eval.e2e.run --suite quality --llm ollama --max-llm-calls 400   # local
+    uv run python -m eval.e2e.run --suite quality --llm ollama --ollama-model gemma4-12b-eval
     uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
+
+Ollama RAM: llama.cpp keeps the KV state of past prompts in system RAM (up to 8 GB; every eval
+prompt is new, so it only grows, and systemd-oomd killed Ollama at 6 GB): set
+``LLAMA_ARG_CACHE_RAM=0`` in the ollama service. Also pick a model that fits in VRAM with a small
+context: gemma4:e4b keeps per-layer embeddings in system RAM; a 12B Q4 with ``num_ctx 8192``
+sits in 8.4 GB of VRAM (eval process: 2.5 GB):
+``printf 'FROM gemma4-12b-100k\nPARAMETER num_ctx 8192\n' | ollama create gemma4-12b-eval -f -``.
 
 In-process (default): the real models, an in-memory Qdrant, the real corpus (``data/parsed``,
 when present) plus the adversarial one, and the app built around a recording generator. Writes
@@ -30,6 +39,7 @@ from eval.e2e.drivers import HttpDriver
 from eval.e2e.generator import CitingStub
 from eval.e2e.ingest_suite import ingest
 from eval.e2e.suites import Context, quality, robustness
+from mcclub_rag.llm.quota import CircuitBreaker
 
 REPO = Path(__file__).resolve().parents[2]
 E2E = REPO / "eval" / "e2e"
@@ -65,7 +75,6 @@ def _git_sha() -> str:
 async def run(args) -> int:
     os.environ.setdefault("MODELS_DIR", str(REPO / "models"))
     os.environ.setdefault("TESSDATA_PREFIX", str(Path(os.environ["MODELS_DIR"]) / "tessdata"))
-    os.environ.setdefault("GATE_THRESHOLD", "0.40")  # calibrated for gte (.env.example)
     suites = ALL if args.suite == ["all"] else args.suite
     corpus = load_corpus(*MANIFESTS)
     all_cases = load_cases(list(CASE_FILES), corpus)
@@ -82,6 +91,7 @@ async def run(args) -> int:
         ctx = Context(driver, corpus, topics, budget, judge.from_env(args.max_judge_calls))
         cases = select(all_cases, {s.doc.topic for s in loaded}, args)
         by_id = {c.id: c for c in all_cases}
+        report.check_watch(getattr(args, "watch", None) or [], by_id)
         probe = by_id.get("adv-09") or next(c for c in cases if c.expect == "answer")
         results, extra = [], {}
         for suite in suites:
@@ -98,7 +108,9 @@ async def run(args) -> int:
             elif suite == "faults":
                 results += await system.faults(driver, probe)
             elif suite == "cache":
-                driver.state.generator = CitingStub()
+                # Fresh breaker: earlier suites may have opened it (a spent LLM budget fails
+                # every call), and an open breaker would skip the stub (0 calls).
+                driver.state.generator, driver.state.breaker = CitingStub(), CircuitBreaker()
 
                 async def bump() -> object:  # any upload changes the corpus version
                     return await driver.upload(loaded[0], "eval-cache-bump")
@@ -109,7 +121,7 @@ async def run(args) -> int:
                 results += await ingest(driver)
             elif suite == "load":
                 if args.target == "inprocess":
-                    driver.state.generator = CitingStub()
+                    driver.state.generator, driver.state.breaker = CitingStub(), CircuitBreaker()
                 found, extra["load"] = await system.load(
                     driver, cases, concurrency=args.concurrency, duration_s=args.duration
                 )
@@ -123,9 +135,8 @@ async def run(args) -> int:
         await driver.close()
         if pipeline is not None:
             await pipeline.close()
-    return write(
-        args, results, by_id, ctx, info | {"llm_calls_made": getattr(generator, "calls", 0)}, extra
-    )
+    info = info | {"llm_calls_made": getattr(generator, "calls", 0)}
+    return write(args, results, by_id, ctx, info, extra)
 
 
 def write(args, results, by_id, ctx, info, extra) -> int:
@@ -137,6 +148,8 @@ def write(args, results, by_id, ctx, info, extra) -> int:
             ),
         )
     summary = report.summarize(results, by_id)
+    if getattr(args, "watch", None):
+        summary["watched"] = report.watch(results, args.watch)
     rows = report.scorecard(summary["metrics"], report.load_thresholds())
     payload = {
         "label": args.label,
@@ -157,6 +170,8 @@ def write(args, results, by_id, ctx, info, extra) -> int:
     stem = out / f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{args.label}"
     stem.with_suffix(".json").write_text(json.dumps(payload, ensure_ascii=False) + "\n")
     text = report.markdown(summary, rows, f"E2E run {args.label}")
+    if "load" in extra:
+        text += "\n" + report.load_markdown(extra["load"])
     notes = "".join(f"\n> {note}\n" for note in ctx.notes)
     stem.with_suffix(".md").write_text(text.replace("\n\n", notes + "\n", 1) if notes else text)
     print(text[:3000] + notes + f"\nresults: {stem}.json")
@@ -174,8 +189,18 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--split", choices=["dev", "test", "all"], default="all")
     parser.add_argument("--ids", nargs="*", help="only cases whose id starts with one of these")
     parser.add_argument("--limit", type=int)
+    parser.add_argument(
+        "--watch", type=lambda v: v.split(","), help="comma-separated case ids to report one by one"
+    )
     parser.add_argument("--mode", choices=["live", "record", "replay"], default="record")
     parser.add_argument("--max-llm-calls", type=int, default=10)
+    parser.add_argument(
+        "--llm",
+        choices=["openrouter", "ollama"],
+        default="openrouter",
+        help="ollama: a local test model (no OpenRouter quota), not the production provider",
+    )
+    parser.add_argument("--ollama-model", default="gemma4:e4b")
     parser.add_argument("--max-judge-calls", type=int, default=20)
     parser.add_argument("--repeat", type=int, default=2)
     parser.add_argument("--concurrency", type=int, default=4)

@@ -196,3 +196,74 @@ async def test_neighbours_ignore_other_versions_and_hidden_chunks(pipe, tmp_path
     assert await searcher(pipe).neighbours([hit], "public") == {}
     assert await searcher(pipe).neighbours([replace(hit, content_hash="other")], "member") == {}
     assert await searcher(pipe).neighbours([], "member") == {}
+
+
+async def _set_language(pipe, doc_id, language):
+    await pipe.client.set_payload(
+        pipe.settings.qdrant_collection,
+        {"language": language},
+        points=qm.Filter(must=[qm.FieldCondition(key="doc_id", match=qm.MatchValue(value=doc_id))]),
+        wait=True,
+    )
+
+
+async def _cross_lingual_corpus(pipe, tmp_path, visibility="public"):
+    for i in range(5):  # same-language block that wins both arms
+        await _ingest(
+            pipe, tmp_path, f"fr{i}.md", f"# Doc {i}\n\n" + "cotisation " * (i + 3), "public"
+        )
+    other = await _ingest(
+        pipe, tmp_path, "en.md", "# Fee\n\nThe annual fee is the cotisation.", visibility
+    )
+    await _set_language(pipe, other.doc_id, "en")
+    return other
+
+
+async def test_cross_language_prefetch_adds_other_language_candidates(pipe, tmp_path):
+    other = await _cross_lingual_corpus(pipe, tmp_path)
+    plain = searcher(pipe, top_k=5, prefetch_limit=5)
+    assert other.doc_id not in {c.doc_id for c in await run(pipe, plain, "cotisation", "public")}
+    cross = searcher(pipe, top_k=5, prefetch_limit=5, cross_lang_prefetch=2)
+    found = await cross.search(
+        pipe.dense.embed_query("cotisation"),
+        pipe.sparse.embed_query("cotisation"),
+        "public",
+        query_language="fr",
+    )
+    assert other.doc_id in {c.doc_id for c in found}
+
+
+async def test_cross_language_prefetch_keeps_the_visibility_filter(pipe, tmp_path, monkeypatch):
+    other = await _cross_lingual_corpus(pipe, tmp_path, visibility="members")
+    seen = {}
+    original = pipe.client.query_points
+
+    async def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(pipe.client, "query_points", spy)
+    cross = searcher(pipe, top_k=5, prefetch_limit=5, cross_lang_prefetch=2)
+    dense, sparse = pipe.dense.embed_query("cotisation"), pipe.sparse.embed_query("cotisation")
+    found = await cross.search(dense, sparse, "public", query_language="fr")
+    assert other.doc_id not in {c.doc_id for c in found}
+    third = seen["prefetch"][2]
+    assert third.filter.must[0].must[0] == visibility_filter("public").must[0]
+    assert third.filter.must_not[0].match == qm.MatchValue(value="fr")
+    assert seen["query"].rrf.weights is None or len(seen["query"].rrf.weights) == 3
+    await cross.search(dense, sparse, "public")  # no language: two arms, as before
+    assert len(seen["prefetch"]) == 2
+
+
+async def test_expired_documents_are_not_retrieved(pipe, tmp_path):
+    kept = await _ingest(pipe, tmp_path, "a.md", "# A\n\nLa cotisation.", "public")
+    gone = await _ingest(pipe, tmp_path, "b.md", "# B\n\nLa cotisation annuelle.", "public")
+    await pipe.store.set_fields(gone.doc_id, {"expires_at": 1.0})  # 1970: long expired
+    future = await _ingest(pipe, tmp_path, "c.md", "# C\n\nCotisation future.", "members")
+    await pipe.store.set_fields(future.doc_id, {"expires_at": 4_000_000_000.0})
+    for role in ("public", "member"):
+        found = {c.doc_id for c in await run(pipe, searcher(pipe), "cotisation", role)}
+        assert gone.doc_id not in found and kept.doc_id in found
+    assert future.doc_id in {
+        c.doc_id for c in await run(pipe, searcher(pipe), "cotisation", "member")
+    }

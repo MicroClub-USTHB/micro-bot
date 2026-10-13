@@ -7,6 +7,7 @@ Writes are atomic (temp file, fsync, rename), so a crash never leaves a truncate
 
 import asyncio
 import os
+from datetime import datetime
 from pathlib import Path
 
 import structlog
@@ -65,6 +66,11 @@ class DocStore:
 
     async def delete(self, doc_id: str) -> None:
         await asyncio.to_thread(self._path(doc_id).unlink, missing_ok=True)
+
+    async def set_expiry(self, doc_id: str, expires_at: datetime | None) -> None:
+        stored = await self.load(doc_id)
+        if stored is not None:
+            await self.save(stored.model_copy(update={"expires_at": expires_at}))
 
     async def set_visibility(self, doc_id: str, visibility: Visibility) -> None:
         stored = await self.load(doc_id)

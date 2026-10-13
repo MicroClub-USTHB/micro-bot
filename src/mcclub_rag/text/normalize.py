@@ -105,6 +105,18 @@ def strip_repeated_lines(
 
 # --- search folding (BM25 side only) -------------------------------------------
 
+# Harakat, tanwin, shadda, sukun, Quranic marks, superscript alef; precomposed hamza letters
+# (أ إ آ ؤ ئ) are separate code points and stay.
+_ARABIC_MARKS = str.maketrans(
+    dict.fromkeys([*range(0x064B, 0x0660), 0x0670, *range(0x06D6, 0x06EE), ord(TATWEEL)])
+)
+
+
+def strip_arabic_marks(text: str) -> str:
+    """Remove Arabic diacritics and tatweel, nothing else (queries; never stored text)."""
+    return text.translate(_ARABIC_MARKS)
+
+
 _ARABIC_FOLD = str.maketrans({"ٱ": "ا", "ى": "ي", "ة": "ه"})
 _DIGIT_FOLD = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 

@@ -281,6 +281,33 @@ def write_text_files() -> None:
     )
 
 
+SHARE_BAR_PAGE = """<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><title>Réintégration aux études | Faculté</title></head>
+<body>
+<nav><ul><li><a href="/">Accueil</a></li><li><a href="/scolarite">Scolarité</a></li></ul></nav>
+<main><article>
+<h1>Réintégration aux études</h1>
+<div class="social-share">
+<span>Partager :</span>
+<ul class="share-links">
+<li><a href="https://www.facebook.com/sharer/sharer.php?u=https://finfo.example/r">Facebook</a></li>
+<li><a href="https://twitter.com/intent/tweet?url=https://finfo.example/r">Twitter</a></li>
+<li><a href="https://www.linkedin.com/shareArticle?url=https://finfo.example/r">LinkedIn</a></li>
+<li><a href="https://api.whatsapp.com/send?text=https://finfo.example/r">WhatsApp</a></li>
+<li><a href="mailto:?subject=R%C3%A9int%C3%A9gration&amp;body=https://finfo.example/r">Email</a></li>
+</ul>
+</div>
+</article></main>
+<footer>© 2026 Faculté d'informatique</footer>
+</body></html>
+"""
+
+
+def write_web() -> None:
+    """Share-bar-only page in the shape of finfo.usthb.dz/scolarité/réintégration-aux-études."""
+    (OUT / "web" / "share_bar_only.html").write_text(SHARE_BAR_PAGE, encoding="utf-8")
+
+
 def write_chunk_golden() -> None:
     sys.path.insert(0, str(OUT.parents[1]))
     from mcclub_rag.ingest.settings import IngestSettings
@@ -311,6 +338,7 @@ def main() -> None:
     write_docx()
     write_xlsx()
     write_text_files()
+    write_web()
     for path in sorted(OUT.iterdir()):
         if path.suffix != ".py" and path.name != "README.md":
             print(f"{path.name:22} {path.stat().st_size:>8} bytes")

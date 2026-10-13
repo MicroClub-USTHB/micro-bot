@@ -77,3 +77,21 @@ async def test_robustness_reports_variants_and_repeats(driver):
     assert summary["metrics"]["instability"] == 0.0
     assert summary["metrics"]["flip_rate"] is not None
     assert {r.id for r in results} == set(cases)
+
+
+def test_stage_times_from_retrieval_events():
+    events = [
+        {"event": "retrieval_done", "ms_encode": e, "ms_search": 1, "ms_rerank": 10 * e}
+        for e in (1, 2, 3, 4)
+    ] + [{"event": "other", "ms_encode": 99}]
+    stages = system.stage_times(events)
+    assert stages["ms_encode"] == {"n": 4, "p50": 2.5, "p95": 4}
+    assert stages["ms_rerank"]["p95"] == 40
+    assert system.stage_times([]) == {}
+
+
+async def test_load_reports_stage_times(driver):
+    (result,), stats = await system.load(driver, [PROBE], concurrency=2, duration_s=0.3)
+    assert result.passed and stats["requests"] >= 2
+    assert set(stats["stages"]) == {"ms_encode", "ms_search", "ms_rerank"}
+    assert stats["stages"]["ms_rerank"]["n"] >= 1

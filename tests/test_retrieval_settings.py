@@ -31,7 +31,7 @@ def test_defaults_match_design():
     assert s.top_k == 20
     assert s.top_n == 5
     assert s.gate_threshold is None
-    assert s.rerank_model == "Alibaba-NLP/gte-multilingual-reranker-base"
+    assert s.rerank_model == "BAAI/bge-reranker-v2-m3"
     assert s.models_dir == Path("/app/models")
     assert s.qdrant_collection == "mcclub"
     assert s.fusion == "rrf"
@@ -41,6 +41,7 @@ def test_defaults_match_design():
     assert s.rerank_max_length == 640
     assert s.rerank_threads == 4
     assert s.followup_max_words == 8
+    assert s.followup_cues is True
     assert s.neighbours is False
 
 
@@ -78,3 +79,27 @@ def test_invalid_combinations_raise(monkeypatch, env):
         monkeypatch.setenv(key, value)
     with pytest.raises(ValidationError):
         RetrievalSettings()
+
+
+def test_rerank_pool_and_cut_are_bounded():
+    s = RetrievalSettings()
+    assert s.rerank_workers == 1 and s.rerank_top_k == 10
+    assert RetrievalSettings(top_k=4).rerank_top_k == 10  # the default never blocks a small top_k
+    with pytest.raises(ValidationError, match="RERANK_WORKERS"):
+        RetrievalSettings(rerank_workers=8, rerank_threads=4)
+    with pytest.raises(ValidationError, match="RERANK_TOP_K"):
+        RetrievalSettings(rerank_top_k=25)
+
+
+def test_blank_rerank_top_k_is_none(monkeypatch):
+    monkeypatch.setenv("RETRIEVAL_RERANK_TOP_K", "")
+    assert RetrievalSettings().rerank_top_k is None
+
+
+def test_cross_language_arm_is_on_by_default():
+    assert RetrievalSettings().cross_lang_prefetch == 20
+
+
+def test_query_normalization_is_on_by_default():
+    s = RetrievalSettings()
+    assert s.query_fix_case is True and s.query_strip_harakat is True

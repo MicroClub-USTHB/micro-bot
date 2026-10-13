@@ -50,11 +50,19 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   our `ingest.errors.IngestError` (`index_unavailable` 503, `embedding_error` / `rerank_error` 500).
   Pipeline errors reach the client as the JSON error, not as `status="failed"`. The fakes stay for
   tests (`ApplicationState` still takes any backend).
-- **Open seam items:** `expires_at` is accepted by `POST /documents` but the adapter drops it
-  (the pipeline has no expiry; agree the meaning with eequaled or remove the field); `config.py`
-  defaults (`rerank_model` bge, `retrieve_top_k` 30, `gate_threshold` None) disagree with the
-  retrieval defaults (gte, 20, 0.40 in `.env.example`); ownership of search/rerank/gate by nisbenz
-  is still to confirm.
+- **Eval fixes (2026-10-12, `specs/eval-fixes/`, nisbenz with the user's go-ahead on eequaled's
+  files, to review with eequaled):** `default_state()` wires `OpenRouterGenerationService` when
+  `OPENROUTER_API_KEY` is set; the fallback answers with a localized notice and the passages as
+  sources (`grounded=false`, never pasted chunks); refusals in the question's language
+  (`messages.NO_ANSWER`, only where no model writes the reply); the model marks a refusal by
+  starting with `NOT_FOUND` (not grounded, no sources; no refusal-phrase matching); the prompt shows passage labels only (no doc_id) and asks for `[S1]`;
+  `answer.build` also accepts a bare number, `[doc_id: X]`, `[X, Y]` and `【】` / `［］`, and
+  rewrites citations as the document title, `[Title]` / `[Title A; Title B]`, written by the
+  app, not the model (one source per document, snippet from its first cited chunk); snippets come from `text/snippet.best_snippet`; `get_role` / `require_admin` read the app's settings; `config.py`
+  retrieval defaults equal `RetrievalSettings`; `expires_at` is parsed (ISO 8601, a bare date
+  ends that day UTC), stored, listed, and expired documents are filtered in every query. Routes,
+  params and response shapes are unchanged (a blank message gets a 200 prompt, delete of an
+  unknown id keeps `{"ok": false}`).
 
 ## Workflow
 
@@ -69,7 +77,7 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
-  lists and the gte reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
+  lists and the bge reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
 - Before starting: `git fetch`; local `dev` may be behind `origin/dev`.
 
 ## Fixed decisions (do not change; ask the user if blocked)
@@ -81,15 +89,18 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   `https://openrouter.ai/api/v1`. **At most 1 LLM call per question** (50 requests/day budget).
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). Visibility filter (`public` / `members`) goes **inside the query**.
-- **Embedder (default):** `ibm-granite/granite-embedding-311m-multilingual-r2`, 768 dims, shipped
-  ONNX int8, no query prefix, CLS pooling + L2 normalize, via onnxruntime + tokenizers (**no
-  sentence-transformers/PyTorch**). Later A/B (config switch only, no code now):
-  `microsoft/harrier-oss-v1-270m`, `BAAI/bge-m3`, `codefuse-ai/F2LLM-v2-330M`.
-- **Reranker:** `Alibaba-NLP/gte-multilingual-reranker-base` (decided 2026-10-10: 2.3x faster
-  than bge on CPU, 250 MB less RAM), served from `onnx-community/gte-multilingual-reranker-base`
-  (`onnx/model_int8.onnx`, 341 MB, rev `ee64367e…`). `BAAI/bge-reranker-v2-m3`
-  (`onnx-community/bge-reranker-v2-m3-ONNX`, int8 571 MB, rev `6f5ff652…`) stays a registry entry
-  for A/B via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
+- **Embedder (default since 2026-10-13):** `BAAI/bge-m3` from `onnx-community/bge-m3-ONNX`
+  (`onnx/model_int8.onnx`, 568 MB), 1024 dims, no query prefix, CLS pooling + L2 normalize, via
+  onnxruntime + tokenizers (**no sentence-transformers/PyTorch**). Chunks are still sized in
+  **granite tokens** (`models/chunk-tokenizer`): bge-m3's tokenizer lost 5 of 111 eval questions.
+  granite-311m-r2 (768 dims) stays an A/B entry; harrier-270m was measured and dropped, F2LLM-v2
+  has no ONNX export (eval/results/README.md, 2026-10-13).
+- **Reranker (default since 2026-10-13):** `BAAI/bge-reranker-v2-m3` from
+  `onnx-community/bge-reranker-v2-m3-ONNX` (int8 571 MB, rev `6f5ff652…`) on the **top 10** fused
+  candidates (`RETRIEVAL_RERANK_TOP_K=10`), **gate off** (`GATE_THRESHOLD` unset: bge scores right
+  darija matches near 0). With bge-m3 it keeps the darija/arabizi matches gte dropped (darija hit@5
+  0.667 -> 0.771) at gte's speed. `Alibaba-NLP/gte-multilingual-reranker-base` (341 MB, gate 0.31)
+  stays an A/B entry via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
 - **Web pages:** httpx + trafilatura. **Cache:** exact-match keyed by question + role + corpus
@@ -110,12 +121,14 @@ uv sync --locked
 uv run ruff check . && uv run ruff format --check .
 uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"   # no model files
 uv run python scripts/download_models.py --only tessdata --dest models/tessdata
-uv run python scripts/download_models.py --only embedder --dest models/embedder   # 313 MB
+uv run python scripts/download_models.py --only embedder --dest models/embedder   # bge-m3, 568 MB
 uv run python scripts/download_models.py --only bm25 --dest models/bm25
-uv run python scripts/download_models.py --only reranker --dest models/reranker   # gte, 341 MB
+uv run python scripts/download_models.py --only reranker --dest models/reranker   # bge, 571 MB
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
+uv run python -m eval.bench_load --workers 1 2 --rerank-top-k 20 15 10   # concurrent users
+uv run python -m eval.calibrate_gate eval/results/e2e/<run>.json --split dev   # offline gate sweep
 uv run python -m eval.e2e.run --suite all --label <name>   # e2e eval, in-process, real models
 uv run python -m eval.e2e.run --suite quality --mode record --max-llm-calls 10   # spends LLM quota
 uv run python -m eval.e2e.compare <a.json> <b.json>   # metric deltas, regressions
@@ -152,6 +165,10 @@ Modules in `src/mcclub_rag/`: `ingest/{models,errors,settings,sniff,ocr,parse,se
 - **Stored text stays faithful** (NFC, controls/zero-width removed, tatweel removed, ZWNJ/ZWJ kept).
   `fold_for_search()` is for the BM25 side only and is never stored.
 - **Hashing:** files = SHA-256 of raw bytes; web HTML = SHA-256 of normalized extracted text.
+- **Web:** `prepare_html` drops share bars (sharer URLs, `mailto:?`, `share` class) and the empty
+  check ignores heading lines, so a title + share bar page is `empty_document`.
+- **Title:** explicit > metadata unless generic (= filename stem, producer default, or a piece of
+  the page-1 title, e.g. "MICRO CLUB") > page-1 headings joined > first heading > stem.
 - **Logging:** structlog, one `document_preprocessed` / `document_rejected` event; never log
   document text; strip query string and fragment from URLs.
 - **Concurrency:** module semaphore `INGEST_MAX_CONCURRENCY` (default 1); CPU-bound pure-Python
@@ -174,6 +191,9 @@ bite:
 - **Store** (`retrieval/store.py`): physical collection `<QDRANT_COLLECTION>__<signature[:12]>`
   behind the `QDRANT_COLLECTION` alias. Always read and write through the alias; a reindex builds a
   new collection and swaps the alias atomically.
+- **Payload schema 2** (`SCHEMA_VERSION`, part of the index signature: bump = reindex):
+  `instruction_like` per chunk from `ingest/injection.looks_like_instruction` (text addressing an AI
+  assistant, en/fr/ar; 0 hits on the real corpus). `language` has a keyword index.
 - **Marker point:** each version's `index == 0` point is written last. Listings and
   `corpus_version()` read markers only, so they see complete documents only.
 - **Identity:** point id = `uuid5(doc_id, f"{content_hash}:{index}")`. Default topics over 200
@@ -189,7 +209,7 @@ bite:
 ## Retrieval (implemented, `specs/retrieval/`)
 
 `HybridRetriever.retrieve(query, role, history)` -> `schemas.Retrieval`: follow-up query ->
-dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe -> gte rerank ->
+dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe -> rerank (top 10) ->
 `RERANK_TOP_N` -> optional neighbours -> gate. Build it with `HybridRetriever.from_pipeline(pipeline)`
 (shares encoders, client, alias). Rules that bite:
 
@@ -200,13 +220,25 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   only (`only_second`); a query too long for that falls back to `longest_first`.
 - Reranker input = `passage(title, heading_path, text)`, the same header as the embedded text
   (text alone when `INGEST_CHUNK_CONTEXT_HEADER=false`). Scores are `sigmoid(logit)`, 0..1, so
-  `GATE_THRESHOLD` means the same for any model. One rerank at a time per process (lock).
+  `GATE_THRESHOLD` means the same for any model. One rerank at a time **per session**: a pool of
+  `RETRIEVAL_RERANK_WORKERS` sessions (threads split between them) serves concurrent requests;
+  `RETRIEVAL_RERANK_TOP_K` reranks only the first k fused candidates.
 - **Gate:** `top_score < GATE_THRESHOLD` -> `refuse` (chunks still returned); unset = open gate,
   logged once (`retrieval_gate_open`). No fallback to fused order if the reranker fails
-  (`rerank_error`).
+  (`rerank_error`). It is a **relevance floor**: answerable and in-domain unknown scores overlap,
+  so refusing unknowns is the LLM's job. Calibrate with `python -m eval.calibrate_gate <e2e run>`
+  (offline, from a run with the robustness variants). The gate sees every reranked score, before
+  the `RETRIEVAL_INSTRUCTION_PENALTY` (ranking only, for `instruction_like` chunks; 1.0 = off).
 - **Dedupe** by `(doc_id, index)`, newest `ingested_at`, before reranking.
-- **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history is searched
-  as previous `user_message` + message. No LLM rewrite.
+- **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history **and a
+  follow-up cue** (`has_followup_cue`: leading and/et/و, pronoun or demonstrative, bare question
+  word; not هو/هي, "ce", "en", "there") is searched as previous `user_message` + message; a short
+  new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. No LLM rewrite.
+- **Query normalization** (`normalize_query`, before the encoder and reranker): repeated
+  punctuation always collapsed; `RETRIEVAL_QUERY_FIX_CASE`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
+  on (`eval.bench_robust`: noise flips 9.6% -> 6.6%, clean questions unchanged).
+- **Cross-language arm:** `RETRIEVAL_CROSS_LANG_PREFETCH` (default 20, 0 = off) adds a third dense prefetch over
+  chunks whose `language` differs from the question's (`detect_language`), with the role filter.
 - Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,
   `GATE_THRESHOLD`, `RERANK_MODEL`); `config.py` untouched. Qdrant's own RRF default `k` is 2; ours
   is a setting.
@@ -282,7 +314,7 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 ## Configuration
 
 Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
-token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD=0.40` calibrated for gte,
+token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD` unset with bge (0.31 for gte; relevance floor, `eval.calibrate_gate`),
 `MAX_MESSAGE_CHARS`, `LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
 in `.env.example`. Never commit `.env` or real keys.
 

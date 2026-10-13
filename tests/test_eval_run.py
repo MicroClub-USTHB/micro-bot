@@ -83,6 +83,9 @@ async def test_summary_and_result_file(setup, tmp_path):
     assert summary["access_violations"] == 0
     assert summary["suggested_gate_threshold"] is not None
     assert set(summary["latency_ms"]) == set(run_eval.STAGES)
+    gate = summary["gate_scores"]
+    assert gate["answerable"]["n"] == 2 and gate["unanswerable"]["n"] == 2
+    assert 0.0 <= gate["overlap"] <= 1.0
     path = run_eval.write_result(tmp_path / "results", "unit", {"rows": rows, "summary": summary})
     assert path.name.endswith("-unit.json")
     saved = json.loads(path.read_text(encoding="utf-8"))

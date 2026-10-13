@@ -11,6 +11,7 @@ from pathlib import Path
 from fastapi import UploadFile
 
 from mcclub_rag.ingest.pipeline import IngestPipeline
+from mcclub_rag.main import parse_expiry  # same form-field parsing as the app adapter
 from mcclub_rag.schemas import DocInfo, IngestResult
 
 _STATUS = {"created": "indexed", "replaced": "indexed", "updated": "indexed"}
@@ -28,7 +29,9 @@ class PipelineDocuments:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / (file.filename or "document")
             path.write_bytes(await file.read())
-            result = await self.pipeline.ingest_file(path, path.name, visibility, topic=topic)
+            result = await self.pipeline.ingest_file(
+                path, path.name, visibility, topic=topic, expires_at=parse_expiry(expires_at)
+            )
         status = _STATUS.get(result.status, result.status)
         return IngestResult(
             doc_id=result.doc_id, title=result.title, status=status, chunk_count=result.chunk_count
@@ -46,6 +49,7 @@ class PipelineDocuments:
                 chunk_count=d.chunk_count,
                 created_at=d.ingested_at.isoformat(),
                 topic=topics.get(d.doc_id),
+                expires_at=d.expires_at.isoformat() if d.expires_at else None,
             )
             for d in await self.pipeline.list_documents()
         ]

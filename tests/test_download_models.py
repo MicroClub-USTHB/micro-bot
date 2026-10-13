@@ -139,7 +139,7 @@ def test_tokenizer_downloaded_from_pinned_revision(tmp_path):
     assert path.read_bytes() == TOKENIZER
     assert seen == [
         "https://huggingface.co/ibm-granite/granite-embedding-311m-multilingual-r2"
-        f"/resolve/{dm.EMBEDDER_REVISION}/tokenizer.json"
+        f"/resolve/{dm.TOKENIZER_REVISION}/tokenizer.json"
     ]
     assert not list(tmp_path.glob("*.part"))
 
@@ -164,7 +164,7 @@ def test_existing_valid_tokenizer_is_not_downloaded_again(tmp_path):
 
 def test_tokenizer_pin_is_the_audited_hash():
     assert dm.TOKENIZER_SHA256 == (
-        "0087c868b33bad550a78a08d19798cfd7f713cde4f020803b8f51f405503e15f"
+        "0087c868b33bad550a78a08d19798cfd7f713cde4f020803b8f51f405503e15f"  # granite
     )
 
 
@@ -264,8 +264,9 @@ def test_bm25_mismatch_leaves_no_file(tmp_path):
 def test_pins_come_from_the_registry():
     from mcclub_rag.retrieval import registry
 
-    assert dm.TOKENIZER_SHA256 == registry.GRANITE_R2.tokenizer_sha256
-    assert dm.EMBEDDER_REVISION == registry.GRANITE_R2.revision
+    assert dm.EMBEDDER is registry.EMBEDDERS[registry.DEFAULT_EMBEDDER] is registry.BGE_M3
+    assert dm.TOKENIZER_SHA256 == registry.CHUNK_TOKENIZER.tokenizer_sha256
+    assert registry.CHUNK_TOKENIZER is registry.GRANITE_R2  # chunk sizes measured in granite tokens
     assert set(registry.BM25_FILES) == {"arabic.txt", "french.txt", "english.txt"}
 
 
@@ -322,15 +323,18 @@ def test_reranker_keys_resolve_to_one_spec_per_model():
     assert r["Alibaba-NLP/gte-multilingual-reranker-base"] is registry.GTE_RERANKER
     assert r["onnx-community/gte-multilingual-reranker-base"] is registry.GTE_RERANKER
     assert r["BAAI/bge-reranker-v2-m3"] is r["onnx-community/bge-reranker-v2-m3-ONNX"]
-    assert registry.RERANKERS[registry.DEFAULT_RERANKER] is registry.GTE_RERANKER
+    assert registry.RERANKERS[registry.DEFAULT_RERANKER] is registry.BGE_RERANKER
     assert registry.GTE_RERANKER.slug == "gte-multilingual-reranker-base"
 
 
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        ([], "onnx-community/gte-multilingual-reranker-base"),
-        (["--model", "BAAI/bge-reranker-v2-m3"], "onnx-community/bge-reranker-v2-m3-ONNX"),
+        ([], "onnx-community/bge-reranker-v2-m3-ONNX"),
+        (
+            ["--model", "Alibaba-NLP/gte-multilingual-reranker-base"],
+            "onnx-community/gte-multilingual-reranker-base",
+        ),
     ],
 )
 def test_cli_only_reranker(monkeypatch, tmp_path, argv, expected):
