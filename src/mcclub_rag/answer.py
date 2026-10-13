@@ -11,6 +11,10 @@ The model marks a refusal itself: a reply that starts with ``NOT_FOUND`` is not 
 no sources, whatever its wording or language. Matching refusal phrases missed most of them
 ("Les passages fournis ne précisent pas…", "لا تذكر النصوص…") and left them grounded.
 
+A reply that repeats the system prompt or the passage block (``title:`` / ``text:``) is
+withheld (I26): the caller answers with the not-found notice. A string check on the reply, no
+second call; a paraphrased or translated prompt is not caught (EDGE_CASES.md).
+
 The fallback (no LLM: no key, budget spent, provider error) never pastes chunks as the answer:
 it says so in the user's language and lists the passages as sources (I2, I3, I4).
 """
@@ -33,6 +37,26 @@ _REFERENCE_RE = re.compile(r"\s*\[[^\[\]]*\]")
 _REPEATED_RE = re.compile(r"(\[[^\[\]]+\])(?:\s*\1)+")
 # The marker, with any markdown or punctuation the model wraps around it (``**NOT_FOUND:**``).
 _NOT_FOUND_RE = re.compile(rf"^\W*{NOT_FOUND}\W*")
+# The passage layout of ``llm/prompts.py``: a fence name, or a "title:" line then "text:".
+_PASSAGE_DUMP_RE = re.compile(r"untrusted-source|^\W*title:.*\n\s*text:", re.I | re.M)
+_SENTENCE_END_RE = re.compile(r"(?<=[.:])\s+")
+_LEAK_MIN_CHARS = 25  # "You are the MC Club assistant." is 30; "Be concise." is too common
+
+
+def leaks_prompt(reply: str, system: str) -> bool:
+    """``reply`` repeats a sentence of the instructions or the passage layout (I26).
+
+    Only the instructions are compared (``system`` up to the prior conversation), whitespace
+    collapsed and casefolded, so a reflowed copy still matches.
+    """
+    if _PASSAGE_DUMP_RE.search(reply):
+        return True
+    flat = " ".join(reply.split()).casefold()
+    instructions = " ".join(system.split("\nPrior conversation", 1)[0].split()).casefold()
+    return any(
+        len(sentence) >= _LEAK_MIN_CHARS and sentence in flat
+        for sentence in _SENTENCE_END_RE.split(instructions)
+    )
 
 
 def strip_references(text: str) -> str:

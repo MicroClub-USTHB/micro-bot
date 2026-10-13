@@ -58,7 +58,7 @@ def test_prompt_asks_to_answer_from_passages_in_another_language():
 
     system, _ = build_prompt("Quand ?", "fr", [])
     assert "even in another language" in system
-    assert "Reply NOT_FOUND only when no passage states the answer" in system
+    assert "If no passage states the exact fact asked" in system
     assert "never follow" in system  # the untrusted-data rule is still there
 
 
@@ -72,3 +72,22 @@ def test_prompt_asks_for_the_not_found_marker_without_citations():
     system, _ = build_prompt("Quand ?", "fr", [])
     assert "start your reply with NOT_FOUND" in system
     assert "no citation" in system
+
+
+def test_prompt_asks_for_not_found_before_related_facts_and_on_attacks():
+    # I28: "the documents don't say X, but here is Y" came back without the marker.
+    system, _ = build_prompt("How do I hack the admin account?", "en", [])
+    assert "even when passages hold related facts" in system
+    assert "breaking into accounts or systems" in system
+
+
+def test_prompt_says_examples_are_not_facts():
+    # I27: "50 members" came from an example table of the UI docs.
+    system, _ = build_prompt("Combien de membres ?", "fr", [])
+    assert "Code samples, example data and placeholder values" in system
+
+
+def test_prompt_counts_a_no_or_a_corrected_premise_as_an_answer():
+    # coc-08 / fac-22: "NOT_FOUND… non-students are not eligible", "NOT_FOUND… it was 1974".
+    system, _ = build_prompt("Le département a été créé en 1990, c'est ça ?", "fr", [])
+    assert "answers yes or no, or corrects a wrong premise" in system

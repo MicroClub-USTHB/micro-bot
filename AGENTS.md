@@ -63,6 +63,11 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   ends that day UTC), stored, listed, and expired documents are filtered in every query. Routes,
   params and response shapes are unchanged (a blank message gets a 200 prompt, delete of an
   unknown id keeps `{"ok": false}`).
+- **Eval fixes 2 (2026-10-13, branch `nisbenz/eval-fixes-2`, same go-ahead, to review with
+  eequaled):** `answer.leaks_prompt` withholds a reply that repeats a sentence of the
+  instructions or the passage layout (I26, checked in `api/chat.py`, no second call); the prompt
+  asks for `NOT_FOUND` even when passages hold related facts and on break-in / secrets requests,
+  says examples are not facts, and counts a yes/no or a corrected premise as an answer (I27, I28).
 
 ## Workflow
 
@@ -229,6 +234,9 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   so refusing unknowns is the LLM's job. Calibrate with `python -m eval.calibrate_gate <e2e run>`
   (offline, from a run with the robustness variants). The gate sees every reranked score, before
   the `RETRIEVAL_INSTRUCTION_PENALTY` (ranking only, for `instruction_like` chunks; 1.0 = off).
+- **Link targets:** `text/normalize.drop_link_targets` removes the `(url)` that `ingest/web.py`
+  inlines from `embed_text` and the reranker passage (I30, `CHUNKER_VERSION` 2); stored text and
+  the LLM prompt keep them.
 - **Dedupe** by `(doc_id, index)`, newest `ingested_at`, before reranking.
 - **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history **and a
   follow-up cue** (`has_followup_cue`: leading and/et/و, pronoun or demonstrative, bare question

@@ -3,7 +3,8 @@
 Structure first, sentences second, size last: headings are boundaries, oversized sections
 split at paragraphs, lines, sentences, words and (last resort) tokens, and runs of tiny
 sections under one parent are merged. Every chunk's ``embed_text`` carries a
-"title > heading path" header for dense and BM25 retrieval. Pure and deterministic.
+"title > heading path" header for dense and BM25 retrieval, and drops inlined ``(url)`` link
+targets (I30); ``text`` keeps them. Pure and deterministic.
 """
 
 import hashlib
@@ -22,13 +23,14 @@ from mcclub_rag.ingest.models import Chunk, ParsedDocument, Section
 from mcclub_rag.ingest.sections import _HEADING
 from mcclub_rag.ingest.settings import IngestSettings, get_ingest_settings
 from mcclub_rag.ingest.tokens import TokenCounter, get_token_counter
+from mcclub_rag.text.normalize import drop_link_targets
 from mcclub_rag.text.sentences import split_sentences, split_words
 
 log = structlog.get_logger(__name__)
 
 # Bump when the algorithm changes output for the same input and settings: it feeds the
 # corpus version, so a bump invalidates the answer cache and triggers a reindex.
-CHUNKER_VERSION = 1
+CHUNKER_VERSION = 2  # 2: link targets dropped from embed_text (I30)
 
 BlockKind = Literal["para", "list", "table", "code"]
 
@@ -444,8 +446,8 @@ def chunk_document(
         return min(target, budget), budget
 
     def embed(item: _Final) -> str:
-        text = header(item.path)[0]
-        return f"{text}\n\n{item.text}" if text else item.text
+        text, body = header(item.path)[0], drop_link_targets(item.text)
+        return f"{text}\n\n{body}" if text else body
 
     drafts = _group(outline, counter, limits, settings.chunk_min_tokens)
     items = [

@@ -2,7 +2,7 @@
 
     uv run python tests/fixtures/make_fixtures.py
 
-The chunking golden file needs tessdata and the embedder tokenizer instead (see AGENTS.md):
+The chunking golden file needs tessdata and the chunking tokenizer instead (see AGENTS.md):
 
     uv run python tests/fixtures/make_fixtures.py --chunk-golden
 
@@ -317,7 +317,7 @@ def write_chunk_golden() -> None:
     settings = IngestSettings(
         tessdata_prefix=os.environ.get("TESSDATA_PREFIX", repo / "models" / "tessdata"),
         chunk_tokenizer_path=os.environ.get(
-            "INGEST_CHUNK_TOKENIZER_PATH", repo / "models" / "embedder" / "tokenizer.json"
+            "INGEST_CHUNK_TOKENIZER_PATH", repo / "models" / "chunk-tokenizer" / "tokenizer.json"
         ),
     )
     summary = asyncio.run(mcoli_chunk_summary(settings))

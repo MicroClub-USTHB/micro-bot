@@ -158,7 +158,8 @@ def score_chat(
     else:
         checks.append(_skip("language", "not answered"))
         checks.append(_skip("refusal_language", "not a gate refusal"))
-    return CaseResult(case.id, "chat", path, checks, obs.latency_ms, {"answered": answered})
+    extra = {"answered": answered, "answer": response.answer}  # read failures (I29)
+    return CaseResult(case.id, "chat", path, checks, obs.latency_ms, extra)
 
 
 def score_retrieval(

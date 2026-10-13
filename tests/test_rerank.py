@@ -162,3 +162,10 @@ def test_fingerprint_names_repo_revision_and_hash(model):
     spec, directory = model
     fingerprint = OnnxReranker(spec, directory, session=FakeSession()).fingerprint
     assert fingerprint == f"org/fake-reranker@r1:{spec.onnx_sha256}"
+
+
+def test_passage_drops_link_targets_like_the_embedded_text():
+    document = doc(*md(f"# Campus\n\nPar Niemeyer (https://fr.wikipedia.org/wiki/N). {words(10)}"))
+    (chunk,) = chunk_document(document, settings=SETTINGS, counter=FakeCounter())
+    assert "wikipedia" not in passage(document.title, chunk.heading_path, chunk.text)
+    assert passage(document.title, chunk.heading_path, chunk.text) == chunk.embed_text

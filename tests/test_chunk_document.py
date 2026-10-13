@@ -146,3 +146,12 @@ def test_hard_split_is_logged():
         chunks = _chunk(doc(Section(text="x" * 100)), settings=settings, counter=CharCounter())
     assert "".join(c.text for c in chunks) == "x" * 100
     assert [e["event"] for e in logs].count("chunk_hard_split") == len(chunks)
+
+
+def test_link_targets_are_kept_in_text_and_dropped_from_embed_text():
+    link = " (https://fr.wikipedia.org/wiki/Oscar_Niemeyer)"
+    (chunk,) = _chunk(
+        doc(*md(f"# Campus\nConçue par Oscar Niemeyer{link}. {words(10)}"), title="USTHB")
+    )
+    assert link in chunk.text
+    assert chunk.embed_text == f"USTHB > Campus\n\n{chunk.text.replace(link, '')}"
