@@ -14,14 +14,17 @@ from mcclub_rag.ingest.errors import RerankerConfigError, RerankError
 from mcclub_rag.retrieval.embed import _ORT_ERRORS, _check_file
 from mcclub_rag.retrieval.registry import RERANKERS, RerankerSpec
 from mcclub_rag.retrieval.settings import RetrievalSettings
+from mcclub_rag.text.normalize import drop_link_targets
 
 
 def passage(title: str, heading_path: Sequence[str], text: str, *, header: bool = True) -> str:
     """Reranker passage: the 'title > heading path' header the chunk was embedded with, then text.
 
     Same rule as ``ingest/chunk.py::_header`` minus its token trim: the reranker truncates the
-    passage side only, so a long header just leaves less room for the text.
+    passage side only, so a long header just leaves less room for the text. Link targets are
+    dropped as in ``embed_text`` (I30).
     """
+    text = drop_link_targets(text)
     entries: list[str] = []
     for entry in (title, *heading_path) if header else ():
         entry = entry.strip()

@@ -103,6 +103,19 @@ def strip_repeated_lines(
     ]
 
 
+# --- link targets (encoder and reranker side only) ------------------------------
+
+# ``ingest/web.py`` inlines links as "text (url)"; on Wikipedia pages a third of a paragraph is
+# URLs (25% of the eval corpus characters), which pushed the facts out of the top 5 (I30). One
+# level of nested parentheses: ``…/wiki/Ministère_(Algérie))``.
+_LINK_TARGET = re.compile(r"[ \t]*\((?:https?://|mailto:)[^\s()]*(?:\([^\s()]*\)[^\s()]*)*\)")
+
+
+def drop_link_targets(text: str) -> str:
+    """``text`` without its inlined ``(url)`` link targets. Never use for stored text."""
+    return _LINK_TARGET.sub("", text)
+
+
 # --- search folding (BM25 side only) -------------------------------------------
 
 # Harakat, tanwin, shadda, sukun, Quranic marks, superscript alef; precomposed hamza letters
