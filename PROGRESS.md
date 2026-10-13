@@ -1,5 +1,31 @@
 # progress
 
+## 2026-10-13 (bge stack, NOT_FOUND, e2e re-run)
+
+### Shipped
+
+- Retrieval defaults: `BAAI/bge-m3` embedder and `BAAI/bge-reranker-v2-m3` on the top 10, gate
+  off (darija hit@5 0.667 -> 0.771); chunks still sized in granite tokens.
+- Refusals: the model starts a refusal with `NOT_FOUND` (not grounded, no sources); no more
+  refusal-phrase matching (I25, `f38dd84`). On the 90 hard cases (`notfound-12b`, ollama gemma4
+  12B): refuse-expected 16 -> 41 of 47 passed, 63 of 80 answered cases pass, language
+  mismatches 35 -> 4, p95 6.8 s.
+- `eval/results/e2e/ISSUES.md`: the re-run, failures by cause, new issues I30–I32 and E5.
+
+### Blocked
+
+- I26 (prompt and passage leak), I27 (example data as facts), I28 (partial refusals): the
+  answer layer, eequaled's files.
+- Generation with the production model not measured yet (OpenRouter key, 50 requests/day).
+
+### Next
+
+- I30: drop inline `(url)` link targets from the embedded / reranked text (Wikipedia chunks
+  never reach the top 5), then reindex. I31: rebuild `data/parsed` with
+  `scripts/build_eval_corpus.py` (predates the share-bar fix). E5: fix the `usthb-04` label.
+- I29: report the chat and retrieval layers apart and keep the answer text in results.
+- Quality suite with the production model (`--mode record`, small budget).
+
 ## 2026-10-12 (eval fixes, answer layer and the rest)
 
 ### Shipped
