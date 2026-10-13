@@ -1,5 +1,30 @@
 # progress
 
+## 2026-10-13 evening (leaks, link noise, prompt rules)
+
+### Shipped
+
+- Replies that repeat the system prompt or the passage block are withheld (I26, `08d38b3`):
+  7 of 1,151 recorded replies flagged, all real leaks, no extra LLM call.
+- Inlined `(url)` link targets dropped from embedded and reranked text, stored text unchanged
+  (I30, `ddfaa8a`): 25% of corpus characters; Wikipedia facts reach rank 1; rerank p50 -10%,
+  hit@5 0.847 -> 0.838. Reindex needed (`CHUNKER_VERSION` 2).
+- Prompt rules (I27, I28, `8d04277`), measured on all 349 chat cases with only the prompt
+  changed: passed 260 -> 265, false answers 9.4% -> 0%, every refuse slice passes; false
+  refusals 6.6% -> 11.0% (8 of the 12 new ones had no evidence retrieved), +83 prompt tokens.
+- Eval: corpus rebuilt (I31), labels E5/E6 fixed, answer text kept in results (I29).
+
+### Blocked
+
+- False refusals at 11% (≤ 10% target) are now mostly retrieval misses (19 of 30): cross-lingual
+  and darija recall (I9).
+- Production model still unmeasured (OpenRouter quota).
+
+### Next
+
+- Review the answer-layer changes (`answer.py`, `api/chat.py`, `llm/prompts.py`) with eequaled.
+- Cross-lingual and darija recall; quality suite with the production model.
+
 ## 2026-10-13 (bge stack, NOT_FOUND, e2e re-run)
 
 ### Shipped

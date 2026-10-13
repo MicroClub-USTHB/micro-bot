@@ -30,3 +30,18 @@
 - Then fixed the rest, eequaled's side included, as the user asked: the app finally calls the
   LLM, and without it the user gets a short notice and sources instead of pasted chunks. The
   photo OCR problem turned out to be skew alone: straightening took it from 41% to 99%.
+
+2026-10-13 (evening)
+
+- Read the report back as a to-do list: leaks first, then the cheap retrieval misses.
+- The prompt leak was plain to catch: the model copies the prompt sentence by sentence, so a string
+  check against the instructions is enough. Ran it over all 1,151 recorded replies before
+  trusting it: it found exactly the 7 leaks I knew.
+- Wikipedia: a quarter of the corpus was link URLs. Dropping them from what the encoders read
+  fixed the targeted questions but did not move recall overall; I kept it for the 10% faster
+  rerank. Two of the four USTHB misses are candidate depth, not noise.
+- Prompt rules for refusals: the first version made the model answer "NOT_FOUND… no,
+  non-students cannot join". It read "the exact fact asked" too literally on yes/no questions.
+  One more sentence fixed it. Lesson: run the whole set with only the prompt changed, or every
+  number is mixed with the corpus and code changes.
+- Found a scorer bug too: a correct refusal said "you should vote for", which was a must_not.
