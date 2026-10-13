@@ -199,8 +199,8 @@ and ingestion not to starve the chat endpoint on a small CPU.
    status, chunk count, per-stage durations in ms, source without query string) or one
    `document_ingest_failed` event (code, stage). It SHALL NOT log document or chunk text.
 5. WHEN 32 chunks of about 300 tokens are encoded on 4 CPU threads THEN dense + sparse encoding
-   SHALL finish in under 20 s on a 4-vCPU GitHub runner (measured about 5 s on the dev machine and
-   11 s on the runner; 6.3 chunks/s on the dev machine, so about 65 s for a 400-chunk document;
+   SHALL finish in under 45 s on a 4-vCPU GitHub runner (bge-m3, 2026-10-13: about 6 s on the dev
+   machine and 23 s on the runner; granite was 5 s / 11 s under a 20 s budget;
    a performance test with the real model, marked like the tokenizer tests). The budget catches
    order-of-magnitude regressions (padded batches, wrong thread count, fp32 model), not noise.
 

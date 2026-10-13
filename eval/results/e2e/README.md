@@ -2,8 +2,8 @@
 
 Run with `python -m eval.e2e.run` (see [specs/e2e-eval/](../../../specs/e2e-eval/)). Every issue
 found, with its status, is in [ISSUES.md](ISSUES.md). The `.md` reports are gitignored and the
-`.json` files are committed with `git add -f` when a run is worth keeping; the two 2026-10-13
-runs are local only so far. Results hold no answer text yet (I29).
+`.json` files are committed with `git add -f` when a run is worth keeping; the 2026-10-13 runs
+are local only so far. Chat results keep the answer text since `407807e` (I29).
 
 | Run | What | Headline |
 |---|---|---|
@@ -13,6 +13,11 @@ runs are local only so far. Results hold no answer text yet (I29).
 | `20261012T201158Z-fixes-system`, `…202250Z-fixes-retrieval` | after the eval fixes | contract 22/22, faults 9/9, cache 5/5, ingest 16/16 |
 | `20261013T051944Z-bge-12b` | all suites, bge-m3 + bge reranker top 10, gate off, ollama gemma4 12B | refusals came back grounded (I25), prompt leak (I26), example data as facts (I27) |
 | `20261013T061449Z-notfound-12b` | the 90 hard cases of `bge-12b` after `NOT_FOUND` (I25) | refuse-expected 41/47 pass; 63/80 answered pass; left: I26–I28, I30–I32 |
+| `20261013T174211Z-i30-retrieval` | quality, 349 cases, retrieval layer only, after I30 and the corpus rebuild (I31) | evidence in the chunks 90.9%, p95 2.3 s; false answers 1.0 is the gate being off (I29) |
+| `20261013T184620Z-prompt-old-12b` | 349 cases, ollama gemma4 12B, prompt before `8d04277` (A) | 260/349; false answers 9.4%, false refusals 6.6% |
+| `20261013T181541Z-prompt-new-12b` | same, first version of the I27/I28 prompt | 260/349; refused yes/no questions (`coc-08`, `fac-22`) |
+| `20261013T191937Z-prompt-new2-12b` | same, prompt `8d04277` (C): **latest** | 265/349; false answers 0%, false refusals 11.0%, evidence 80.7%, 29 language mismatches (I4, I6, I9, I23, I32) |
+| `20261013T184844Z-replay-lost` | replay of the 10 answerable cases the first new prompt lost against A | 0/10 by design: used to read the refusals (`coc-08`, `fac-22` -> the yes/no rule) and find E6 (`cand-17`) |
 
 ## Retrieval-layer preview, 2026-10-11 (`preview-retrieval.json`)
 
