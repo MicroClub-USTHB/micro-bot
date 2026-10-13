@@ -59,6 +59,12 @@ def test_good_answer_passes_every_check():
     assert _status(result) | {"access": "pass"} == _status(result)
 
 
+def test_chat_result_keeps_the_answer_text():
+    # I29: failures were read by matching recordings by hand.
+    result = score_chat(_case(), Observation(200, _body()), CORPUS, TOPICS)
+    assert result.extra["answer"] == "The workshop is at 10:00 [d-faq]."
+
+
 @pytest.mark.parametrize(
     ("body", "failed"),
     [
