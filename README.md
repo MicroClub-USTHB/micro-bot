@@ -32,9 +32,11 @@ not reranker"` (no model files needed), `uv run ruff check . && uv run ruff form
 Working end to end on the real models and a real Qdrant: ingestion (PDF, images with OCR, text,
 web), hybrid retrieval with reranking, the refusal gate, role-based visibility, exact-match cache,
 rate limiting and the daily LLM quota. Known limits, tracked in [PROGRESS.md](PROGRESS.md) and
-[EDGE_CASES.md](EDGE_CASES.md): the `expires_at` upload field is accepted but ignored, the gate
-and defaults are tuned on a small corpus (61 chunks), and answer quality with the live LLM has not
-been evaluated yet (retrieval only).
+[EDGE_CASES.md](EDGE_CASES.md) and [eval/results/e2e/ISSUES.md](eval/results/e2e/ISSUES.md):
+answers were evaluated with a local gemma4 12B, not yet with the production model (349 cases,
+2026-10-13: 265 pass, 0% false answers, 11% false refusals, mostly cross-lingual and darija
+retrieval misses); cited snippets show the evidence 81% of the time (target 90%); arabizi
+questions are answered in French or English.
 
 ## Architecture
 
@@ -102,7 +104,7 @@ tests/          one test module per source module, plus contract, access and wir
 
 `uv run python -m eval.run_eval --label <name>` ingests `data/parsed` (the document part of each
 `scripts/parse.py` dump, titled from `eval/corpus.json`) into an in-memory Qdrant
-with the real models and runs the 48 questions of `eval/questions.jsonl` (Arabic, cross-lingual
+with the real models and runs the 128 questions of `eval/questions.jsonl` (Arabic, darija, arabizi, cross-lingual
 both ways, unanswerable, follow-ups, access checks): hit@5 and MRR@10 before and after reranking,
 per tag, a gate-threshold sweep and per-stage latency. Settings are environment overrides; results
 and the comparison table are in [eval/results/](eval/results/README.md).
@@ -110,7 +112,7 @@ and the comparison table are in [eval/results/](eval/results/README.md).
 ### End-to-end eval
 
 `uv run python -m eval.e2e.run --suite all --label <name>` drives the real chat and documents API
-(in-process, or `--target http` against a running app) with 269 cases over 63 documents: 42
+(in-process, or `--target http` against a running app) with 349 cases over 68 documents: 42
 edge-case slices (cross-lingual, Darija, Arabizi, OCR, tables, near-duplicates, false premises,
 follow-ups, access, prompt injection in questions, documents and history, system-prompt leaks,
 PII, harmful requests), plus perturbation, API contract, fault, cache, ingest and load suites.

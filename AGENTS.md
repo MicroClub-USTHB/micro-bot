@@ -250,15 +250,15 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
 - Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,
   `GATE_THRESHOLD`, `RERANK_MODEL`); `config.py` untouched. Qdrant's own RRF default `k` is 2; ours
   is a setting.
-- **Eval:** `eval/questions.jsonl` (48 questions: Arabic, cross-lingual both ways, unanswerable,
-  follow-ups, access), `eval/corpus.json` (VP candidacy members-only, the rest public), labels =
+- **Eval:** `eval/questions.jsonl` (128 questions: Arabic, darija, arabizi, cross-lingual both
+  ways, unanswerable, follow-ups, access), `eval/corpus.json` (VP candidacy members-only, the rest public), labels =
   doc topic + verbatim evidence (folded), so they survive rechunking. Results in `eval/results/`.
 - Log: one `retrieval_done` event (counts, top_score, decision, per-stage ms), never the query.
 
 ## E2E eval (implemented, `specs/e2e-eval/`)
 
-`eval/e2e/`: 269 cases (`cases.jsonl` hand-written + `cases_retrieval.jsonl` generated from
-`eval/questions.jsonl`) over 63 documents (`eval/corpus.json` real, files in `data/`; plus the
+`eval/e2e/`: 349 cases (`cases.jsonl` hand-written + `cases_retrieval.jsonl` generated from
+`eval/questions.jsonl`) over 68 documents (`eval/corpus.json` real, files in `data/`; plus the
 synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`. Rules that bite:
 
 - **42 slices** (`SLICES` in `cases.py`, Req 11), each with at least 3 cases; `expect` is
@@ -342,8 +342,8 @@ in `.env.example`. Never commit `.env` or real keys.
 - Evaluation: compare embedders, chunking variants (target 200/300/400, header on/off) and fusion
   settings on `eval/questions.jsonl` with hit@5 and MRR, incl. an Arabic subset, cross-lingual and
   unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`). The corpus today
-  is the 4 files in `data/parsed` (61 chunks, Arabic-heavy): hit@5 saturates at 1.0, so compare MRR
-  and add documents and questions as the corpus grows. Those files are `scripts/parse.py` dumps:
+  is the 60 documents of `eval/corpus.json` (`data/parsed`, rebuilt with
+  `scripts/build_eval_corpus.py`); compare hit@5 and MRR per tag, darija on its dev/test split. Those files are `scripts/parse.py` dumps:
   the eval ingests only their `# Text` part, titles from `eval/corpus.json`; don't ingest them
   whole with `ingest_folder.py`. Chunk size measured 2026-10-11: 300/400 + header kept.
 
