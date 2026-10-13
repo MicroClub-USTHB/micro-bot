@@ -14,10 +14,10 @@ class Settings(BaseSettings):
     admin_api_key: str | None = None
     qdrant_url: str = "http://qdrant:6333"
     qdrant_collection: str = "mcclub"
-    embed_model: str = "ibm-granite/granite-embedding-311m-multilingual-r2"
-    embed_dim: int = Field(default=768, gt=0)
+    embed_model: str = "BAAI/bge-m3"
+    embed_dim: int = Field(default=1024, gt=0)
     # Retrieval reads these through RetrievalSettings (retrieval/settings.py); keep them equal (I21)
-    rerank_model: str = "Alibaba-NLP/gte-multilingual-reranker-base"
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
     models_dir: Path = Path("/app/models")
     data_dir: Path = Path("/data")
     llm_daily_limit: int = Field(default=50, gt=0)

@@ -76,7 +76,7 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
-  lists and the gte reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
+  lists and the bge reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
 - Before starting: `git fetch`; local `dev` may be behind `origin/dev`.
 
 ## Fixed decisions (do not change; ask the user if blocked)
@@ -88,15 +88,18 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   `https://openrouter.ai/api/v1`. **At most 1 LLM call per question** (50 requests/day budget).
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). Visibility filter (`public` / `members`) goes **inside the query**.
-- **Embedder (default):** `ibm-granite/granite-embedding-311m-multilingual-r2`, 768 dims, shipped
-  ONNX int8, no query prefix, CLS pooling + L2 normalize, via onnxruntime + tokenizers (**no
-  sentence-transformers/PyTorch**). Later A/B (config switch only, no code now):
-  `microsoft/harrier-oss-v1-270m`, `BAAI/bge-m3`, `codefuse-ai/F2LLM-v2-330M`.
-- **Reranker:** `Alibaba-NLP/gte-multilingual-reranker-base` (decided 2026-10-10: 2.3x faster
-  than bge on CPU, 250 MB less RAM), served from `onnx-community/gte-multilingual-reranker-base`
-  (`onnx/model_int8.onnx`, 341 MB, rev `ee64367e…`). `BAAI/bge-reranker-v2-m3`
-  (`onnx-community/bge-reranker-v2-m3-ONNX`, int8 571 MB, rev `6f5ff652…`) stays a registry entry
-  for A/B via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
+- **Embedder (default since 2026-10-13):** `BAAI/bge-m3` from `onnx-community/bge-m3-ONNX`
+  (`onnx/model_int8.onnx`, 568 MB), 1024 dims, no query prefix, CLS pooling + L2 normalize, via
+  onnxruntime + tokenizers (**no sentence-transformers/PyTorch**). Chunks are still sized in
+  **granite tokens** (`models/chunk-tokenizer`): bge-m3's tokenizer lost 5 of 111 eval questions.
+  granite-311m-r2 (768 dims) stays an A/B entry; harrier-270m was measured and dropped, F2LLM-v2
+  has no ONNX export (eval/results/README.md, 2026-10-13).
+- **Reranker (default since 2026-10-13):** `BAAI/bge-reranker-v2-m3` from
+  `onnx-community/bge-reranker-v2-m3-ONNX` (int8 571 MB, rev `6f5ff652…`) on the **top 10** fused
+  candidates (`RETRIEVAL_RERANK_TOP_K=10`), **gate off** (`GATE_THRESHOLD` unset: bge scores right
+  darija matches near 0). With bge-m3 it keeps the darija/arabizi matches gte dropped (darija hit@5
+  0.667 -> 0.771) at gte's speed. `Alibaba-NLP/gte-multilingual-reranker-base` (341 MB, gate 0.31)
+  stays an A/B entry via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
 - **Web pages:** httpx + trafilatura. **Cache:** exact-match keyed by question + role + corpus
@@ -117,9 +120,9 @@ uv sync --locked
 uv run ruff check . && uv run ruff format --check .
 uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"   # no model files
 uv run python scripts/download_models.py --only tessdata --dest models/tessdata
-uv run python scripts/download_models.py --only embedder --dest models/embedder   # 313 MB
+uv run python scripts/download_models.py --only embedder --dest models/embedder   # bge-m3, 568 MB
 uv run python scripts/download_models.py --only bm25 --dest models/bm25
-uv run python scripts/download_models.py --only reranker --dest models/reranker   # gte, 341 MB
+uv run python scripts/download_models.py --only reranker --dest models/reranker   # bge, 571 MB
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
@@ -205,7 +208,7 @@ bite:
 ## Retrieval (implemented, `specs/retrieval/`)
 
 `HybridRetriever.retrieve(query, role, history)` -> `schemas.Retrieval`: follow-up query ->
-dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe -> gte rerank ->
+dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe -> rerank (top 10) ->
 `RERANK_TOP_N` -> optional neighbours -> gate. Build it with `HybridRetriever.from_pipeline(pipeline)`
 (shares encoders, client, alias). Rules that bite:
 
@@ -310,7 +313,7 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 ## Configuration
 
 Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
-token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD=0.31` calibrated for gte (relevance floor, `eval.calibrate_gate`),
+token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD` unset with bge (0.31 for gte; relevance floor, `eval.calibrate_gate`),
 `MAX_MESSAGE_CHARS`, `LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
 in `.env.example`. Never commit `.env` or real keys.
 

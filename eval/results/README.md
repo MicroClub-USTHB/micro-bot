@@ -34,6 +34,13 @@ in brackets. Chunks cut with the granite tokenizer in every run, so all runs ind
 
 Decision: bge-m3 + bge-reranker-v2-m3, `RETRIEVAL_RERANK_TOP_K=10`, gate off.
 
+**Chunk tokenizer.** The defaults run first cut chunks with bge-m3's own tokenizer
+(`defaults-bge`): 0.802 overall, darija 0.708, arabizi 0.789, with 989 chunks instead of 980.
+`INGEST_EMBED_MAX_LENGTH` 512 or 1024 changes nothing (`defaults-len1024`); chunking with granite's
+tokenizer reproduces 0.847 exactly (`defaults-granitechunks`). Chunk sizes stay in granite tokens
+(`models/chunk-tokenizer`), as in every chunking measurement. Five questions move with the chunk
+boundaries alone: read differences of that size as noise.
+
 ## 2026-10-12: eval fixes, retrieval side (`fx-*`, `specs/eval-fixes/`)
 
 Granite, gte, defaults unless named, 86 questions (74 answerable). `fx-base` reproduces `xl86-granite`

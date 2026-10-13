@@ -59,17 +59,18 @@ def tessdata_dir() -> Path:
 
 def _tokenizer_path() -> Path:
     env = os.environ.get("INGEST_CHUNK_TOKENIZER_PATH")
-    return Path(env) if env else REPO / "models" / "embedder" / "tokenizer.json"
+    return Path(env) if env else REPO / "models" / "chunk-tokenizer" / "tokenizer.json"
 
 
 @pytest.fixture(scope="session")
 def tokenizer_path() -> Path:
-    """Embedder tokenizer.json. Fails (never skips) when it is missing."""
+    """Chunking tokenizer.json (granite's). Fails (never skips) when it is missing."""
     path = _tokenizer_path()
     if not path.is_file():
         pytest.fail(
-            f"Embedder tokenizer missing at {path}. Run:\n"
-            "  uv run python scripts/download_models.py --only tokenizer --dest models/embedder",
+            f"Chunking tokenizer missing at {path}. Run:\n"
+            "  uv run python scripts/download_models.py --only tokenizer "
+            "--dest models/chunk-tokenizer",
             pytrace=False,
         )
     return path
@@ -83,10 +84,10 @@ def _models_dir() -> Path:
 @pytest.fixture(scope="session")
 def onnx_path() -> Path:
     """Pinned embedder ONNX model (and its tokenizer). Fails (never skips) when missing."""
-    from mcclub_rag.retrieval.registry import GRANITE_R2
+    from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
 
     directory = _models_dir() / "embedder"
-    path = directory / GRANITE_R2.onnx_file
+    path = directory / EMBEDDERS[DEFAULT_EMBEDDER].onnx_file
     if not path.is_file() or not (directory / "tokenizer.json").is_file():
         pytest.fail(
             f"Embedder ONNX model missing at {path}. Run:\n"

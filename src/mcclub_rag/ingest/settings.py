@@ -19,7 +19,7 @@ _MB = 1024 * 1024
 
 
 def _default_tokenizer_path() -> Path:
-    return Path(os.environ.get("MODELS_DIR", "/app/models")) / "embedder" / "tokenizer.json"
+    return Path(os.environ.get("MODELS_DIR", "/app/models")) / "chunk-tokenizer" / "tokenizer.json"
 
 
 class IngestSettings(BaseSettings):
@@ -69,10 +69,10 @@ class IngestSettings(BaseSettings):
     qdrant_url: str = Field(default="http://qdrant:6333", validation_alias="QDRANT_URL")
     qdrant_collection: str = Field(default="mcclub", validation_alias="QDRANT_COLLECTION")
     embed_model: str = Field(
-        default="ibm-granite/granite-embedding-311m-multilingual-r2",
+        default="BAAI/bge-m3",
         validation_alias="EMBED_MODEL",
     )
-    embed_dim: int = Field(default=768, gt=0, validation_alias="EMBED_DIM")
+    embed_dim: int = Field(default=1024, gt=0, validation_alias="EMBED_DIM")
     models_dir: Path = Field(default=Path("/app/models"), validation_alias="MODELS_DIR")
     data_dir: Path = Field(default=Path("/data"), validation_alias="DATA_DIR")
     qdrant_timeout_s: float = Field(default=10, gt=0)

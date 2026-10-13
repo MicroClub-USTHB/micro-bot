@@ -126,6 +126,9 @@ class OllamaClient:
                 temperature=0,
                 seed=0,
                 timeout=self.timeout,
+                # Thinking models (gemma4 12B) otherwise reason first: 152 tokens instead of 11
+                # for a one-line answer. Production makes one direct call, so the eval does too.
+                extra_body={"reasoning_effort": "none"},
             )
         except Exception as exc:  # same as the real client: failures are results
             return GenerationResult(None, GenerationUsage(1), OpenRouterClient._error_kind(exc))

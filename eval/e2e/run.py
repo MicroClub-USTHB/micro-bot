@@ -4,7 +4,15 @@
     uv run python -m eval.e2e.run --suite quality --layer chat --mode record --max-llm-calls 10
     uv run python -m eval.e2e.run --suite quality --mode replay
     uv run python -m eval.e2e.run --suite quality --llm ollama --max-llm-calls 400   # local
+    uv run python -m eval.e2e.run --suite quality --llm ollama --ollama-model gemma4-12b-eval
     uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
+
+Ollama RAM: llama.cpp keeps the KV state of past prompts in system RAM (up to 8 GB; every eval
+prompt is new, so it only grows, and systemd-oomd killed Ollama at 6 GB): set
+``LLAMA_ARG_CACHE_RAM=0`` in the ollama service. Also pick a model that fits in VRAM with a small
+context: gemma4:e4b keeps per-layer embeddings in system RAM; a 12B Q4 with ``num_ctx 8192``
+sits in 8.4 GB of VRAM (eval process: 2.5 GB):
+``printf 'FROM gemma4-12b-100k\nPARAMETER num_ctx 8192\n' | ollama create gemma4-12b-eval -f -``.
 
 In-process (default): the real models, an in-memory Qdrant, the real corpus (``data/parsed``,
 when present) plus the adversarial one, and the app built around a recording generator. Writes
@@ -67,7 +75,6 @@ def _git_sha() -> str:
 async def run(args) -> int:
     os.environ.setdefault("MODELS_DIR", str(REPO / "models"))
     os.environ.setdefault("TESSDATA_PREFIX", str(Path(os.environ["MODELS_DIR"]) / "tessdata"))
-    os.environ.setdefault("GATE_THRESHOLD", "0.40")  # calibrated for gte (.env.example)
     suites = ALL if args.suite == ["all"] else args.suite
     corpus = load_corpus(*MANIFESTS)
     all_cases = load_cases(list(CASE_FILES), corpus)

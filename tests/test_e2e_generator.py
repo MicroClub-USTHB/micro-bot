@@ -110,6 +110,7 @@ def test_ollama_client_makes_one_deterministic_call():
     assert (result.usage.llm_calls, result.usage.prompt_tokens) == (1, 7)
     assert fake.kwargs["model"] == "gemma4:e4b" and fake.kwargs["temperature"] == 0
     assert [m["role"] for m in fake.kwargs["messages"]] == ["system", "user"]
+    assert fake.kwargs["extra_body"] == {"reasoning_effort": "none"}  # no thinking pass
 
 
 def test_ollama_client_failures_are_results():

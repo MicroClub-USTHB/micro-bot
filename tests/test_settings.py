@@ -104,12 +104,12 @@ def test_chunk_defaults_match_design(monkeypatch):
     assert s.chunk_min_tokens == 80
     assert s.chunk_max_header_tokens == 48
     assert s.chunk_context_header is True
-    assert s.chunk_tokenizer_path == Path("/app/models/embedder/tokenizer.json")
+    assert s.chunk_tokenizer_path == Path("/app/models/chunk-tokenizer/tokenizer.json")
 
 
 def test_chunk_tokenizer_path_follows_models_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("MODELS_DIR", str(tmp_path))
-    assert IngestSettings().chunk_tokenizer_path == tmp_path / "embedder" / "tokenizer.json"
+    assert IngestSettings().chunk_tokenizer_path == tmp_path / "chunk-tokenizer" / "tokenizer.json"
 
 
 def test_chunk_env_override(monkeypatch, tmp_path):
@@ -142,8 +142,8 @@ def test_pipeline_defaults_match_design():
     assert s.qdrant_url == "http://qdrant:6333"
     assert s.qdrant_collection == "mcclub"
     assert s.qdrant_timeout_s == 10
-    assert s.embed_model == "ibm-granite/granite-embedding-311m-multilingual-r2"
-    assert s.embed_dim == 768
+    assert s.embed_model == "BAAI/bge-m3"
+    assert s.embed_dim == 1024
     assert s.models_dir == Path("/app/models")
     assert s.data_dir == Path("/data")
     assert s.embed_threads == 4

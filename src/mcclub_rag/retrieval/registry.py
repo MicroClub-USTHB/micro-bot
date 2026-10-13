@@ -34,7 +34,8 @@ GRANITE_R2 = EmbedderSpec(
     pooling="cls",
 )
 
-# A/B candidate. BAAI ships no int8 ONNX; onnx-community export, dense head only (CLS).
+# Default since 2026-10-13 (eval/results/README.md: darija 0.667 -> 0.771 with the bge reranker).
+# BAAI ships no int8 ONNX; onnx-community export, dense head only (CLS).
 BGE_M3 = EmbedderSpec(
     repo="onnx-community/bge-m3-ONNX",
     revision="25b9af8e87a38eb120cfe87125383677b9cd309e",
@@ -44,6 +45,11 @@ BGE_M3 = EmbedderSpec(
     dim=1024,
     pooling="cls",
 )
+
+DEFAULT_EMBEDDER = "BAAI/bge-m3"
+# Chunk sizes are counted in granite tokens, whatever the embedder: cutting with bge-m3's tokenizer
+# instead lost 5 of 111 eval questions (eval/results/README.md, 2026-10-13).
+CHUNK_TOKENIZER = GRANITE_R2
 
 # Keyed by the original model name (what .env uses) and by the export's repo.
 EMBEDDERS: dict[str, EmbedderSpec] = {
@@ -106,4 +112,5 @@ RERANKERS: dict[str, RerankerSpec] = {
     "BAAI/bge-reranker-v2-m3": BGE_RERANKER,
     BGE_RERANKER.repo: BGE_RERANKER,
 }
-DEFAULT_RERANKER = "Alibaba-NLP/gte-multilingual-reranker-base"
+# bge since 2026-10-13: gte dropped darija matches bge-m3 had found (eval/results/README.md).
+DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"

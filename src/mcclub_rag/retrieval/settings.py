@@ -28,13 +28,12 @@ class RetrievalSettings(BaseSettings):
     # 20: same MRR as 30 on the eval, rerank 1.3 s instead of 1.9 s (eval/results, 2026-10-10)
     top_k: int = Field(default=20, gt=0, validation_alias="RETRIEVE_TOP_K")
     top_n: int = Field(default=5, gt=0, validation_alias="RERANK_TOP_N")
-    # Model-specific (gte: 0.40, bge: ~0.15), so set in the environment, not here.
+    # Unset = open gate. bge scores right darija matches near 0, so no threshold works with it
+    # (eval/results/README.md, 2026-10-13); the LLM refuses unknowns.
     gate_threshold: float | None = Field(
         default=None, ge=0, le=1, validation_alias="GATE_THRESHOLD"
     )
-    rerank_model: str = Field(
-        default="Alibaba-NLP/gte-multilingual-reranker-base", validation_alias="RERANK_MODEL"
-    )
+    rerank_model: str = Field(default="BAAI/bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
     models_dir: Path = Field(default=Path("/app/models"), validation_alias="MODELS_DIR")
     qdrant_collection: str = Field(default="mcclub", validation_alias="QDRANT_COLLECTION")
 
@@ -54,7 +53,8 @@ class RetrievalSettings(BaseSettings):
     # Reranker sessions used in parallel (eval-fixes Req 17); each adds ~350 MB of RAM (gte)
     rerank_workers: int = Field(default=1, gt=0)
     # Rerank only the first k fused candidates; None = all RETRIEVE_TOP_K
-    rerank_top_k: int | None = Field(default=None, gt=0)
+    # 10: bge on the top 10 kept every gain of the top 20 at gte's speed (2026-10-13)
+    rerank_top_k: int | None = Field(default=10, gt=0)
 
     # Query and context
     followup_max_words: int = Field(default=8, ge=0)
@@ -76,7 +76,12 @@ class RetrievalSettings(BaseSettings):
             raise ValueError("RETRIEVAL_PREFETCH_LIMIT must be at least RETRIEVE_TOP_K")
         if self.rerank_workers > self.rerank_threads:
             raise ValueError("RETRIEVAL_RERANK_WORKERS must be at most RETRIEVAL_RERANK_THREADS")
-        if self.rerank_top_k is not None and self.rerank_top_k > self.top_k:
+        # Only a value set on purpose: the default 10 above a small RETRIEVE_TOP_K just keeps all
+        if (
+            "rerank_top_k" in self.model_fields_set
+            and self.rerank_top_k is not None
+            and self.rerank_top_k > self.top_k
+        ):
             raise ValueError("RETRIEVAL_RERANK_TOP_K must be at most RETRIEVE_TOP_K")
         if self.rerank_max_length < MIN_RERANK_MAX_LENGTH:
             raise ValueError(f"RETRIEVAL_RERANK_MAX_LENGTH must be >= {MIN_RERANK_MAX_LENGTH}")

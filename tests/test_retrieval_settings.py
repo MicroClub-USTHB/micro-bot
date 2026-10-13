@@ -31,7 +31,7 @@ def test_defaults_match_design():
     assert s.top_k == 20
     assert s.top_n == 5
     assert s.gate_threshold is None
-    assert s.rerank_model == "Alibaba-NLP/gte-multilingual-reranker-base"
+    assert s.rerank_model == "BAAI/bge-reranker-v2-m3"
     assert s.models_dir == Path("/app/models")
     assert s.qdrant_collection == "mcclub"
     assert s.fusion == "rrf"
@@ -83,7 +83,8 @@ def test_invalid_combinations_raise(monkeypatch, env):
 
 def test_rerank_pool_and_cut_are_bounded():
     s = RetrievalSettings()
-    assert s.rerank_workers == 1 and s.rerank_top_k is None
+    assert s.rerank_workers == 1 and s.rerank_top_k == 10
+    assert RetrievalSettings(top_k=4).rerank_top_k == 10  # the default never blocks a small top_k
     with pytest.raises(ValidationError, match="RERANK_WORKERS"):
         RetrievalSettings(rerank_workers=8, rerank_threads=4)
     with pytest.raises(ValidationError, match="RERANK_TOP_K"):

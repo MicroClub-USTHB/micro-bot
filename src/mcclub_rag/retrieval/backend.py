@@ -52,7 +52,7 @@ class HybridRetriever:
         for session in (reranker, *more_rerankers):
             self._sessions.put_nowait(session)
         if settings.gate_threshold is None:
-            log.warning("retrieval_gate_open", reason="GATE_THRESHOLD not calibrated")
+            log.warning("retrieval_gate_open", reason="GATE_THRESHOLD unset: the LLM refuses")
 
     @classmethod
     def from_pipeline(
