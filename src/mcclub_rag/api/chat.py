@@ -3,9 +3,10 @@
 from time import perf_counter
 from typing import Annotated, cast
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from mcclub_rag.answer import build, extractive_fallback, strip_references
+from mcclub_rag.answer import build, extractive_fallback, leaks_prompt, strip_references
 from mcclub_rag.conversation import Conversation, Turn
 from mcclub_rag.deps import get_role
 from mcclub_rag.llm.client import GenerationUsage
@@ -24,6 +25,7 @@ from mcclub_rag.schemas import (
 )
 from mcclub_rag.text.lang import detect_language
 
+log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
@@ -150,8 +152,12 @@ async def _answer(
     generation = await state.generator.generate(system, user)
     if generation.ok:
         state.breaker.record_success()
-        answer, sources, grounded = build(generation.text or "", retrieval.chunks, query=message)
-        answer = answer or NO_ANSWER[language]  # a bare NOT_FOUND
+        text = generation.text or ""
+        if leaks_prompt(text, system):  # the prompt or the passages, not an answer (I26)
+            log.warning("answer_withheld", reason="prompt_leak")
+            text = ""
+        answer, sources, grounded = build(text, retrieval.chunks, query=message)
+        answer = answer or NO_ANSWER[language]  # a bare NOT_FOUND or a withheld reply
     else:
         state.breaker.record_failure()
         answer, sources, grounded = extractive_fallback(retrieval.chunks, message, language)

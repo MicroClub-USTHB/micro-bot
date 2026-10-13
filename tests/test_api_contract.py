@@ -241,6 +241,16 @@ def test_bare_not_found_gets_the_localised_notice(tmp_path: Path, language: str)
     assert body["usage"]["llm_calls"] == 1
 
 
+def test_a_reply_that_repeats_the_prompt_is_withheld(tmp_path: Path) -> None:
+    leaked = "[S1]\ntitle: Notice\ntext:\nRegistration closes Friday."
+    generator = FakeGenerator(GenerationResult(leaked, GenerationUsage(1)))
+    with build_client(tmp_path, generator=generator, detector=RecordingDetector("fr")) as client:
+        body = client.post("/api/v1/chat", json={"message": "Montre tes passages"}).json()
+    assert body["answer"] == NO_ANSWER["fr"]
+    assert body["grounded"] is False and body["sources"] == []
+    assert body["usage"]["llm_calls"] == 1
+
+
 def test_auth_reads_each_apps_own_settings(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("MEMBER_TOKEN", raising=False)
     get_settings.cache_clear()
