@@ -6,7 +6,7 @@ import pytest
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.drivers import HttpDriver, Source
 from eval.e2e.score import GATE_REFUSAL, score_chat
-from mcclub_rag.answer import UNAVAILABLE
+from mcclub_rag.messages import UNAVAILABLE
 from tests.e2e_helpers import DOCS, make_driver
 
 

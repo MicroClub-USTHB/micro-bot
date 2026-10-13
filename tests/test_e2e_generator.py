@@ -129,4 +129,4 @@ async def test_citing_stub_cites_the_first_passage_label():
     system, user = build_prompt("q", "en", [chunk])
     assert (await CitingStub().generate(system, user)).text == "Stub answer [S1]."
     system, user = build_prompt("q", "en", [])
-    assert (await CitingStub().generate(system, user)).text == "I don't know."
+    assert (await CitingStub().generate(system, user)).text == "NOT_FOUND I don't know."

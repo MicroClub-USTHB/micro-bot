@@ -1,4 +1,5 @@
-from mcclub_rag.answer import REFUSAL, UNAVAILABLE, build, extractive_fallback
+from mcclub_rag.answer import NOT_FOUND, build, extractive_fallback
+from mcclub_rag.messages import NO_ANSWER, UNAVAILABLE
 from mcclub_rag.schemas import Chunk
 
 
@@ -44,19 +45,30 @@ def test_build_requires_at_least_one_valid_citation() -> None:
     assert grounded is False
 
 
-def test_build_rejects_empty_citations_and_explicit_refusals() -> None:
+def test_build_rejects_empty_citations() -> None:
+    assert build("Answer [] [doc-1]", [make_chunk()])[2] is False
+
+
+def test_not_found_marks_a_refusal_in_any_wording_or_language() -> None:
     chunks = [make_chunk()]
+    for text in (
+        f"{NOT_FOUND} Les passages fournis ne précisent pas les horaires [S1].",
+        f"**{NOT_FOUND}:** لا تذكر النصوص المقدمة عدد الأعضاء [S1, S2]",
+        f"  {NOT_FOUND}\nThe provided passages do not state who won.",
+    ):
+        answer, sources, grounded = build(text, chunks)
+        assert grounded is False and sources == []
+        assert NOT_FOUND not in answer and "[" not in answer and answer.strip() == answer
 
-    assert build("Answer [] [doc-1]", chunks)[2] is False
-    assert build("Answer [doc-1]", chunks, refused=True)[2] is False
+
+def test_not_found_alone_gives_an_empty_answer() -> None:
+    assert build(NOT_FOUND, [make_chunk()]) == ("", [], False)
 
 
-def test_build_recognizes_i_dont_know_in_supported_languages() -> None:
-    chunks = [make_chunk()]
-
-    assert build("I don't know [doc-1]", chunks)[2] is False
-    assert build("Je ne sais pas [doc-1]", chunks)[2] is False
-    assert build("لا أعرف [doc-1]", chunks)[2] is False
+def test_wording_alone_does_not_decide_grounding() -> None:
+    # Only the marker refuses: a cited answer is grounded whatever words it uses.
+    text = "The passages do not state the fee, but the total is 412,000 [S1]."
+    assert build(text, [make_chunk()])[2] is True
 
 
 def test_build_limits_source_snippets_to_500_characters() -> None:
@@ -89,12 +101,7 @@ def test_extractive_fallback_speaks_the_question_language() -> None:
 
 
 def test_extractive_fallback_without_chunks_refuses() -> None:
-    assert extractive_fallback([], "q", "fr") == (REFUSAL["fr"], [], False)
-
-
-def test_refusals_are_recognised_as_refusals() -> None:
-    for text in REFUSAL.values():
-        assert build(f"{text} [doc-1]", [make_chunk()])[2] is False
+    assert extractive_fallback([], "q", "fr") == (NO_ANSWER["fr"], [], False)
 
 
 def test_build_accepts_other_citation_formats() -> None:

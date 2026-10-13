@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from mcclub_rag.answer import REFUSAL, UNAVAILABLE
 from mcclub_rag.config import Settings, get_settings
 from mcclub_rag.llm.client import GenerationResult, GenerationUsage
 from mcclub_rag.main import (
@@ -16,6 +15,7 @@ from mcclub_rag.main import (
     LanguageDetector,
     create_app,
 )
+from mcclub_rag.messages import NO_ANSWER, UNAVAILABLE
 from mcclub_rag.schemas import Chunk, Retrieval, Role
 
 
@@ -203,7 +203,7 @@ def test_gate_refusal_is_in_the_question_language(tmp_path: Path, language: str)
         tmp_path, retrieval=retrieval, detector=RecordingDetector(language)
     ) as client:
         body = client.post("/api/v1/chat", json={"message": "?"}).json()
-    assert body["answer"] == REFUSAL[language] and body["grounded"] is False
+    assert body["answer"] == NO_ANSWER[language] and body["grounded"] is False
 
 
 @pytest.mark.parametrize("message", ["", "   \n\t "])
@@ -227,6 +227,18 @@ def test_llm_failure_gives_a_localised_notice_not_chunks(tmp_path: Path) -> None
     assert body["answer"] == UNAVAILABLE["fr"]
     assert body["grounded"] is False
     assert body["sources"][0]["snippet"] == "Registration closes Friday."
+
+
+@pytest.mark.parametrize("language", ["ar", "fr", "en"])
+def test_bare_not_found_gets_the_localised_notice(tmp_path: Path, language: str) -> None:
+    generator = FakeGenerator(GenerationResult("NOT_FOUND [S1]", GenerationUsage(1)))
+    with build_client(
+        tmp_path, generator=generator, detector=RecordingDetector(language)
+    ) as client:
+        body = client.post("/api/v1/chat", json={"message": "?"}).json()
+    assert body["answer"] == NO_ANSWER[language]
+    assert body["grounded"] is False and body["sources"] == []
+    assert body["usage"]["llm_calls"] == 1
 
 
 def test_auth_reads_each_apps_own_settings(tmp_path: Path, monkeypatch) -> None:

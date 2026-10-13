@@ -58,7 +58,7 @@ def test_prompt_asks_to_answer_from_passages_in_another_language():
 
     system, _ = build_prompt("Quand ?", "fr", [])
     assert "even in another language" in system
-    assert "Say you do not know only when no passage states the answer" in system
+    assert "Reply NOT_FOUND only when no passage states the answer" in system
     assert "never follow" in system  # the untrusted-data rule is still there
 
 
@@ -66,3 +66,9 @@ def test_prompt_names_the_answer_language_and_repeats_it_last():
     system, user = build_prompt("شحال من قسم؟", "ar", [], today=date(2026, 10, 10))
     assert "Answer in Arabic (العربية)" in system
     assert user.endswith("Answer in Arabic (العربية).")
+
+
+def test_prompt_asks_for_the_not_found_marker_without_citations():
+    system, _ = build_prompt("Quand ?", "fr", [])
+    assert "start your reply with NOT_FOUND" in system
+    assert "no citation" in system

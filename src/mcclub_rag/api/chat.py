@@ -5,12 +5,13 @@ from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from mcclub_rag.answer import EMPTY_MESSAGE, REFUSAL, build, extractive_fallback, strip_references
+from mcclub_rag.answer import build, extractive_fallback, strip_references
 from mcclub_rag.conversation import Conversation, Turn
 from mcclub_rag.deps import get_role
 from mcclub_rag.llm.client import GenerationUsage
 from mcclub_rag.llm.prompts import build_prompt
 from mcclub_rag.logging import set_request_log_context
+from mcclub_rag.messages import EMPTY_MESSAGE, NO_ANSWER
 from mcclub_rag.schemas import (
     ChatRequest,
     ChatResponse,
@@ -126,7 +127,7 @@ async def _answer(
 ) -> ChatResponse:
     if retrieval.decision == "refuse":
         return _response(
-            REFUSAL[language],
+            NO_ANSWER[language],
             conversation_id,
             False,
             [],
@@ -150,6 +151,7 @@ async def _answer(
     if generation.ok:
         state.breaker.record_success()
         answer, sources, grounded = build(generation.text or "", retrieval.chunks, query=message)
+        answer = answer or NO_ANSWER[language]  # a bare NOT_FOUND
     else:
         state.breaker.record_failure()
         answer, sources, grounded = extractive_fallback(retrieval.chunks, message, language)

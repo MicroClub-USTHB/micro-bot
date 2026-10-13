@@ -166,7 +166,7 @@ class CitingStub:
 
     async def generate(self, system: str, user: str) -> GenerationResult:
         self.calls += 1
-        text = "Stub answer [S1]." if self._FIRST_PASSAGE in system else "I don't know."
+        text = "Stub answer [S1]." if self._FIRST_PASSAGE in system else "NOT_FOUND I don't know."
         return GenerationResult(text, GenerationUsage(1, 0, 0))
 
 

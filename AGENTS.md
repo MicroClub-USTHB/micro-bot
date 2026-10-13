@@ -54,7 +54,8 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   files, to review with eequaled):** `default_state()` wires `OpenRouterGenerationService` when
   `OPENROUTER_API_KEY` is set; the fallback answers with a localized notice and the passages as
   sources (`grounded=false`, never pasted chunks); refusals in the question's language
-  (`answer.REFUSAL`); the prompt shows passage labels only (no doc_id) and asks for `[S1]`;
+  (`messages.NO_ANSWER`, only where no model writes the reply); the model marks a refusal by
+  starting with `NOT_FOUND` (not grounded, no sources; no refusal-phrase matching); the prompt shows passage labels only (no doc_id) and asks for `[S1]`;
   `answer.build` also accepts a bare number, `[doc_id: X]`, `[X, Y]` and `【】` / `［］`, and
   rewrites citations as the document title, `[Title]` / `[Title A; Title B]`, written by the
   app, not the model (one source per document, snippet from its first cited chunk); snippets come from `text/snippet.best_snippet`; `get_role` / `require_admin` read the app's settings; `config.py`

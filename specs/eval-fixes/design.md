@@ -259,8 +259,8 @@ Handover designs, each small:
   (`LLM_UNAVAILABLE[lang]`: "I can't write an answer right now. The most relevant passages are
   listed as sources." / fr / ar) as `answer`, the top 2 chunks as `sources` with
   `best_snippet` snippets, and `grounded=False`. No chunk text in `answer`.
-- **I5 (Req 5.3)**: `REFUSAL[lang]` dict in `api/chat.py` for the gate refusal (ar/fr/en); the
-  `_REFUSAL_RE` in `answer.py` already matches the three.
+- **I5 (Req 5.3)**: `messages.NO_ANSWER[lang]` for the gate refusal (ar/fr/en). Superseded on
+  2026-10-13 (I25): the model marks its own refusals with `NOT_FOUND`; `_REFUSAL_RE` is gone.
 - **I22 (Req 7)**: citation regex `\[\s*(?:doc_id\s*:\s*)?([^\[\]]+?)\s*\]`; a group matching
   `S(\d+)` maps to `chunks[n-1].doc_id`; a group with commas is split into several ids.
 - **I23 (Req 8)**: one prompt sentence: "If a passage states the answer, even in another language,

@@ -7,6 +7,10 @@ as the cited documents' titles (``[Code of Conduct 2025-2026]``): a person reads
 backs the sentence, never a label or a uuid. The app writes the title, not the model, so a
 title cannot be misspelled or invented.
 
+The model marks a refusal itself: a reply that starts with ``NOT_FOUND`` is not grounded and has
+no sources, whatever its wording or language. Matching refusal phrases missed most of them
+("Les passages fournis ne précisent pas…", "لا تذكر النصوص…") and left them grounded.
+
 The fallback (no LLM: no key, budget spent, provider error) never pastes chunks as the answer:
 it says so in the user's language and lists the passages as sources (I2, I3, I4).
 """
@@ -14,26 +18,11 @@ it says so in the user's language and lists the passages as sources (I2, I3, I4)
 import re
 from collections.abc import Sequence
 
+from mcclub_rag.messages import NO_ANSWER, UNAVAILABLE
 from mcclub_rag.schemas import Chunk, QueryLang, Source
 from mcclub_rag.text.snippet import best_snippet
 
-REFUSAL: dict[str, str] = {
-    "en": "I don't know based on the available documents.",
-    "fr": "Je ne sais pas d'après les documents disponibles.",
-    "ar": "لا أعرف بناءً على الوثائق المتاحة.",
-}
-UNAVAILABLE: dict[str, str] = {
-    "en": "I can't write an answer right now. The most relevant passages are listed in the "
-    "sources.",
-    "fr": "Je ne peux pas rédiger de réponse pour le moment. Les passages les plus pertinents "
-    "sont listés dans les sources.",
-    "ar": "لا يمكنني كتابة إجابة الآن. أهم المقاطع ذات الصلة مذكورة في المصادر.",
-}
-EMPTY_MESSAGE: dict[str, str] = {
-    "en": "Please type a question.",
-    "fr": "Veuillez écrire une question.",
-    "ar": "من فضلك اكتب سؤالا.",
-}
+NOT_FOUND = "NOT_FOUND"
 SNIPPET_CHARS = 500
 
 _CITATION_RE = re.compile(
@@ -42,10 +31,8 @@ _CITATION_RE = re.compile(
 _LABEL_RE = re.compile(r"S?(\d+)", re.IGNORECASE)
 _REFERENCE_RE = re.compile(r"\s*\[[^\[\]]*\]")
 _REPEATED_RE = re.compile(r"(\[[^\[\]]+\])(?:\s*\1)+")
-_REFUSAL_RE = re.compile(
-    r"\b(?:i\s*(?:don't|do not|don’t)\s+know|je\s+ne\s+sais\s+pas)\b|لا\s+(?:أ|ا)عرف",
-    re.IGNORECASE,
-)
+# The marker, with any markdown or punctuation the model wraps around it (``**NOT_FOUND:**``).
+_NOT_FOUND_RE = re.compile(rf"^\W*{NOT_FOUND}\W*")
 
 
 def strip_references(text: str) -> str:
@@ -73,7 +60,6 @@ def _cited_chunks(group: str, chunks: Sequence[Chunk]) -> list[int | None]:
 def build(
     text: str,
     chunks: Sequence[Chunk],
-    refused: bool = False,
     query: str = "",
 ) -> tuple[str, list[Source], bool]:
     """Validate model citations and return the API answer fields.
@@ -81,8 +67,13 @@ def build(
     One source per cited document, in order of first citation; its snippet comes from the
     first chunk cited for it. Citations become ``[Title]`` (``[Title A; Title B]`` for several
     documents); citations outside the retrieval result are removed. A response is grounded
-    only when it has one or more valid citations and no invalid citations.
+    only when it has one or more valid citations and no invalid citations. A ``NOT_FOUND``
+    reply loses the marker and its citations; it may come back empty (the caller fills it).
     """
+    uncited = _CITATION_RE.sub("", text)
+    marker = _NOT_FOUND_RE.match(uncited)
+    if marker:
+        return re.sub(r"\s+([.,;:!?،؛])", r"\1", uncited[marker.end() :]).strip(), [], False
     cited: dict[str, Chunk] = {}  # doc_id -> chunk the snippet comes from, in citation order
     has_invalid_citation = False
 
@@ -104,10 +95,7 @@ def build(
     # Snippet around the sentence that matches the question and the answer (names, numbers).
     snippet_query = f"{query} {strip_references(answer)}"
     sources = [_source_from_chunk(chunk, snippet_query) for chunk in cited.values()]
-    grounded = bool(sources) and not has_invalid_citation and not refused
-    if _REFUSAL_RE.search(answer):
-        grounded = False
-    return answer, sources, grounded
+    return answer, sources, bool(sources) and not has_invalid_citation
 
 
 def _title(chunk: Chunk) -> str:
@@ -121,7 +109,7 @@ def extractive_fallback(
     """No LLM: a notice in the user's language, the top two passages as sources, not grounded."""
     selected = list(chunks[:2])
     if not selected:
-        return REFUSAL[language], [], False
+        return NO_ANSWER[language], [], False
     return UNAVAILABLE[language], [_source_from_chunk(c, query) for c in selected], False
 
 
