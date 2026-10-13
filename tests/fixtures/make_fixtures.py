@@ -2,7 +2,7 @@
 
     uv run python tests/fixtures/make_fixtures.py
 
-The chunking golden file needs tessdata and the chunking (granite) tokenizer instead (see AGENTS.md):
+The chunking golden file needs tessdata and the chunking tokenizer instead (see AGENTS.md):
 
     uv run python tests/fixtures/make_fixtures.py --chunk-golden
 
