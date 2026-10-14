@@ -32,6 +32,14 @@ _MORE_DOCS = {
     "x-02": ["president-candidacy-2026", "mc-code-of-conduct-2025-2026"],
 }
 
+# The cited snippet may state the answer in other words than the retrieval label: a table row,
+# or another document's phrasing. E2E only; the retrieval labels stay as they are.
+_MORE_EVIDENCE = {
+    "x-12": ["Submissions per minute | 120"],
+    "x-13": ["The callback code lives for 120 seconds"],
+    "dj-07": ['POST "$MCDI_URL/auth/token"'],
+}
+
 
 def convert_row(row: dict) -> dict:
     tags = set(row["tags"]) - _LANG_TAGS
@@ -52,7 +60,7 @@ def convert_row(row: dict) -> dict:
     if row.get("doc"):
         case["docs"] = [row["doc"], *_MORE_DOCS.get(row["id"], [])]
     if row.get("evidence"):
-        case["evidence"] = row["evidence"]
+        case["evidence"] = [*row["evidence"], *_MORE_EVIDENCE.get(row["id"], [])]
     if row.get("history"):
         case["history"] = row["history"]
     case["slices"] = slices
