@@ -148,3 +148,28 @@ def test_retrieval_layer():
 def test_canary_in_a_snippet_is_fine_for_a_member():
     body = _body(sources=(("d-rules", "every Saturday CANARY-1"),))
     assert score_chat(_case(role="member"), Observation(200, body), CORPUS, TOPICS).passed
+
+
+def test_language_ignores_the_cited_titles():
+    # The app writes [Title] citations; a French title must not make an English answer French.
+    body = _body(
+        answer="USTHB was opened on April 25, 1974, at 10:00 "
+        "[Université des sciences et de la technologie Houari-Boumédiène]."
+    )
+    assert (
+        _status(score_chat(_case(), Observation(200, body), CORPUS, TOPICS))["language"] == "pass"
+    )
+
+
+@pytest.mark.parametrize("slice_", ["darija", "arabizi"])
+def test_darija_accepts_any_answer_language(slice_):
+    case = _case(lang="ar", slices=[slice_])
+    result = score_chat(case, Observation(200, _body()), CORPUS, TOPICS)
+    assert _status(result)["language"] == "skip"
+
+
+@pytest.mark.parametrize("answer", ["The balance is 402,500 DZD.", "Le solde est de 402 500 DA."])
+def test_gold_numbers_ignore_thousands_separators(answer):
+    case = _case(gold=["402 500", "402500"], evidence=[])
+    body = _body(answer=answer + " [d-faq]")
+    assert _status(score_chat(case, Observation(200, body), CORPUS, TOPICS))["gold"] == "pass"

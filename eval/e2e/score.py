@@ -5,6 +5,7 @@ without rerunning it. Strings are compared folded (``eval.metrics.fold``: casefo
 letter variants, diacritics, collapsed whitespace), the same folding as the retrieval labels.
 """
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Literal
@@ -13,6 +14,7 @@ from pydantic import ValidationError
 
 from eval.e2e.cases import Case, CorpusDoc
 from eval.metrics import fold
+from mcclub_rag.answer import strip_references
 from mcclub_rag.messages import NO_ANSWER
 from mcclub_rag.schemas import ChatResponse, ErrorResponse, Retrieval
 from mcclub_rag.text.lang import detect_language
@@ -21,6 +23,9 @@ Status = Literal["pass", "fail", "skip"]
 # Mirrors the gate refusal text of api/chat.py (checked by tests/test_e2e_driver.py).
 GATE_REFUSAL = NO_ANSWER["en"]
 GATE_REFUSALS = frozenset(NO_ANSWER.values())  # the gate refuses in the question's language (I5)
+# Darija and arabizi get answers in the documents' language (French or English): accepted (I32).
+ANY_LANGUAGE_SLICES = frozenset({"darija", "arabizi"})
+_THOUSANDS = re.compile(r"(?<=\d)[ ,.\u00a0\u202f](?=\d{3}(?!\d))")
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,11 @@ def _contains_any(text: str, needles: Iterable[str]) -> list[str]:
     return [n for n in needles if fold(n) and fold(n) in folded]
 
 
+def _gold_found(answer: str, gold: Iterable[str]) -> list[str]:
+    """Gold strings in the answer; "402,500" and "402 500" count as the same number."""
+    return _contains_any(_THOUSANDS.sub("", answer), [_THOUSANDS.sub("", g) for g in gold])
+
+
 def path_of(response: ChatResponse) -> str:
     """How the answer was produced (Req 3.5): llm, gate_refusal or fallback."""
     if response.usage.llm_calls >= 1:
@@ -123,7 +133,7 @@ def score_chat(
         checks.append(_check("behaviour", not answered, f"expected a refusal, got {path}"))
 
     if case.expect == "answer" and case.gold:
-        checks.append(_check("gold", bool(_contains_any(response.answer, case.gold)), "no gold"))
+        checks.append(_check("gold", bool(_gold_found(response.answer, case.gold)), "no gold"))
     else:
         checks.append(_skip("gold", "no gold to check"))
     if case.expect == "answer" and case.evidence:
@@ -149,8 +159,12 @@ def score_chat(
         checks.append(_skip("language", "gate refusal"))
         lang = detect_language(response.answer)
         checks.append(_check("refusal_language", lang == case.lang, f"refusal in {lang}"))
+    elif answered and ANY_LANGUAGE_SLICES & set(case.slices):
+        checks.append(_skip("language", "darija: any answer language"))
+        checks.append(_skip("refusal_language", "not a gate refusal"))
     elif answered:
-        lang = detect_language(response.answer)
+        # The [Title] citations are written by the app in the document's language.
+        lang = detect_language(strip_references(response.answer))
         checks.append(
             _check("language", lang == case.lang, f"answer in {lang}, asked in {case.lang}")
         )
