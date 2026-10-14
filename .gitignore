@@ -19,3 +19,8 @@ qdrant_storage/
 eval/cache/
 *.json
 
+
+# E2E eval caches (answers may quote members-only documents)
+eval/e2e/judge_cache.jsonl
+eval/e2e/recordings/
+eval/results/e2e/2*.md

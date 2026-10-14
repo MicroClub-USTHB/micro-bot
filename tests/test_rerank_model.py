@@ -1,4 +1,4 @@
-"""Real gte int8 reranker (marker ``reranker``): ranking per language, determinism, latency."""
+"""Real default reranker, bge int8 (``reranker`` marker): ranking, determinism, latency."""
 
 import time
 
@@ -45,9 +45,9 @@ def test_score_does_not_depend_on_what_was_scored_before(reranker):
     assert reranker.score(query, [*others[:5], relevant])[-1] == alone[0]
 
 
-def test_thirty_chunk_sized_pairs_under_ten_seconds(reranker):
+def test_ten_chunk_sized_pairs_under_ten_seconds(reranker):
     query, relevant, _ = CASES["fr"]
     long_text = " ".join([relevant] * 17)  # about 380 reranker tokens
     start = time.perf_counter()
-    reranker.score(query, [long_text] * 30)
-    assert time.perf_counter() - start < 10  # 3.3 s on the dev machine; CI is ~2x slower
+    reranker.score(query, [long_text] * 10)  # RETRIEVAL_RERANK_TOP_K
+    assert time.perf_counter() - start < 10  # CI is ~2x slower than the dev machine

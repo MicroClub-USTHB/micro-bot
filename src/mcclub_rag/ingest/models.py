@@ -99,6 +99,7 @@ class DocumentInfo(BaseModel):
     chunk_count: int
     content_hash: str
     ingested_at: datetime
+    expires_at: datetime | None = None  # after it, the document is not retrieved (I14)
 
 
 class StoredDocument(BaseModel):
@@ -111,6 +112,7 @@ class StoredDocument(BaseModel):
     topic: str
     ingested_at: datetime
     document: ParsedDocument
+    expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,153 @@
 # progress
 
+## 2026-10-13 evening (leaks, link noise, prompt rules)
+
+### Shipped
+
+- Replies that repeat the system prompt or the passage block are withheld (I26, `08d38b3`):
+  7 of 1,151 recorded replies flagged, all real leaks, no extra LLM call.
+- Inlined `(url)` link targets dropped from embedded and reranked text, stored text unchanged
+  (I30, `ddfaa8a`): 25% of corpus characters; Wikipedia facts reach rank 1; rerank p50 -10%,
+  hit@5 0.847 -> 0.838. Reindex needed (`CHUNKER_VERSION` 2).
+- Prompt rules (I27, I28, `8d04277`), measured on all 349 chat cases with only the prompt
+  changed: passed 260 -> 265, false answers 9.4% -> 0%, every refuse slice passes; false
+  refusals 6.6% -> 11.0% (8 of the 12 new ones had no evidence retrieved), +83 prompt tokens.
+- Eval: corpus rebuilt (I31), labels E5/E6 fixed, answer text kept in results (I29).
+
+### Blocked
+
+- False refusals at 11% (≤ 10% target) are now mostly retrieval misses (19 of 30): cross-lingual
+  and darija recall (I9).
+- Production model still unmeasured (OpenRouter quota).
+
+### Next
+
+- Review the answer-layer changes (`answer.py`, `api/chat.py`, `llm/prompts.py`) with eequaled.
+- Cross-lingual and darija recall; quality suite with the production model.
+
+## 2026-10-13 (bge stack, NOT_FOUND, e2e re-run)
+
+### Shipped
+
+- Retrieval defaults: `BAAI/bge-m3` embedder and `BAAI/bge-reranker-v2-m3` on the top 10, gate
+  off (darija hit@5 0.667 -> 0.771); chunks still sized in granite tokens.
+- Refusals: the model starts a refusal with `NOT_FOUND` (not grounded, no sources); no more
+  refusal-phrase matching (I25, `f38dd84`). On the 90 hard cases (`notfound-12b`, ollama gemma4
+  12B): refuse-expected 16 -> 41 of 47 passed, 63 of 80 answered cases pass, language
+  mismatches 35 -> 4, p95 6.8 s.
+- `eval/results/e2e/ISSUES.md`: the re-run, failures by cause, new issues I30–I32 and E5.
+
+### Blocked
+
+- I26 (prompt and passage leak), I27 (example data as facts), I28 (partial refusals): the
+  answer layer, eequaled's files.
+- Generation with the production model not measured yet (OpenRouter key, 50 requests/day).
+
+### Next
+
+- I30: drop inline `(url)` link targets from the embedded / reranked text (Wikipedia chunks
+  never reach the top 5), then reindex. I31: rebuild `data/parsed` with
+  `scripts/build_eval_corpus.py` (predates the share-bar fix). E5: fix the `usthb-04` label.
+- I29: report the chat and retrieval layers apart and keep the answer text in results.
+- Quality suite with the production model (`--mode record`, small budget).
+
+## 2026-10-12 (eval fixes, answer layer and the rest)
+
+### Shipped
+
+- On the user's request, eequaled's issues fixed on the same branch (to review with eequaled):
+  the live app calls the LLM when a key is set (I1); the fallback no longer pastes chunks, it
+  answers with a notice in the user's language and the passages as sources (I2–I4); refusals in
+  the question's language (I5); citations `[doc_id: X]` / `[S1]` / `[X, Y]` accepted (I22);
+  snippets around the best sentence (I6/I24); prompt answers across languages (I23); auth reads
+  the app's settings (I20); `config.py` defaults aligned (I21); blank message skips retrieval
+  (I18); `expires_at` kept, listed and enforced in every query (I14).
+- Photo deskew before OCR (I13): 41% -> 99% word recall on the skewed photo; Pillow is now a
+  runtime dependency.
+- Defaults from measurements: `GATE_THRESHOLD=0.31` (I8), cross-language arm 20 (I9), query case
+  and harakat normalization on (I7: flips 9.6% -> 6.6%).
+- System e2e suites: contract 22/22, faults 9/9, cache 5/5, ingest 16/16.
+
+### Blocked
+
+- I17 / I15 (upload title): the frozen API. I9 target (0.85) and typos (I7) not reached.
+
+### Next
+
+- Full e2e with an LLM (`--suite all`, record mode, the production model) to measure I23 and the
+  answer-level numbers; reindex deployments (payload schema 2).
+
+## 2026-10-12 (eval fixes, retrieval and ingest side)
+
+### Shipped
+
+- `specs/eval-fixes/` (requirements, design, tasks) covering all 24 issues of
+  `eval/results/e2e/ISSUES.md`, with an owner per issue.
+- Retrieval: a short message is merged with history only on a follow-up cue (I10); query
+  normalization settings (I7); optional cross-language dense arm (I9: cross-lingual hit@5
+  0.755 -> 0.776, default off, target 0.85 not met); reranker session pool and rerank cut (I19);
+  optional penalty for instruction-like chunks; gate documented as a relevance floor (I8).
+- Ingest: share-bar pages are `empty_document` (I16); PDF title from page-1 headings when the
+  metadata title is generic (I15, MRR 0.750 -> 0.770); `instruction_like` payload flag, payload
+  schema 2 (reindex needed).
+- `text/snippet.best_snippet` for eequaled (I6/I24: evidence shown 72% -> 82% offline).
+- Eval: gate-score distributions, `--watch`, per-stage load times, `eval.calibrate_gate`
+  (offline sweep), `eval.bench_load`. Results in `eval/results/README.md`.
+
+### Blocked
+
+- I13 OCR warning: no usable signal from xberg; needs a new image dependency (user's call).
+- Answer-layer issues (I1–I6, I17, I18, I20–I23) and `expires_at` (I14): eequaled's files.
+
+### Next
+
+- Rerun the e2e suite (`--suite all --label fixes`) to confirm I10, the noise settings, the
+  injection cases and the load suite; lower the gate with eequaled's I1/I2 fixes.
+
+## 2026-10-11 (e2e eval built and run)
+
+### Shipped
+
+- `eval/e2e/` runner: rule-based scoring (contract, behaviour, gold, evidence, must_not,
+  access, language, path), in-process and HTTP drivers, recording / replay / budgeted
+  generator, perturbations, suites (quality, robustness, contract, faults, cache, ingest, load,
+  restart), optional cached LLM judge, scorecard (`thresholds.json`), compare.
+- Corpus grown to 63 documents (55 real incl. 5 scans, 8 adversarial), 269 cases over 42
+  slices; labels checked against the documents.
+- First full run (`eval/results/e2e/20261011T203423Z-full-1`): 0 access leaks, contract 22/22,
+  faults 9/9, cache 5/5, ingest 15/16; chat 113/269. All 21 issues with evidence in
+  `eval/results/e2e/ISSUES.md`.
+
+### Blocked
+
+- Generation quality: the live app never calls the LLM (I1, eequaled) and no key locally.
+- HTTP target and restart suite: Docker not running on the dev machine.
+
+### Next
+
+- With eequaled: I1 (wire the generator), I2/I3 (fallback must not paste unrelated or injected
+  text), I5 (refusal language), I14 (`expires_at`).
+- nisbenz: I7/I8 gate recalibration with noisy variants, I9 cross-lingual distractors, I10 short
+  topic switch, I13 OCR deskew, I16 share-bar pages.
+
+## 2026-10-11 (e2e eval spec)
+
+### Shipped
+
+- `specs/e2e-eval/` (requirements, design, tasks): an end-to-end harness over the chat API with
+  rule-based scoring, canary/injection corpus, record/replay of LLM calls, robustness, faults,
+  cache, load and restart suites, and a threshold scorecard.
+
+### Blocked
+
+- The running app never calls the LLM: `main.default_state()` keeps `FakeGenerationService`, and
+  `OpenRouterClient.generate` is sync vs the async protocol (EDGE_CASES.md). eequaled's fix;
+  generation quality cannot be measured live until then.
+
+### Next
+
+- Build the harness task by task (`specs/e2e-eval/tasks.md`).
+
 ## 2026-10-11 (0.1.0 review)
 
 ### Shipped

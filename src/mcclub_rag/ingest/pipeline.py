@@ -32,6 +32,7 @@ from mcclub_rag.ingest.errors import (
     InvalidInput,
 )
 from mcclub_rag.ingest.identity import clean_topic, doc_id_for, file_topic, point_id, url_topic
+from mcclub_rag.ingest.injection import looks_like_instruction
 from mcclub_rag.ingest.models import (
     Chunk,
     DocumentInfo,
@@ -53,7 +54,9 @@ from mcclub_rag.retrieval.store import DENSE, SPARSE, VectorStore
 
 log = structlog.get_logger(__name__)
 
-SCHEMA_VERSION = 1  # bump when the point payload or vector layout changes
+# Bump when the point payload or vector layout changes.
+# 2: ``instruction_like`` (eval-fixes Req 4) and ``expires_at`` (Req 13)
+SCHEMA_VERSION = 2
 _REINDEX_COMMAND = "uv run python scripts/reindex.py"
 
 
@@ -74,8 +77,17 @@ def _log_url(url: str) -> str:
         return "<invalid url>"
 
 
+def _epoch(moment: datetime | None) -> float | None:
+    return None if moment is None else moment.timestamp()
+
+
 def _payload(
-    doc_id: str, doc: ParsedDocument, chunk: Chunk, count: int, ingested_at: datetime
+    doc_id: str,
+    doc: ParsedDocument,
+    chunk: Chunk,
+    count: int,
+    ingested_at: datetime,
+    expires_at: datetime | None = None,
 ) -> dict:
     return {
         "doc_id": doc_id,
@@ -94,6 +106,8 @@ def _payload(
         "source": doc.source,
         "source_type": doc.source_type,
         "ingested_at": ingested_at.isoformat(),
+        "instruction_like": looks_like_instruction(chunk.text),
+        "expires_at": _epoch(expires_at),  # epoch seconds; retrieval skips it after that
     }
 
 
@@ -236,10 +250,13 @@ class IngestPipeline:
         *,
         title: str | None = None,
         topic: str | None = None,
+        expires_at: datetime | None = None,
     ) -> IngestResult:
         run = _Run()
         return await self._logged(
-            run, filename, lambda: self._ingest_file(run, path, filename, visibility, title, topic)
+            run,
+            filename,
+            lambda: self._ingest_file(run, path, filename, visibility, title, topic, expires_at),
         )
 
     async def _ingest_file(
@@ -250,6 +267,7 @@ class IngestPipeline:
         visibility: str,
         title: str | None,
         topic: str | None,
+        expires_at: datetime | None = None,
     ) -> IngestResult:
         _check_visibility(visibility)
         topic = clean_topic(topic) if topic is not None else file_topic(filename)
@@ -266,7 +284,7 @@ class IngestPipeline:
             # Files are hashed on raw bytes, so a duplicate is caught before parsing or OCR.
             run.step("dedup")
             existing, replaces = await self._check_existing(
-                run, doc_id, hashlib.sha256(data).hexdigest(), visibility
+                run, doc_id, hashlib.sha256(data).hexdigest(), visibility, expires_at
             )
             if existing is not None:
                 return existing
@@ -274,18 +292,32 @@ class IngestPipeline:
             doc = await self._preprocess_file(
                 data, filename, visibility=visibility, title=title, settings=self.settings
             )
-            return await self._store_new(run, doc_id, topic, doc, replaces)
+            return await self._store_new(run, doc_id, topic, doc, replaces, expires_at)
 
     async def ingest_url(
-        self, url: str, visibility: str, *, title: str | None = None, topic: str | None = None
+        self,
+        url: str,
+        visibility: str,
+        *,
+        title: str | None = None,
+        topic: str | None = None,
+        expires_at: datetime | None = None,
     ) -> IngestResult:
         run = _Run()
         return await self._logged(
-            run, _log_url(url), lambda: self._ingest_url(run, url, visibility, title, topic)
+            run,
+            _log_url(url),
+            lambda: self._ingest_url(run, url, visibility, title, topic, expires_at),
         )
 
     async def _ingest_url(
-        self, run: _Run, url: str, visibility: str, title: str | None, topic: str | None
+        self,
+        run: _Run,
+        url: str,
+        visibility: str,
+        title: str | None,
+        topic: str | None,
+        expires_at: datetime | None = None,
     ) -> IngestResult:
         _check_visibility(visibility)
         topic = clean_topic(topic) if topic is not None else None
@@ -299,14 +331,19 @@ class IngestPipeline:
         async with self._writing(doc_id):
             run.step("dedup")
             existing, replaces = await self._check_existing(
-                run, doc_id, doc.content_hash, visibility
+                run, doc_id, doc.content_hash, visibility, expires_at
             )
             if existing is not None:
                 return existing
-            return await self._store_new(run, doc_id, topic, doc, replaces)
+            return await self._store_new(run, doc_id, topic, doc, replaces, expires_at)
 
     async def _check_existing(
-        self, run: _Run, doc_id: str, content_hash: str, visibility: str
+        self,
+        run: _Run,
+        doc_id: str,
+        content_hash: str,
+        visibility: str,
+        expires_at: datetime | None = None,
     ) -> tuple[IngestResult | None, bool]:
         """``duplicate`` / ``updated`` result for a complete copy of this content, else None.
 
@@ -324,6 +361,10 @@ class IngestPipeline:
             await self.store.set_visibility(doc_id, visibility)
             await self.docstore.set_visibility(doc_id, visibility)
             status = "updated"
+        if marker.expires_at != expires_at:  # re-upload with a new (or no) expiry date
+            await self.store.set_fields(doc_id, {"expires_at": _epoch(expires_at)})
+            await self.docstore.set_expiry(doc_id, expires_at)
+            status = "updated"
         result = IngestResult(
             doc_id=doc_id,
             status=status,
@@ -340,13 +381,25 @@ class IngestPipeline:
         return result, others
 
     async def _store_new(
-        self, run: _Run, doc_id: str, topic: str, doc: ParsedDocument, replaces: bool
+        self,
+        run: _Run,
+        doc_id: str,
+        topic: str,
+        doc: ParsedDocument,
+        replaces: bool,
+        expires_at: datetime | None = None,
     ) -> IngestResult:
         """Write the new version, then remove every other one: never zero points."""
         ingested_at = datetime.now(UTC)
-        count = await self._index(run, doc_id, doc, ingested_at)
+        count = await self._index(run, doc_id, doc, ingested_at, expires_at=expires_at)
         run.step("docstore")
-        stored = StoredDocument(doc_id=doc_id, topic=topic, ingested_at=ingested_at, document=doc)
+        stored = StoredDocument(
+            doc_id=doc_id,
+            topic=topic,
+            ingested_at=ingested_at,
+            document=doc,
+            expires_at=expires_at,
+        )
         try:
             await self.docstore.save(stored)
         except OSError:
@@ -364,6 +417,7 @@ class IngestPipeline:
         ingested_at: datetime,
         *,
         collection: str | None = None,
+        expires_at: datetime | None = None,
     ) -> int:
         """Chunk, encode and store one document version; the marker (index 0) goes last."""
         run.step("chunk")
@@ -382,7 +436,7 @@ class IngestPipeline:
             qm.PointStruct(
                 id=point_id(doc_id, doc.content_hash, chunk.index),
                 vector={DENSE: dense_vector, SPARSE: sparse_vector},
-                payload=_payload(doc_id, doc, chunk, len(chunks), ingested_at),
+                payload=_payload(doc_id, doc, chunk, len(chunks), ingested_at, expires_at),
             )
             for chunk, dense_vector, sparse_vector in zip(chunks, dense, sparse, strict=True)
         ]
@@ -431,6 +485,7 @@ class IngestPipeline:
                 chunk_count=m.chunk_count,
                 content_hash=m.content_hash,
                 ingested_at=m.ingested_at,
+                expires_at=m.expires_at,
             )
             for m in await self.store.markers()
         ]
@@ -451,7 +506,13 @@ class IngestPipeline:
         Read from Qdrant on every call (one marker scroll), so writes made by another process
         (the CLI) are seen at once; nothing is cached in memory.
         """
-        documents = [[m.doc_id, m.content_hash, m.visibility] for m in await self.store.markers()]
+        # Expired documents drop out, so cached answers citing them are invalidated (I14).
+        now = datetime.now(UTC)
+        documents = [
+            [m.doc_id, m.content_hash, m.visibility, _epoch(m.expires_at)]
+            for m in await self.store.markers()
+            if m.expires_at is None or m.expires_at > now
+        ]
         return _digest({"index": self.signature, "documents": documents})
 
     async def reindex(self) -> None:
@@ -473,7 +534,12 @@ class IngestPipeline:
             for item in stored if not failed else ():
                 try:
                     chunks += await self._index(
-                        _Run(), item.doc_id, item.document, item.ingested_at, collection=physical
+                        _Run(),
+                        item.doc_id,
+                        item.document,
+                        item.ingested_at,
+                        collection=physical,
+                        expires_at=item.expires_at,
                     )
                 except IngestError as exc:
                     log.warning("document_reindex_failed", doc_id=item.doc_id, error_code=exc.code)
@@ -547,16 +613,26 @@ async def ingest_file(
     *,
     title: str | None = None,
     topic: str | None = None,
+    expires_at: datetime | None = None,
 ) -> IngestResult:
     pipeline = await get_pipeline()
-    return await pipeline.ingest_file(path, filename, visibility, title=title, topic=topic)
+    return await pipeline.ingest_file(
+        path, filename, visibility, title=title, topic=topic, expires_at=expires_at
+    )
 
 
 async def ingest_url(
-    url: str, visibility: str, *, title: str | None = None, topic: str | None = None
+    url: str,
+    visibility: str,
+    *,
+    title: str | None = None,
+    topic: str | None = None,
+    expires_at: datetime | None = None,
 ) -> IngestResult:
     pipeline = await get_pipeline()
-    return await pipeline.ingest_url(url, visibility, title=title, topic=topic)
+    return await pipeline.ingest_url(
+        url, visibility, title=title, topic=topic, expires_at=expires_at
+    )
 
 
 async def list_documents() -> list[DocumentInfo]:

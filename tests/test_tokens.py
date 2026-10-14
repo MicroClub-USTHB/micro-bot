@@ -40,8 +40,8 @@ def counter(tokenizer_path):
 
 
 def test_embedded_truncation_is_disabled(counter):
-    # granite's tokenizer.json ships with truncation at 32,768 tokens
-    text = SAMPLES["ar"] * 80  # about 45k tokens
+    # a shipped tokenizer.json may carry its own truncation (granite's: 32,768 tokens)
+    text = SAMPLES["ar"] * 120  # about 48k bge-m3 tokens
     assert counter.count(text) > 32_768
 
 

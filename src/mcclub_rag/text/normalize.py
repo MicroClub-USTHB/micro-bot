@@ -103,7 +103,32 @@ def strip_repeated_lines(
     ]
 
 
+# --- link targets (encoder and reranker side only) ------------------------------
+
+# ``ingest/web.py`` inlines links as "text (url)"; on Wikipedia pages a third of a paragraph is
+# URLs (25% of the eval corpus characters), which pushed the facts out of the top 5 (I30). One
+# level of nested parentheses: ``…/wiki/Ministère_(Algérie))``.
+_LINK_TARGET = re.compile(r"[ \t]*\((?:https?://|mailto:)[^\s()]*(?:\([^\s()]*\)[^\s()]*)*\)")
+
+
+def drop_link_targets(text: str) -> str:
+    """``text`` without its inlined ``(url)`` link targets. Never use for stored text."""
+    return _LINK_TARGET.sub("", text)
+
+
 # --- search folding (BM25 side only) -------------------------------------------
+
+# Harakat, tanwin, shadda, sukun, Quranic marks, superscript alef; precomposed hamza letters
+# (أ إ آ ؤ ئ) are separate code points and stay.
+_ARABIC_MARKS = str.maketrans(
+    dict.fromkeys([*range(0x064B, 0x0660), 0x0670, *range(0x06D6, 0x06EE), ord(TATWEEL)])
+)
+
+
+def strip_arabic_marks(text: str) -> str:
+    """Remove Arabic diacritics and tatweel, nothing else (queries; never stored text)."""
+    return text.translate(_ARABIC_MARKS)
+
 
 _ARABIC_FOLD = str.maketrans({"ٱ": "ا", "ى": "ي", "ة": "ه"})
 _DIGIT_FOLD = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")

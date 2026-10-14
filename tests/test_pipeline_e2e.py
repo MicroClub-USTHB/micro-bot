@@ -1,4 +1,4 @@
-"""Whole pipeline on real models: preprocessing, granite, BM25, Qdrant, then the reranker."""
+"""Whole pipeline on real models: preprocessing, embedder, BM25, Qdrant, then the reranker."""
 
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
@@ -8,9 +8,11 @@ from mcclub_rag.ingest.pipeline import IngestPipeline
 from mcclub_rag.ingest.settings import IngestSettings
 from mcclub_rag.retrieval.backend import HybridRetriever
 from mcclub_rag.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
-from mcclub_rag.retrieval.registry import GRANITE_R2
+from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
 from mcclub_rag.retrieval.settings import RetrievalSettings
 from tests.conftest import FIXTURES
+
+SPEC = EMBEDDERS[DEFAULT_EMBEDDER]
 
 
 async def test_markdown_file_end_to_end(
@@ -20,7 +22,7 @@ async def test_markdown_file_end_to_end(
         tessdata_prefix=tessdata_dir, chunk_tokenizer_path=tokenizer_path, data_dir=tmp_path
     )
     client = AsyncQdrantClient(location=":memory:")
-    dense = OnnxDenseEncoder(GRANITE_R2, onnx_path.parents[1], dim=768)
+    dense = OnnxDenseEncoder(SPEC, onnx_path.parents[1], dim=SPEC.dim)
     pipeline = IngestPipeline(
         settings,
         dense=dense,
@@ -59,7 +61,7 @@ async def test_retrieve_end_to_end_with_reranker_and_visibility(
     )
     pipeline = IngestPipeline(
         settings,
-        dense=OnnxDenseEncoder(GRANITE_R2, onnx_path.parents[1], dim=768),
+        dense=OnnxDenseEncoder(SPEC, onnx_path.parents[1], dim=SPEC.dim),
         sparse=Bm25SparseEncoder(real_bm25_dir),
         client=AsyncQdrantClient(location=":memory:"),
         docstore=DocStore(tmp_path / "documents"),

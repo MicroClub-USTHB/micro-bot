@@ -1,12 +1,12 @@
 """Download model assets at image build time (offline at runtime).
 
-Currently: Tesseract traineddata for ara/fra/eng (pinned to tag 4.1.0), the embedder
-(``tokenizer.json`` plus the int8 ONNX model, pinned revision) and the BM25 stopword lists,
-the BM25 stopword lists and the reranker (``RERANK_MODEL``, default gte), all verified by
-SHA-256. The embedder, BM25 and reranker pins live in ``mcclub_rag.retrieval.registry``.
+Currently: Tesseract traineddata for ara/fra/eng (pinned to tag 4.1.0), the chunking tokenizer
+(granite's ``tokenizer.json``), the embedder (``tokenizer.json`` plus the int8 ONNX model,
+``EMBED_MODEL``, default bge-m3), the BM25 stopword lists and the reranker (``RERANK_MODEL``,
+default bge), all verified by SHA-256. The pins live in ``mcclub_rag.retrieval.registry``.
 
     uv run python scripts/download_models.py --only tessdata --dest models/tessdata
-    uv run python scripts/download_models.py --only tokenizer --dest models/embedder
+    uv run python scripts/download_models.py --only tokenizer --dest models/chunk-tokenizer
     uv run python scripts/download_models.py --only embedder --dest models/embedder
     uv run python scripts/download_models.py --only bm25 --dest models/bm25
     uv run python scripts/download_models.py --only reranker --dest models/reranker [--model NAME]
@@ -27,8 +27,10 @@ import httpx
 from mcclub_rag.retrieval.registry import (
     BM25_FILES,
     BM25_REVISION,
+    CHUNK_TOKENIZER,
+    DEFAULT_EMBEDDER,
     DEFAULT_RERANKER,
-    GRANITE_R2,
+    EMBEDDERS,
     RERANKERS,
     EmbedderSpec,
     RerankerSpec,
@@ -53,10 +55,13 @@ TESSDATA_SHA256: dict[str, dict[str, str]] = {
     },
 }
 
-EMBEDDER_REPO = GRANITE_R2.repo
-EMBEDDER_REVISION = GRANITE_R2.revision
-TOKENIZER_URL = GRANITE_R2.url("tokenizer.json")
-TOKENIZER_SHA256 = GRANITE_R2.tokenizer_sha256
+# The embedder of $EMBED_MODEL (default bge-m3).
+EMBEDDER = EMBEDDERS[os.environ.get("EMBED_MODEL") or DEFAULT_EMBEDDER]
+# The tokenizer that sizes the chunks (granite's, whatever the embedder).
+TOKENIZER_REPO = CHUNK_TOKENIZER.repo
+TOKENIZER_REVISION = CHUNK_TOKENIZER.revision
+TOKENIZER_URL = CHUNK_TOKENIZER.url("tokenizer.json")
+TOKENIZER_SHA256 = CHUNK_TOKENIZER.tokenizer_sha256
 
 
 class DownloadError(RuntimeError):
@@ -143,7 +148,7 @@ def download_tokenizer(
     client: httpx.Client | None = None,
     sha256: str = TOKENIZER_SHA256,
 ) -> Path:
-    """Fetch the embedder's ``tokenizer.json`` into ``dest``; skip it if already valid."""
+    """Fetch the chunking ``tokenizer.json`` into ``dest``; skip it if already valid."""
     dest.mkdir(parents=True, exist_ok=True)
     target = dest / "tokenizer.json"
     if target.exists() and _sha256_file(target) == sha256:
@@ -156,12 +161,12 @@ def download_tokenizer(
     finally:
         if owns_client:
             http.close()
-    print(f"tokenizer.json: downloaded ({EMBEDDER_REPO}@{EMBEDDER_REVISION[:8]})")
+    print(f"tokenizer.json: downloaded ({TOKENIZER_REPO}@{TOKENIZER_REVISION[:8]})")
     return target
 
 
 def download_embedder(
-    dest: Path, *, client: httpx.Client | None = None, spec: EmbedderSpec = GRANITE_R2
+    dest: Path, *, client: httpx.Client | None = None, spec: EmbedderSpec = EMBEDDER
 ) -> list[Path]:
     """Fetch the embedder's ``tokenizer.json`` and ONNX model into ``dest`` (repo layout)."""
     files = [("tokenizer.json", spec.tokenizer_sha256), (spec.onnx_file, spec.onnx_sha256)]
@@ -230,26 +235,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--dest",
         type=Path,
         help="target directory when downloading a single group "
-        "(default: $MODELS_DIR/tessdata, $MODELS_DIR/embedder, $MODELS_DIR/bm25, "
+        "(default: $MODELS_DIR/tessdata, $MODELS_DIR/chunk-tokenizer, $MODELS_DIR/embedder, "
+        "$MODELS_DIR/bm25, "
         "$MODELS_DIR/reranker)",
     )
     parser.add_argument(
         "--model",
         choices=sorted(RERANKERS),
         default=os.environ.get("RERANK_MODEL") or DEFAULT_RERANKER,
-        help="reranker to download (default: $RERANK_MODEL or gte)",
+        help="reranker to download (default: $RERANK_MODEL or bge-reranker-v2-m3)",
     )
     parser.add_argument("--variant", choices=["fast", "best"], default="fast")
     args = parser.parse_args(argv)
 
-    targets = set(args.only or ["tessdata", "embedder", "bm25", "reranker"])
+    targets = set(args.only or ["tessdata", "tokenizer", "embedder", "bm25", "reranker"])
     if args.dest and len(targets) > 1:
         parser.error("--dest needs exactly one --only group")
     try:
         if "tessdata" in targets:
             download_tessdata(args.dest or _models_dir() / "tessdata", args.variant)
         if "tokenizer" in targets:
-            download_tokenizer(args.dest or _models_dir() / "embedder")
+            download_tokenizer(args.dest or _models_dir() / "chunk-tokenizer")
         if "embedder" in targets:
             download_embedder(args.dest or _models_dir() / "embedder")
         if "bm25" in targets:

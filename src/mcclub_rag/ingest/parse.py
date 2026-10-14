@@ -12,6 +12,7 @@ import re
 import charset_normalizer
 import xberg
 
+from mcclub_rag.ingest.deskew import deskew_image
 from mcclub_rag.ingest.errors import FileTooLarge, IngestError, ParseError, ParseTimeout
 from mcclub_rag.ingest.models import RawExtraction, RawPage
 from mcclub_rag.ingest.ocr import build_xberg_config, timeout_budget
@@ -94,6 +95,7 @@ async def extract_file(
         )
 
     page_count: int | None = None
+    mime = detected.mime
     if detected.kind == "pdf":
         page_count = _pdf_page_count(data)
         if page_count > settings.max_pages:
@@ -102,12 +104,12 @@ async def extract_file(
             )
     elif detected.kind == "image":
         page_count = 1
+        if settings.ocr_deskew and (straight := await asyncio.to_thread(deskew_image, data)):
+            data, mime = straight, "image/png"  # OCR the straightened page; record the original
 
     budget = timeout_budget(detected.kind, page_count, settings)
     config = build_xberg_config(settings, budget)
-    request = xberg.ExtractInput(
-        kind="bytes", bytes=data, mime_type=detected.mime, filename=filename
-    )
+    request = xberg.ExtractInput(kind="bytes", bytes=data, mime_type=mime, filename=filename)
     try:
         # xberg enforces ``budget`` itself; this outer guard only catches a hung call.
         result = await asyncio.wait_for(xberg.extract(request, config), timeout=budget + 5)

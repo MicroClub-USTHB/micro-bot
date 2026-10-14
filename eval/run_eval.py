@@ -30,7 +30,6 @@ from mcclub_rag.ingest.pipeline import IngestPipeline
 from mcclub_rag.ingest.settings import IngestSettings
 from mcclub_rag.retrieval.backend import HybridRetriever
 from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.query import build_search_query
 from mcclub_rag.retrieval.rerank import get_reranker
 from mcclub_rag.retrieval.settings import RetrievalSettings
 
@@ -78,14 +77,14 @@ async def evaluate(
     rows = []
     for q in questions:
         history = [Turn(**t) for t in q.get("history", [])]
-        query, used = build_search_query(
-            q["question"], history, retriever.settings.followup_max_words
-        )
+        query, used = retriever.search_query(q["question"], history)
         start = time.perf_counter()
         dense, sparse = await retriever.encode(query)
         ms_encode = _ms(start)
         step = time.perf_counter()
-        candidates = await retriever.search.search(dense, sparse, q["role"])
+        candidates = await retriever.search.search(
+            dense, sparse, q["role"], query_language=retriever.query_language(q["question"])
+        )
         ms_search = _ms(step)
         step = time.perf_counter()
         ranked = await retriever.rerank(query, candidates)
@@ -140,7 +139,8 @@ def summarize(
     answerable = [r for r in rows if r["answerable"]]
     unanswerable = [r for r in rows if not r["answerable"]]
     tags = sorted({t for r in answerable for t in r["tags"]})
-    sweep = m.sweep([r["top_score"] for r in answerable], [r["top_score"] for r in unanswerable])
+    scores = [r["top_score"] for r in answerable], [r["top_score"] for r in unanswerable]
+    sweep = m.sweep(*scores)
     return {
         "overall": _quality(answerable, k, depth),
         "by_tag": {t: _quality([r for r in answerable if t in r["tags"]], k, depth) for t in tags},
@@ -149,6 +149,11 @@ def summarize(
         "max_false_refusal": max_false_refusal,
         "latency_ms": _latency(rows),
         "sweep": sweep,
+        "gate_scores": {
+            "answerable": m.score_distribution(scores[0]),
+            "unanswerable": m.score_distribution(scores[1]),
+            "overlap": m.score_overlap(*scores),
+        },
     }
 
 
@@ -168,10 +173,17 @@ def print_summary(summary: dict, label: str) -> None:
     lat = summary["latency_ms"]
     print("latency ms   : " + "  ".join(f"{s} {v['median']}/{v['p95']}" for s, v in lat.items()))
     print(f"access violations: {summary['access_violations']}")
+    if "instruction_like_chunks" in summary:
+        print(f"chunks flagged instruction_like: {summary['instruction_like_chunks']}")
     print(
         f"suggested GATE_THRESHOLD: {summary['suggested_gate_threshold']} "
         f"(false refusals <= {summary['max_false_refusal']:.0%})"
     )
+    gate = summary["gate_scores"]
+    for group in ("answerable", "unanswerable"):
+        cells = "  ".join(f"{k} {v}" for k, v in gate[group].items())
+        print(f"gate scores {group:>12}: {cells}")
+    print(f"gate score overlap (unanswerable >= answerable q1): {gate['overlap']}")
     for row in summary["sweep"][::5]:
         print(
             f"  t={row['threshold']:.2f} refuses {row['refused_unanswerable']:.0%} unanswerable, "
@@ -198,6 +210,7 @@ def _settings_record(retriever: HybridRetriever, pipeline: IngestPipeline) -> di
 
 async def _run(args: argparse.Namespace) -> Path:
     from qdrant_client import AsyncQdrantClient
+    from qdrant_client import models as qm
 
     corpus = json.loads(args.manifest.read_text(encoding="utf-8"))
     questions = [
@@ -222,6 +235,13 @@ async def _run(args: argparse.Namespace) -> Path:
         retriever = HybridRetriever.from_pipeline(pipeline, settings, get_reranker(settings))
         rows = await evaluate(retriever, questions, doc_ids)
         summary = summarize(rows, max_false_refusal=args.max_false_refusal)
+        flagged = await pipeline.client.count(
+            pipeline.store.alias,
+            count_filter=qm.Filter(
+                must=[qm.FieldCondition(key="instruction_like", match=qm.MatchValue(value=True))]
+            ),
+        )
+        summary["instruction_like_chunks"] = flagged.count  # real corpus: target 0 (Req 4.5)
         payload = {
             "label": args.label,
             "settings": _settings_record(retriever, pipeline),

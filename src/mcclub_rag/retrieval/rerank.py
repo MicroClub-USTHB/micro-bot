@@ -14,14 +14,17 @@ from mcclub_rag.ingest.errors import RerankerConfigError, RerankError
 from mcclub_rag.retrieval.embed import _ORT_ERRORS, _check_file
 from mcclub_rag.retrieval.registry import RERANKERS, RerankerSpec
 from mcclub_rag.retrieval.settings import RetrievalSettings
+from mcclub_rag.text.normalize import drop_link_targets
 
 
 def passage(title: str, heading_path: Sequence[str], text: str, *, header: bool = True) -> str:
     """Reranker passage: the 'title > heading path' header the chunk was embedded with, then text.
 
     Same rule as ``ingest/chunk.py::_header`` minus its token trim: the reranker truncates the
-    passage side only, so a long header just leaves less room for the text.
+    passage side only, so a long header just leaves less room for the text. Link targets are
+    dropped as in ``embed_text`` (I30).
     """
+    text = drop_link_targets(text)
     entries: list[str] = []
     for entry in (title, *heading_path) if header else ():
         entry = entry.strip()
@@ -123,16 +126,23 @@ def reranker_spec(model: str) -> RerankerSpec:
 
 
 @lru_cache
-def _reranker(model: str, root: Path, threads: int, max_length: int) -> OnnxReranker:
+def _reranker(
+    model: str, root: Path, threads: int, max_length: int, worker: int = 0
+) -> OnnxReranker:
     spec = reranker_spec(model)
     return OnnxReranker(spec, root / spec.slug, threads=threads, max_length=max_length)
 
 
-def get_reranker(settings: RetrievalSettings) -> OnnxReranker:
-    """One loaded ONNX session per configuration."""
+def get_reranker(settings: RetrievalSettings, worker: int = 0) -> OnnxReranker:
+    """One loaded ONNX session per configuration and worker.
+
+    With ``RETRIEVAL_RERANK_WORKERS`` > 1 each session gets its share of
+    ``RETRIEVAL_RERANK_THREADS``, so the pool uses the same cores as one session.
+    """
     return _reranker(
         settings.rerank_model,
         settings.models_dir / "reranker",
-        settings.rerank_threads,
+        max(1, settings.rerank_threads // settings.rerank_workers),
         settings.rerank_max_length,
+        worker,
     )

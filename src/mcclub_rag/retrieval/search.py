@@ -5,6 +5,7 @@ is set on each prefetch and on the fused query (the server would push the top-le
 anyway, measured on 1.19.2; being explicit costs nothing).
 """
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,7 @@ _PAYLOAD = [
     "heading_path",
     "visibility",
     "ingested_at",
+    "instruction_like",
 ]
 
 
@@ -41,6 +43,7 @@ class Candidate:
     ingested_at: datetime
     fused_score: float
     fused_rank: int
+    instruction_like: bool = False  # payload schema 2; absent on older points
 
     @classmethod
     def from_point(cls, point: qm.ScoredPoint | qm.Record, rank: int) -> "Candidate":
@@ -57,18 +60,28 @@ class Candidate:
             ingested_at=datetime.fromisoformat(p["ingested_at"]),
             fused_score=float(getattr(point, "score", 0.0) or 0.0),
             fused_rank=rank,
+            instruction_like=bool(p.get("instruction_like", False)),
         )
 
 
-def visibility_filter(role: Role) -> qm.Filter:
-    """public sees ``public`` only; member sees ``public`` and ``members``."""
+def visibility_filter(role: Role, now: float | None = None) -> qm.Filter:
+    """public sees ``public`` only; member sees ``public`` and ``members``. Either way, only
+    documents without ``expires_at`` or not yet expired (eval-fixes Req 13)."""
     if role == "public":
         match: qm.MatchValue | qm.MatchAny = qm.MatchValue(value="public")
     elif role == "member":
         match = qm.MatchAny(any=["public", "members"])
     else:
         raise ValueError(f"unknown role {role!r}")
-    return qm.Filter(must=[qm.FieldCondition(key="visibility", match=match)])
+    current = time.time() if now is None else now
+    not_expired = qm.Filter(
+        should=[
+            qm.IsEmptyCondition(is_empty=qm.PayloadField(key="expires_at")),
+            qm.IsNullCondition(is_null=qm.PayloadField(key="expires_at")),
+            qm.FieldCondition(key="expires_at", range=qm.Range(gt=current)),
+        ]
+    )
+    return qm.Filter(must=[qm.FieldCondition(key="visibility", match=match), not_expired])
 
 
 def dedupe(candidates: Sequence[Candidate]) -> list[Candidate]:
@@ -95,27 +108,49 @@ class HybridSearch:
         self.alias = alias
         self.settings = settings
 
-    def _fusion(self) -> qm.RrfQuery | qm.FusionQuery:
+    def _fusion(self, arms: int = 2) -> qm.RrfQuery | qm.FusionQuery:
         s = self.settings
         if s.fusion == "dbsf":
             return qm.FusionQuery(fusion=qm.Fusion.DBSF)
-        weights = None if s.dense_weight == s.sparse_weight else [s.dense_weight, s.sparse_weight]
+        weights = None
+        if s.dense_weight != s.sparse_weight:  # the cross-language arm is a dense arm
+            weights = [s.dense_weight, s.sparse_weight, s.dense_weight][:arms]
         return qm.RrfQuery(rrf=qm.Rrf(k=s.rrf_k, weights=weights))
 
     async def search(
-        self, dense: list[float], sparse: qm.SparseVector, role: Role
+        self,
+        dense: list[float],
+        sparse: qm.SparseVector,
+        role: Role,
+        *,
+        query_language: str | None = None,
     ) -> list[Candidate]:
-        """Fused candidates (at most ``top_k``) visible to ``role``, deduplicated."""
+        """Fused candidates (at most ``top_k``) visible to ``role``, deduplicated.
+
+        With ``RETRIEVAL_CROSS_LANG_PREFETCH`` > 0 and the query's language, a third dense arm
+        brings chunks in *other* languages: both main arms favour same-language chunks, so an
+        English answer to an Arabic question often never reached the reranker (ISSUES.md I9).
+        """
         flt = visibility_filter(role)
         limit = self.settings.prefetch_limit
+        prefetch = [
+            qm.Prefetch(query=dense, using=DENSE, limit=limit, filter=flt),
+            qm.Prefetch(query=sparse, using=SPARSE, limit=limit, filter=flt),
+        ]
+        cross = self.settings.cross_lang_prefetch
+        if cross and query_language:
+            other = qm.Filter(
+                must=[flt],
+                must_not=[
+                    qm.FieldCondition(key="language", match=qm.MatchValue(value=query_language))
+                ],
+            )
+            prefetch.append(qm.Prefetch(query=dense, using=DENSE, limit=cross, filter=other))
         async with guard("search"):
             response = await self.client.query_points(
                 self.alias,
-                prefetch=[
-                    qm.Prefetch(query=dense, using=DENSE, limit=limit, filter=flt),
-                    qm.Prefetch(query=sparse, using=SPARSE, limit=limit, filter=flt),
-                ],
-                query=self._fusion(),
+                prefetch=prefetch,
+                query=self._fusion(len(prefetch)),
                 query_filter=flt,
                 limit=self.settings.top_k,
                 with_payload=_PAYLOAD,

@@ -5,8 +5,9 @@ streamed and capped; ``aiter_bytes`` decompresses, so the cap also bounds gzip b
 """
 
 import asyncio
+import re
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import lxml.etree
@@ -95,6 +96,71 @@ _CONTENT_LINKS = "//article//a[@href] | //main//a[@href] | //*[@role='main']//a[
 _HEADING_LINKS = "//h1//a | //h2//a | //h3//a | //h4//a | //h5//a | //h6//a"
 _URL_SCHEMES = ("http://", "https://", "mailto:")
 
+# Share buttons (eval-fixes Req 15): host suffix -> path prefixes ("" = any path).
+_SHARE_URLS = {
+    "facebook.com": ("/sharer", "/share", "/dialog/share"),
+    "twitter.com": ("/intent", "/share"),
+    "x.com": ("/intent", "/share"),
+    "linkedin.com": ("/share", "/cws/share"),
+    "wa.me": ("",),
+    "whatsapp.com": ("/send",),
+    "t.me": ("/share",),
+    "telegram.me": ("/share",),
+    "reddit.com": ("/submit",),
+    "pinterest.com": ("/pin/create",),
+}
+_SHARE_MARKERS = ("share", "partag", "مشاركة")  # in a link's class or aria-label
+_SHARE_WORDS = frozenset(
+    "share sharing partager partagez partage tweet tweeter print imprimer email e mail courriel "
+    "facebook twitter x linkedin whatsapp telegram reddit pinterest on sur via this ce cette page "
+    "article مشاركة شارك".split()
+)
+_SHARE_STOP = {"article", "main", "body", "html"}  # never climb out of the content
+_WORDS = re.compile(r"\w+")
+
+
+def _is_share_link(link: lxml.html.HtmlElement) -> bool:
+    href = link.get("href", "").strip()
+    if href.startswith("mailto:?"):  # no recipient: "send this page by email"
+        return True
+    marks = f"{link.get('class', '')} {link.get('aria-label', '')}".casefold()
+    if any(marker in marks for marker in _SHARE_MARKERS):
+        return True
+    parts = urlsplit(href)
+    host = (parts.hostname or "").removeprefix("www.")
+    for suffix, paths in _SHARE_URLS.items():
+        if host == suffix or host.endswith("." + suffix):
+            return any(parts.path.startswith(prefix) for prefix in paths)
+    return False
+
+
+def _share_only(element: lxml.html.HtmlElement) -> bool:
+    """Every link is a share link and the rest of the text is share words ("Partager :")."""
+    links = element.xpath(".//a")
+    if not links or not all(_is_share_link(a) for a in links):
+        return False
+    text = element.text_content()
+    for link in links:
+        text = text.replace(link.text_content(), " ", 1)
+    return all(word in _SHARE_WORDS for word in _WORDS.findall(text.casefold()))
+
+
+def _drop_share_blocks(tree: lxml.html.HtmlElement) -> None:
+    """Remove share bars: the largest share-only block around each share link.
+
+    A share link inside a sentence ("voir aussi Twitter") is kept: its paragraph has other text.
+    Without this, a page holding only a title and a share bar passed the empty check.
+    """
+    for link in tree.xpath("//a[@href]"):
+        if not _is_share_link(link) or link.getparent() is None:
+            continue
+        block = None
+        node = link.getparent()
+        while node is not None and node.tag not in _SHARE_STOP and _share_only(node):
+            block, node = node, node.getparent()
+        if block is not None and block.getparent() is not None:
+            block.getparent().remove(block)
+
 
 def _flatten_tabs(tree: lxml.html.HtmlElement) -> None:
     """Turn tab widgets (npm / pnpm / yarn ...) into a list of "label: content" items.
@@ -144,6 +210,7 @@ def prepare_html(data: bytes, base_url: str) -> lxml.html.HtmlElement:
         tree = lxml.html.fromstring(data)
     except (lxml.etree.ParserError, ValueError) as exc:
         raise EmptyDocument("page has no parsable HTML") from exc
+    _drop_share_blocks(tree)  # first: share buttons with "#" hrefs lose their link below
     # Heading permalinks ("<h2><a href=#x>Title</a></h2>") make trafilatura treat the
     # heading as a link; same-page anchors carry no information.
     for link in tree.xpath(_HEADING_LINKS + " | //a[starts-with(@href, '#')]"):
@@ -151,6 +218,12 @@ def prepare_html(data: bytes, base_url: str) -> lxml.html.HtmlElement:
     _flatten_tabs(tree)
     _inline_links(tree, base_url)
     return tree
+
+
+def _body_letters(markdown: str) -> int:
+    """Letters outside headings: a page that is only its title has no content."""
+    lines = (line for line in markdown.splitlines() if not line.lstrip().startswith("#"))
+    return sum(ch.isalpha() for line in lines for ch in line)
 
 
 def extract_html(data: bytes, final_url: str) -> RawExtraction:
@@ -167,7 +240,7 @@ def extract_html(data: bytes, final_url: str) -> RawExtraction:
         # too; prepare_html unwraps those links first, so headings now survive.
         favor_precision=True,
     )
-    if not markdown or sum(ch.isalpha() for ch in markdown) < _MIN_CONTENT_LETTERS:
+    if not markdown or _body_letters(markdown) < _MIN_CONTENT_LETTERS:
         raise EmptyDocument("no main content found on the page")
     metadata = trafilatura.extract_metadata(data)
     title = (metadata.title or "").strip() if metadata else ""

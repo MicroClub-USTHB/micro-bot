@@ -68,7 +68,7 @@ jobs:
     timeout-minutes: 20
     env:
       TESSDATA_PREFIX: ${{ github.workspace }}/models/tessdata
-      INGEST_CHUNK_TOKENIZER_PATH: ${{ github.workspace }}/models/embedder/tokenizer.json
+      INGEST_CHUNK_TOKENIZER_PATH: ${{ github.workspace }}/models/chunk-tokenizer/tokenizer.json
       MODELS_DIR: ${{ github.workspace }}/models
       HF_HUB_OFFLINE: "1"
     steps:
@@ -99,6 +99,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
+            models/chunk-tokenizer
             models/embedder
             models/bm25
           key: embedder-${{ hashFiles('src/mcclub_rag/retrieval/registry.py') }}
@@ -107,10 +108,11 @@ jobs:
         env:
           HF_HUB_OFFLINE: "0"
         run: |
+          uv run python scripts/download_models.py --only tokenizer --dest models/chunk-tokenizer
           uv run python scripts/download_models.py --only embedder --dest models/embedder
           uv run python scripts/download_models.py --only bm25 --dest models/bm25
 
-      - name: Cache reranker (gte int8 + tokenizer)
+      - name: Cache reranker (bge int8 + tokenizer)
         uses: actions/cache@v4
         with:
           path: models/reranker

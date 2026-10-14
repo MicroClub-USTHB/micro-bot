@@ -181,3 +181,36 @@ def test_fold_for_search(raw, expected):
 def test_fold_is_idempotent(raw):
     once = fold_for_search(raw)
     assert fold_for_search(once) == once
+
+
+def test_strip_arabic_marks_removes_harakat_and_tatweel_only():
+    from mcclub_rag.text.normalize import strip_arabic_marks
+
+    assert strip_arabic_marks("مَكْتَبَةُ الكُلِّيَّةِ") == "مكتبة الكلية"
+    assert strip_arabic_marks("جامعـــة") == "جامعة"
+    assert strip_arabic_marks("أين إدارة الآداب؟") == "أين إدارة الآداب؟"  # hamza letters kept
+    assert strip_arabic_marks("Université élève") == "Université élève"  # Latin accents kept
+    assert strip_arabic_marks("الرَّحْمٰن") == "الرحمن"  # superscript alef
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "Oscar Niemeyer (https://fr.wikipedia.org/wiki/Oscar\\_Niemeyer) a conçu",
+            "Oscar Niemeyer a conçu",
+        ),
+        (
+            "Ministère (https://fr.wikipedia.org/wiki/Minist%C3%A8re_(Alg%C3%A9rie)) en",
+            "Ministère en",
+        ),
+        ("écrivez à contact (mailto:contact@club.dz).", "écrivez à contact."),
+        ("- Facebook (http://www.facebook.com/sharer.php?u=x)", "- Facebook"),
+        ("le site (voir https://club.dz) et (2024)", "le site (voir https://club.dz) et (2024)"),
+        ("https://club.dz seul", "https://club.dz seul"),
+    ],
+)
+def test_drop_link_targets(raw, expected):
+    from mcclub_rag.text.normalize import drop_link_targets
+
+    assert drop_link_targets(raw) == expected

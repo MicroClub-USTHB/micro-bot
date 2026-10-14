@@ -42,6 +42,8 @@ def set_request_log_context(
     completion_tokens: int | None = None,
     corpus_version: str | None = None,
     conversation_id: str | None = None,
+    language: str | None = None,
+    answer_language: str | None = None,
 ) -> None:
     context = getattr(request.state, _REQUEST_LOG_CONTEXT, {}).copy()
     for key, value in {
@@ -51,6 +53,8 @@ def set_request_log_context(
         "completion_tokens": completion_tokens,
         "corpus_version": corpus_version,
         "conversation_id": conversation_id,
+        "language": language,
+        "answer_language": answer_language,
     }.items():
         if value is not None:
             context[key] = value
@@ -89,6 +93,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "completion_tokens": context.get("completion_tokens", 0),
                 "corpus_version": context.get("corpus_version"),
             }
-            if context.get("conversation_id") is not None:
-                event["conversation_id"] = context["conversation_id"]
+            for key in ("conversation_id", "language", "answer_language"):
+                if context.get(key) is not None:
+                    event[key] = context[key]
             self.logger.info("request_completed", **event)

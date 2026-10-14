@@ -32,9 +32,11 @@ not reranker"` (no model files needed), `uv run ruff check . && uv run ruff form
 Working end to end on the real models and a real Qdrant: ingestion (PDF, images with OCR, text,
 web), hybrid retrieval with reranking, the refusal gate, role-based visibility, exact-match cache,
 rate limiting and the daily LLM quota. Known limits, tracked in [PROGRESS.md](PROGRESS.md) and
-[EDGE_CASES.md](EDGE_CASES.md): the `expires_at` upload field is accepted but ignored, the gate
-and defaults are tuned on a small corpus (61 chunks), and answer quality with the live LLM has not
-been evaluated yet (retrieval only).
+[EDGE_CASES.md](EDGE_CASES.md) and [eval/results/e2e/ISSUES.md](eval/results/e2e/ISSUES.md):
+answers were evaluated with a local gemma4 12B, not yet with the production model (349 cases,
+2026-10-13: 265 pass, 0% false answers, 11% false refusals, mostly cross-lingual and darija
+retrieval misses); cited snippets show the evidence 81% of the time (target 90%); arabizi
+questions are answered in French or English.
 
 ## Architecture
 
@@ -70,8 +72,9 @@ tests/          one test module per source module, plus contract, access and wir
 
 - No framework: 1 LLM call per question, every call explicit.
 - Qdrant hybrid search (dense + BM25 sparse), visibility filter inside the query.
-- granite-311m-r2 as the default embedder; harrier-270m / bge-m3 / F2LLM-v2-330M to be A/B
-  tested on the eval set (hit@5 and MRR, Arabic subset).
+- bge-m3 embedder + bge-reranker-v2-m3 on the top 10 candidates, chosen on 128 eval questions
+  (48 darija/arabizi) against granite, harrier-270m and gte: hit@5 0.793 -> 0.847, darija
+  0.667 -> 0.771, same rerank time ([results](eval/results/README.md)).
 - Exact-match cache keyed by question + role + corpus version, instead of a semantic answer cache.
 - Chunking ([spec](specs/chunking/)): structure first (headings), then paragraphs, lines and
   sentences (Arabic `؟ ؛ ۔` aware), size last. Target 300 / max 400 / min 80 **embedder tokens**,
@@ -80,7 +83,7 @@ tests/          one test module per source module, plus contract, access and wir
   rejected on published benchmarks; the sizes are settings so they can be A/B tested.
 
 - Ingest pipeline ([spec](specs/ingest-pipeline/)): `ingest_file` / `ingest_url` →
-  preprocess → chunk → granite int8 ONNX (CLS + L2, one sequence per run) + BM25 on folded
+  preprocess → chunk → bge-m3 int8 ONNX (CLS + L2, one sequence per run) + BM25 on folded
   text (no stemming, one ar+fr+en stopword set, IDF in Qdrant) → Qdrant. `doc_id = uuid5(topic)`;
   same content is `duplicate` (checked on the raw bytes before parsing), a new visibility is
   `updated`, new content `replaced` (new points first, old ones deleted after). Each version's
@@ -90,19 +93,32 @@ tests/          one test module per source module, plus contract, access and wir
 
 - Retrieval ([spec](specs/retrieval/)): one Qdrant query with dense + BM25 prefetches fused by
   RRF (k=2), the visibility filter on every level, dedupe by document and chunk index, then the
-  gte-multilingual-reranker-base int8 cross-encoder (one pair per run: batching moved scores by
-  up to 1.8 logits) on the top 20, and a gate that refuses below a sigmoid score of 0.40 with
-  **0 LLM calls**. Short follow-ups are searched together with the previous question (no LLM
-  rewrite). bge-reranker-v2-m3 stays an A/B option: +0.014 MRR for 2.2x the latency.
+  bge-reranker-v2-m3 int8 cross-encoder (one pair per run: batching moved scores by up to 1.8
+  logits) on the top 10. The relevance-floor gate is off: bge scores right darija matches near
+  0, so no threshold works, and the LLM refuses unknowns (with gte it refused below 0.31). Short follow-ups with a
+  follow-up cue ("and…", "it", "وكم") are searched together with the previous question (no LLM
+  rewrite). Without the LLM (no key, budget spent, provider error) the answer is a notice in the
+  user's language with the best passages as sources, never pasted chunks. gte stays an A/B option.
 
 ## Evaluation
 
 `uv run python -m eval.run_eval --label <name>` ingests `data/parsed` (the document part of each
 `scripts/parse.py` dump, titled from `eval/corpus.json`) into an in-memory Qdrant
-with the real models and runs the 48 questions of `eval/questions.jsonl` (Arabic, cross-lingual
+with the real models and runs the 128 questions of `eval/questions.jsonl` (Arabic, darija, arabizi, cross-lingual
 both ways, unanswerable, follow-ups, access checks): hit@5 and MRR@10 before and after reranking,
 per tag, a gate-threshold sweep and per-stage latency. Settings are environment overrides; results
 and the comparison table are in [eval/results/](eval/results/README.md).
+
+### End-to-end eval
+
+`uv run python -m eval.e2e.run --suite all --label <name>` drives the real chat and documents API
+(in-process, or `--target http` against a running app) with 349 cases over 68 documents: 42
+edge-case slices (cross-lingual, Darija, Arabizi, OCR, tables, near-duplicates, false premises,
+follow-ups, access, prompt injection in questions, documents and history, system-prompt leaks,
+PII, harmful requests), plus perturbation, API contract, fault, cache, ingest and load suites.
+Scoring is rule-based (canary and marker strings for leaks), with an optional LLM judge. See
+[specs/e2e-eval/](specs/e2e-eval/) and the issue list in
+[eval/results/e2e/ISSUES.md](eval/results/e2e/ISSUES.md).
 
 ## Edge cases
 

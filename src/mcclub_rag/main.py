@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+import structlog
 from fastapi import FastAPI, UploadFile
 
 from mcclub_rag.api.chat import router as chat_router
@@ -21,7 +23,7 @@ from mcclub_rag.errors import IngestError, install_error_handlers
 from mcclub_rag.ingest import errors as ingest_errors
 from mcclub_rag.ingest import pipeline as ingest_pipeline
 from mcclub_rag.ingest.models import DocumentInfo as IngestDocumentInfo
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
+from mcclub_rag.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
 from mcclub_rag.llm.quota import CircuitBreaker, DailyQuota
 from mcclub_rag.logging import RequestLoggingMiddleware
 from mcclub_rag.rate_limit import SlidingWindowRateLimiter
@@ -35,6 +37,8 @@ from mcclub_rag.schemas import (
     Visibility,
 )
 from mcclub_rag.text.lang import detect_language
+
+_log = structlog.get_logger(__name__)
 
 
 class DocumentBackend(Protocol):
@@ -165,6 +169,16 @@ class FakeGenerationService:
         return self.result
 
 
+@dataclass
+class OpenRouterGenerationService:
+    """Async adapter over the sync ``OpenRouterClient``: one provider call, off the event loop."""
+
+    client: OpenRouterClient
+
+    async def generate(self, system: str, user: str) -> GenerationResult:
+        return await asyncio.to_thread(self.client.generate, system, user)
+
+
 _INGEST_STATUS_MAP = {
     "created": "indexed",
     "replaced": "indexed",
@@ -184,6 +198,7 @@ class RealDocumentBackend:
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
+        expiry = parse_expiry(expires_at)  # before reading the upload: a bad date is a 422
         data = await file.read()
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp.write(data)
@@ -195,6 +210,7 @@ class RealDocumentBackend:
                 file.filename or "document",
                 visibility,
                 topic=topic,
+                expires_at=expiry,
             )
         finally:
             Path(tmp_path).unlink(missing_ok=True)
@@ -248,6 +264,22 @@ def _map_ingest_result(result: object) -> IngestResult:
     )
 
 
+def parse_expiry(value: str | None) -> datetime | None:
+    """``expires_at`` form field: ISO 8601 date or datetime; a date ends at its last second UTC,
+    a time without an offset is UTC. Blank = no expiry."""
+    if value is None or not value.strip():
+        return None
+    try:
+        moment = datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise IngestError(
+            "invalid_input", "expires_at must be an ISO 8601 date or datetime"
+        ) from None
+    if len(value.strip()) == 10:  # a bare date: valid until the end of that day
+        moment = moment.replace(hour=23, minute=59, second=59)
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def _map_doc_info(doc: IngestDocumentInfo, topic: str | None = None) -> DocInfo:
     return DocInfo(
         doc_id=doc.doc_id,
@@ -257,6 +289,7 @@ def _map_doc_info(doc: IngestDocumentInfo, topic: str | None = None) -> DocInfo:
         chunk_count=doc.chunk_count,
         created_at=doc.ingested_at.isoformat(),
         topic=topic,
+        expires_at=doc.expires_at.isoformat() if doc.expires_at else None,
     )
 
 
@@ -309,7 +342,15 @@ def default_state(settings: Settings) -> ApplicationState:
         document_probe=PipelineProbe(),
         provider_probe=ProviderProbe(settings),
         language_detector=RealLanguageDetector(),
+        generator=_generator(settings),
     )
+
+
+def _generator(settings: Settings) -> GenerationService:
+    if settings.openrouter_api_key:
+        return OpenRouterGenerationService(OpenRouterClient(settings))
+    _log.warning("llm_disabled", reason="OPENROUTER_API_KEY not set: extractive fallback only")
+    return FakeGenerationService()
 
 
 def create_app(

@@ -22,12 +22,12 @@ dependencies = [
     "structlog>=26.1",
     "charset-normalizer~=3.5",
     "lxml~=6.1",
+    "pillow~=12.3",  # deskew of photographed pages before OCR (ingest/deskew.py)
 ]
 
 [dependency-groups]
 dev = [
     "openpyxl~=3.1",
-    "pillow~=12.3",
     "pypdf~=6.20",
     "pytest~=9.1",
     "pytest-asyncio~=1.4",

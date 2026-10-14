@@ -1,4 +1,4 @@
-"""Real granite ONNX model and BM25 stopwords (``embedder`` marker; see design measurements)."""
+"""Real default embedder (bge-m3) and BM25 stopwords (``embedder`` marker)."""
 
 import os
 import time
@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 
 from mcclub_rag.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
-from mcclub_rag.retrieval.registry import GRANITE_R2
+from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
+
+SPEC = EMBEDDERS[DEFAULT_EMBEDDER]
 
 PAIRS = [
     "Le club organise un hackathon en novembre.",
@@ -19,12 +21,12 @@ PAIRS = [
 
 @pytest.fixture(scope="module")
 def dense(onnx_path) -> OnnxDenseEncoder:
-    return OnnxDenseEncoder(GRANITE_R2, onnx_path.parents[1], threads=4, max_length=512, dim=768)
+    return OnnxDenseEncoder(SPEC, onnx_path.parents[1], threads=4, max_length=512, dim=SPEC.dim)
 
 
-def test_vectors_are_768_and_unit_norm(dense):
+def test_vectors_have_the_spec_dim_and_unit_norm(dense):
     for vector in dense.embed_documents(PAIRS):
-        assert len(vector) == 768
+        assert len(vector) == SPEC.dim
         assert np.linalg.norm(vector) == pytest.approx(1.0, abs=1e-5)
 
 
@@ -50,5 +52,5 @@ def test_dense_and_sparse_throughput(dense, real_bm25_dir):
     start = time.perf_counter()
     dense.embed_documents(chunks)
     sparse.embed_documents(chunks)
-    # About 5 s on the dev machine, 11 s on a 4-vCPU GitHub runner (Req 9.5).
-    assert time.perf_counter() - start < 20
+    # bge-m3: about 6 s on the dev machine, 23 s on a 4-vCPU GitHub runner (Req 9.5).
+    assert time.perf_counter() - start < 45

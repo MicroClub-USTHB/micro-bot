@@ -3,14 +3,16 @@
 from time import perf_counter
 from typing import Annotated, cast
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from mcclub_rag.answer import build, extractive_fallback
+from mcclub_rag.answer import build, extractive_fallback, leaks_prompt, strip_references
 from mcclub_rag.conversation import Conversation, Turn
 from mcclub_rag.deps import get_role
 from mcclub_rag.llm.client import GenerationUsage
 from mcclub_rag.llm.prompts import build_prompt
 from mcclub_rag.logging import set_request_log_context
+from mcclub_rag.messages import EMPTY_MESSAGE, NO_ANSWER
 from mcclub_rag.schemas import (
     ChatRequest,
     ChatResponse,
@@ -21,7 +23,9 @@ from mcclub_rag.schemas import (
     Source,
     Usage,
 )
+from mcclub_rag.text.lang import detect_language
 
+log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
@@ -75,6 +79,21 @@ async def chat(
         )
         return response
 
+    if not payload.message.strip():  # I18: nothing to search; the API shape stays the same
+        retrieval = Retrieval(chunks=[], top_score=0.0, decision="refuse")
+        response = _response(
+            EMPTY_MESSAGE[language],
+            conversation.conversation_id,
+            False,
+            [],
+            Usage(llm_calls=0, prompt_tokens=0, completion_tokens=0),
+            started_at,
+        )
+        _save_and_log(
+            request, payload.message, response, role, state.corpus_version, conversation, []
+        )
+        return response
+
     retrieval = await state.retrieval.retrieve(payload.message, role, history)
     response = await _answer(
         payload.message,
@@ -110,7 +129,7 @@ async def _answer(
 ) -> ChatResponse:
     if retrieval.decision == "refuse":
         return _response(
-            "I don't know based on the available documents.",
+            NO_ANSWER[language],
             conversation_id,
             False,
             [],
@@ -119,7 +138,7 @@ async def _answer(
         )
 
     if not state.breaker.allow() or not state.quota.acquire():
-        answer, sources, grounded = extractive_fallback(retrieval.chunks)
+        answer, sources, grounded = extractive_fallback(retrieval.chunks, message, language)
         return _response(
             answer,
             conversation_id,
@@ -133,10 +152,15 @@ async def _answer(
     generation = await state.generator.generate(system, user)
     if generation.ok:
         state.breaker.record_success()
-        answer, sources, grounded = build(generation.text or "", retrieval.chunks)
+        text = generation.text or ""
+        if leaks_prompt(text, system):  # the prompt or the passages, not an answer (I26)
+            log.warning("answer_withheld", reason="prompt_leak")
+            text = ""
+        answer, sources, grounded = build(text, retrieval.chunks, query=message)
+        answer = answer or NO_ANSWER[language]  # a bare NOT_FOUND or a withheld reply
     else:
         state.breaker.record_failure()
-        answer, sources, grounded = extractive_fallback(retrieval.chunks)
+        answer, sources, grounded = extractive_fallback(retrieval.chunks, message, language)
     return _response(answer, conversation_id, grounded, sources, generation.usage, started_at)
 
 
@@ -187,6 +211,9 @@ def _save_and_log(
         completion_tokens=response.usage.completion_tokens,
         corpus_version=corpus_version,
         conversation_id=response.conversation_id,
+        # Both logged so a reply in the wrong language is countable (titles are not counted).
+        language=conversation.language,
+        answer_language=detect_language(strip_references(response.answer)),
     )
 
 
