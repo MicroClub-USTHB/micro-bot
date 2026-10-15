@@ -131,3 +131,127 @@ For each model pair, the top reranker score of each question: good = answerable 
 bad = unanswerable or a miss. **ROC AUC** (chance a good case scores above a bad one; 0.5 = no
 signal), split into AUC vs unanswerable and AUC vs misses, the best Youden threshold, and the
 threshold that keeps 99 / 98 / 95% of the good cases with the share of bad ones it refuses.
+
+## Latest results (2026-10-15)
+
+Current stack: bge-m3 embedder, mmarco-mMiniLMv2-L12 reranker on the top 10, query rewrite on.
+Answers by a local gemma4 12B (ollama), not the production model.
+
+**Retrieval** (338 e2e cases, `bench_models`), hit@5:
+
+| Stack | all | fr | en | ar | darija | arabizi | cross-lingual | p50 / p95 ms |
+|---|---|---|---|---|---|---|---|---|
+| bge-m3 + bge-rr, typed (before) | 0.909 | 0.946 | 0.973 | 0.90 | 0.657 | 0.909 | 0.808 | 1597 / 2147 |
+| bge-m3 + bge-rr, rewrite | 0.974 | 0.964 | 0.973 | 0.98 | 1.0 | 0.955 | 0.981 | 1748 / 2286 |
+| **bge-m3 + mmarco, rewrite (now)** | 0.971 | 0.946 | 0.973 | 0.98 | 1.0 | 0.955 | 0.981 | 652 / 823 |
+| bge-m3 + mmarco, typed (rewrite failed) | 0.898 | 0.929 | 0.973 | 0.90 | 0.657 | 0.818 | 0.808 | 533 / 663 |
+
+Small embedders (granite-97m, e5-small) reach 0.934-0.942 with the rewrite but fall to
+0.79-0.83 typed (e5-small darija 0.34); an English-only reranker drops French to 0.75. Typo
+variants losing the evidence: 7/45 typed, 1/45 with the rewrite (robustness, test split).
+
+**Answers** (349 cases, bge-m3 + bge-rr; mmarco not yet run end to end), answerable cases correct
+by the rule checks (judge excluded):
+
+| | all | fr | en | ar | darija | arabizi | cross-lingual |
+|---|---|---|---|---|---|---|---|
+| typed | 82% | 89% | 86% | 86% | 54% | 77% | 69% |
+| rewrite | 85% | 88% | 85% | 90% | 83% | 73% | 80% |
+
+With the rewrite: evidence reaches the LLM 98% (was 91%), 96% of answerable questions are
+answered, 135 / 143 answers with a gold fact contain it (94%), false refusals 4% (was 11%), false
+answers 3% (2 darija cases whose labels look wrong: `dj-26`, `dj-27`), 0 leaks, 0 injections.
+p50 / p95 7.5 / 9.3 s with a local rewrite and the bge reranker (mmarco saves about 1.1 s,
+estimated). Most remaining failures are **citation misses** (24): right answer, but the shown
+snippet is picked by overlap with the *question's* words, which fails when the question is in
+another language than the chunk.
+
+**Gate**: with the rewrite, a low top score does flag questions the documents cannot answer
+(AUC vs unanswerable 0.93 with bge-rr, 0.88 with mmarco). At about 0.03 (mmarco) / 0.05 (bge)
+it keeps 98% of good retrievals and refuses 44-47% of unanswerable questions before the answer
+call; it does not catch the remaining misses (they score high). Not turned on.
+
+## Before trusting a number
+
+- **LLM**: answers and rewrites come from a local gemma4 12B (`--llm ollama`), not
+  `gemma-4-31b-it:free`, which was rate-limited upstream when tried. Calls are recorded by prompt
+  hash (`eval/e2e/recordings/`, date masked) and replayed with `--mode replay` at no cost;
+  `--max-llm-calls` caps a run; answers produced after the cap are `not_run`, not scored.
+- **The judge is not reliable** with the local model: most of its "unfaithful" verdicts flag the
+  app's `[Title]` citations or facts outside the 500-character snippet. Report correctness by the
+  rule checks; read judge failures one by one.
+- **Timings**: dev machine, 4 threads, in-memory Qdrant, retrieval only in `bench_models`; e2e
+  latency includes a local LLM. Production latency depends on the provider.
+- **Small groups**: noisy 4 base cases, followup 8, arabizi 22: one case moves arabizi by 4.5
+  points.
+- **Each chat request uses a fresh `eval-<uuid>` conversation id** to skip the answer cache
+  without changing the API; follow-up cases need the in-process driver (it seeds history).
+- **Comparisons**: `python -m eval.e2e.compare <a.json> <b.json>`; change one thing per run
+  (prompt, model, setting) or the deltas mix causes.
+
+## Running
+
+```bash
+uv run python -m eval.run_eval --label base
+uv run python -m eval.bench_models --llm ollama --label m1             # records rewrites
+uv run python -m eval.bench_models --mode replay --rerankers cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+uv run python -m eval.e2e.run --suite quality --llm ollama --rewrite --max-llm-calls 800 --label q
+uv run python -m eval.e2e.run --suite robustness --split test --rewrite --label rb
+uv run python -m eval.e2e.run --suite all --label full                  # + contract, faults, cache, ingest, load
+uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
+```
+
+Models: `scripts/download_models.py` (see AGENTS.md); A/B embedders sit in their own
+`models/ab-<name>/` folder with symlinks to `bm25`, `reranker`, `tessdata`. Local judge:
+`EVAL_JUDGE_BASE_URL=http://localhost:11434/v1 EVAL_JUDGE_MODEL=<model> EVAL_JUDGE_TIMEOUT=180`
+(never reads `OPENROUTER_API_KEY`). Ollama memory tips are in the docstring of
+`eval/e2e/run.py`.
+
+## Open work
+
+- Snippet choice by the answer's words (or the rewrite in the chunk's language): most of the 24
+  citation misses.
+- Run the mmarco reranker end to end; decide a gate for the rewrite path.
+- The production LLM end to end; the HTTP target and restart suite (Docker); `--suite all` after
+  the latest reindex.
+- Check the labels of `dj-26`, `dj-27`.
+
+## Issue index
+
+Found by the e2e eval since 2026-10-11; details, evidence and the eval's own bugs (E1-E7) are
+in the local `results/e2e/ISSUES.md`. Code comments cite these ids.
+
+| # | Severity | Issue | Status |
+|---|---|---|---|
+| I1 | critical | The live app never calls the LLM | fixed `4deffe0` |
+| I2 | critical | Questions that must be refused get answered with pasted chunks | fixed `16fca02`, `b4156ef` |
+| I3 | critical | The fallback repeats injected instructions to users | fixed `16fca02` |
+| I4 | high | Answers come back in the document's language, not the question's | partly `60f7790`, `b93cd93` |
+| I5 | high | The gate refusal is always in English | fixed `60f7790` |
+| I6 | medium | The cited snippets often do not show the evidence | partly `16fca02`; cause found 2026-10-15 (snippet matched on the question's words) |
+| I7 | high | Small input noise flips the decision | fixed by the query rewrite (typo misses 7/45 -> 1/45) |
+| I8 | high | The gate score cannot separate answerable from unanswerable | fixed `b4156ef` (relevance floor); with the rewrite AUC 0.93 |
+| I9 | high | Same-language distractors beat the right cross-lingual document | fixed by the query rewrite (cross-lingual hit@5 0.81 -> 0.98) |
+| I10 | medium | A short new question is glued to the previous turn | fixed `5ae4008` |
+| I11 | medium | Injection text is pulled in by attack-style questions | partly `cb0e506` |
+| I12 | medium | Follow-ups in another language fail | fixed `5ae4008`, `60f7790` |
+| I13 | high | A photographed page loses whole paragraphs silently | fixed `faff80a` |
+| I14 | medium | `expires_at` is accepted and dropped | fixed `b7707ae`, `2bb84ad` |
+| I15 | medium | Upload has no title, and PDF titles are bad | partly `90767fc` |
+| I16 | medium | A share-bar-only page passes the empty-document check | fixed `db446b7` |
+| I17 | low | Deleting twice says 200 `{"ok": false}`, not 404 | accepted (frozen API) |
+| I18 | low | An empty or whitespace-only message is accepted | fixed `60f7790` |
+| I19 | medium | Throughput is one rerank at a time | accepted `607db82`; mmarco reranks 2.7x faster |
+| I20 | low | Auth reads the global settings, not the app's | fixed `3d55fdb` |
+| I21 | low | `config.py` defaults disagree with the measured retrieval defaults | fixed `1378526` |
+| I22 | high | Citations in other formats make answers ungrounded | fixed `16fca02` |
+| I23 | high | The LLM says it does not know although the evidence was retrieved | partly `b93cd93` (11 refusals left, 7 of them with the evidence retrieved) |
+| I24 | medium | Cited snippets rarely show the evidence once the LLM answers | partly `16fca02`; same cause as I6 |
+| I25 | critical | Refusals come back grounded | fixed `f38dd84` |
+| I26 | critical | The system prompt and raw passages leak | fixed `08d38b3` |
+| I27 | high | Example data read as facts | fixed `8d04277` |
+| I28 | medium | Partial refusals without `NOT_FOUND` | fixed `8d04277` |
+| I29 | medium | The scorecard mixes layers | fixed 2026-10-15 (answer rates from the chat layer only) |
+| I30 | high | Inline link URLs drown Wikipedia chunks | fixed `ddfaa8a` |
+| I31 | medium | The eval corpus predates the share-bar fix | fixed 2026-10-13 |
+| I32 | low | Answer language for arabizi | accepted `19ebb9e` |
