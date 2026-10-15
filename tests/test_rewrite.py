@@ -115,3 +115,14 @@ async def test_rewriter_cache_is_bounded():
     for message in ("a", "b", "c", "a"):
         await rewriter.rewrite(message, None)
     assert generator.calls == 4  # "a" was evicted by "c"
+
+
+async def test_allow_is_asked_only_on_a_miss():
+    generator = FakeGenerator(_ok(json.dumps(GOOD)))
+    rewriter = QueryRewriter(generator, timeout_s=5)
+    denied = await rewriter.rewrite("q", None, allow=lambda: False)
+    assert denied.rewrite is None and denied.error == "skipped" and denied.usage.llm_calls == 0
+    await rewriter.rewrite("q", None)
+    asked = []
+    hit = await rewriter.rewrite("q", None, allow=lambda: asked.append(1) or False)
+    assert hit.rewrite is not None and not asked

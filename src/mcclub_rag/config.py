@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     llm_daily_limit: int = Field(default=50, gt=0)
     llm_reserve: int = Field(default=5, ge=0)
     llm_timeout_s: int = Field(default=25, gt=0)
+    # Query rewrite, the optional first LLM call of a question (specs/query-rewrite)
+    rewrite_enabled: bool = True
+    rewrite_timeout_s: float = Field(default=6.0, gt=0)
+    rewrite_cache_size: int = Field(default=512, ge=0)
     retrieve_top_k: int = Field(default=20, gt=0)
     rerank_top_n: int = Field(default=5, gt=0)
     gate_threshold: float | None = None

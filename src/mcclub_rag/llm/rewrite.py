@@ -12,6 +12,7 @@ import asyncio
 import json
 import re
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -115,11 +116,16 @@ class QueryRewriter:
         self.cache_size = cache_size
         self._cache: OrderedDict[tuple[str, str | None], QueryRewrite | None] = OrderedDict()
 
-    async def rewrite(self, message: str, previous: str | None) -> RewriteOutcome:
+    async def rewrite(
+        self, message: str, previous: str | None, allow: Callable[[], bool] = lambda: True
+    ) -> RewriteOutcome:
+        """``allow`` (breaker, quota) is asked only on a cache miss, right before the call."""
         key = (message, previous)
         if key in self._cache:
             self._cache.move_to_end(key)
             return RewriteOutcome(self._cache[key], GenerationUsage(llm_calls=0))
+        if not allow():
+            return RewriteOutcome(None, GenerationUsage(llm_calls=0), error="skipped")
         system, user = build_rewrite_prompt(message, previous)
         try:
             result = await asyncio.wait_for(
