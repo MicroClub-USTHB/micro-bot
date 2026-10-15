@@ -82,7 +82,7 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
-  lists and the bge reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
+  lists and the mmarco reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
 - Before starting: `git fetch`; local `dev` may be behind `origin/dev`.
 
 ## Fixed decisions (do not change; ask the user if blocked)
@@ -101,12 +101,15 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   **granite tokens** (`models/chunk-tokenizer`): bge-m3's tokenizer lost 5 of 111 eval questions.
   granite-311m-r2 (768 dims) stays an A/B entry; harrier-270m was measured and dropped, F2LLM-v2
   has no ONNX export (eval/results/README.md, 2026-10-13).
-- **Reranker (default since 2026-10-13):** `BAAI/bge-reranker-v2-m3` from
+- **Reranker (default since 2026-10-15):** `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (avx2
+  int8 119 MB, max 512 tokens, rev `1427fd65…`), chosen with the query rewrite: hit@5 0.971 vs
+  bge's 0.974, rerank 2.7x faster; weaker when the rewrite fails (typed arabizi 0.818 vs 0.909).
+  Before it, bge (now an A/B entry): `BAAI/bge-reranker-v2-m3` from
   `onnx-community/bge-reranker-v2-m3-ONNX` (int8 571 MB, rev `6f5ff652…`) on the **top 10** fused
   candidates (`RETRIEVAL_RERANK_TOP_K=10`), **gate off** (`GATE_THRESHOLD` unset: bge scores right
   darija matches near 0). With bge-m3 it keeps the darija/arabizi matches gte dropped (darija hit@5
   0.667 -> 0.771) at gte's speed. `Alibaba-NLP/gte-multilingual-reranker-base` (341 MB, gate 0.31)
-  stays an A/B entry via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
+  stays an A/B entry via `RERANK_MODEL`. All pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
 - **Web pages:** httpx + trafilatura. **Cache:** exact-match keyed by question + role + corpus
@@ -129,7 +132,7 @@ uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"  
 uv run python scripts/download_models.py --only tessdata --dest models/tessdata
 uv run python scripts/download_models.py --only embedder --dest models/embedder   # bge-m3, 568 MB
 uv run python scripts/download_models.py --only bm25 --dest models/bm25
-uv run python scripts/download_models.py --only reranker --dest models/reranker   # bge, 571 MB
+uv run python scripts/download_models.py --only reranker --dest models/reranker   # mmarco, 119 MB
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift

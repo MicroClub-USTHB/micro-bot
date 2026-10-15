@@ -31,7 +31,7 @@ def test_defaults_match_design():
     assert s.top_k == 20
     assert s.top_n == 5
     assert s.gate_threshold is None
-    assert s.rerank_model == "BAAI/bge-reranker-v2-m3"
+    assert s.rerank_model == "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
     assert s.models_dir == Path("/app/models")
     assert s.qdrant_collection == "mcclub"
     assert s.fusion == "rrf"

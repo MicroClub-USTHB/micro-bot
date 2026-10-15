@@ -21,12 +21,12 @@
 ### Blocked
 
 - Rewrite latency on the real provider: `gemma-4-31b-it:free` was rate-limited upstream all day.
-- p95 with a local rewrite is 9.3 s (> 8 s): switch the reranker to mmarco-L12 (-1.1 s p50)?
+- p95 with a local rewrite was 9.3 s (> 8 s) with bge; mmarco should save ~1.1 s (not measured e2e).
 
 ### Next
 
-- Decide: `RERANK_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (needs only a restart), and a
-  gate for the rewrite path (t ~ 0.05 with bge-rr).
+- Reranker switched to mmarco-L12 (user's call, 2026-10-15): not yet checked on full answers
+  (run C skipped). Decide a gate for the rewrite path (t ~ 0.03 with mmarco).
 - Review with eequaled: `api/chat.py`, `main.py`, `config.py`, `llm/client.py`, `llm/quota.py`.
 - Snippet choice: 7 of 9 cases B lost were right answers whose cited snippet missed the evidence.
 

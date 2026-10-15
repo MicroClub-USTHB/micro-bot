@@ -161,5 +161,7 @@ RERANKERS: dict[str, RerankerSpec] = {
     MMARCO_RERANKER.repo: MMARCO_RERANKER,
     MINILM_RERANKER.repo: MINILM_RERANKER,
 }
-# bge since 2026-10-13: gte dropped darija matches bge-m3 had found (eval/results/README.md).
-DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
+# mmarco since 2026-10-15: with the query rewrite, hit@5 0.971 vs bge's 0.974 at 2.7x less rerank
+# time (eval/results/README.md). bge (2026-10-13) stays the A/B entry: better when the rewrite
+# fails (typed arabizi 0.909 vs 0.818).
+DEFAULT_RERANKER = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"

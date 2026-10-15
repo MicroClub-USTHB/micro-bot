@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     embed_model: str = "BAAI/bge-m3"
     embed_dim: int = Field(default=1024, gt=0)
     # Retrieval reads these through RetrievalSettings (retrieval/settings.py); keep them equal (I21)
-    rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_model: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
     models_dir: Path = Path("/app/models")
     data_dir: Path = Path("/data")
     llm_daily_limit: int = Field(default=50, gt=0)
