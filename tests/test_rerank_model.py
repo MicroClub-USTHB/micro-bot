@@ -1,4 +1,4 @@
-"""Real default reranker, bge int8 (``reranker`` marker): ranking, determinism, latency."""
+"""Real default reranker, mmarco int8 (``reranker`` marker): ranking, determinism, latency."""
 
 import time
 

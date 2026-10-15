@@ -169,3 +169,30 @@ def test_passage_drops_link_targets_like_the_embedded_text():
     (chunk,) = chunk_document(document, settings=SETTINGS, counter=FakeCounter())
     assert "wikipedia" not in passage(document.title, chunk.heading_path, chunk.text)
     assert passage(document.title, chunk.heading_path, chunk.text) == chunk.embed_text
+
+
+def test_spec_max_length_caps_the_setting(model):
+    from dataclasses import replace
+
+    spec, directory = model
+    session = FakeSession()
+    capped = replace(spec, max_length=10)
+    OnnxReranker(capped, directory, max_length=640, session=session).score("q", ["w " * 50])
+    assert session.feeds[0]["input_ids"].shape == (1, 10)
+
+
+def test_token_type_ids_follow_the_tokenizer(model, tmp_path):
+    spec, directory = model
+    tok = Tokenizer.from_file(str(directory / "tokenizer.json"))
+    tok.post_processor = processors.TemplateProcessing(  # BERT style: passage is segment 1
+        single="<s> $A </s>",
+        pair="<s> $A </s> $B:1 </s>:1",
+        special_tokens=[("<s>", 1), ("</s>", 2)],
+    )
+    tok.save(str(directory / "tokenizer.json"))
+    from dataclasses import replace
+
+    sha = hashlib.sha256((directory / "tokenizer.json").read_bytes()).hexdigest()
+    session = FakeSession(inputs=("input_ids", "attention_mask", "token_type_ids"))
+    OnnxReranker(replace(spec, tokenizer_sha256=sha), directory, session=session).score("q", ["w"])
+    assert session.feeds[0]["token_type_ids"].tolist() == [[0, 0, 0, 1, 1]]

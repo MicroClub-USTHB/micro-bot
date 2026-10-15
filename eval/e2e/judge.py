@@ -4,7 +4,9 @@ Off unless ``EVAL_JUDGE_BASE_URL`` and ``EVAL_JUDGE_MODEL`` are set (any OpenAI-
 endpoint; key in ``EVAL_JUDGE_API_KEY``). It never reads ``OPENROUTER_API_KEY``, so it cannot
 spend the app's daily quota. Only LLM answers that passed the rule checks are judged, one call
 each, no retries, at most ``max_calls`` per run; verdicts are cached by (answer, snippets,
-rubric version, model), so a rerun costs nothing. An unparsable verdict is ``skip``.
+rubric version, model), so a rerun costs nothing. An unparsable verdict or a failed call
+(timeout, connection error) is ``skip``; a failed call is not cached. ``EVAL_JUDGE_TIMEOUT``
+sets the per-call timeout in seconds (default 60; a local thinking model may need more).
 """
 
 import hashlib
@@ -30,7 +32,8 @@ def from_env(max_calls: int, client=None) -> "Judge | None":
         from openai import OpenAI
 
         key = os.environ.get("EVAL_JUDGE_API_KEY") or "none"
-        client = OpenAI(base_url=base, api_key=key, max_retries=0, timeout=60)
+        timeout = float(os.environ.get("EVAL_JUDGE_TIMEOUT") or 60)
+        client = OpenAI(base_url=base, api_key=key, max_retries=0, timeout=timeout)
     return Judge(client, model, max_calls)
 
 
@@ -55,14 +58,17 @@ class Judge:
                 return Check("faithfulness", "skip", "judge budget spent")
             self.calls += 1
             passages = "\n\n".join(f"```passage\n{s}\n```" for s in snippets)
-            completion = self.client.chat.completions.create(
-                model=self.model,
-                temperature=0,
-                messages=[
-                    {"role": "system", "content": RUBRIC},
-                    {"role": "user", "content": f"{passages}\n\n```answer\n{answer}\n```"},
-                ],
-            )
+            try:
+                completion = self.client.chat.completions.create(
+                    model=self.model,
+                    temperature=0,
+                    messages=[
+                        {"role": "system", "content": RUBRIC},
+                        {"role": "user", "content": f"{passages}\n\n```answer\n{answer}\n```"},
+                    ],
+                )
+            except Exception as exc:  # one slow or failed verdict must not crash the run
+                return Check("faithfulness", "skip", f"judge error: {type(exc).__name__}")
             self.verdicts[key] = completion.choices[0].message.content or ""
             with self.cache.open("a", encoding="utf-8") as out:
                 row = {"key": key, "verdict": self.verdicts[key]}

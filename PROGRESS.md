@@ -1,5 +1,35 @@
 # progress
 
+## 2026-10-15 (query rewrite, smaller models, eval report)
+
+### Shipped (branch `nisbenz/query-rewrite`, eequaled's files changed with the user's go-ahead)
+
+- Second LLM call per question, approved by the organizers: the query rewrite
+  (`llm/rewrite.py`, `specs/query-rewrite/`). JSON with the language, a standalone corrected
+  query and fr / en / ar translations; each translation searches its own language's chunks and
+  the reranker scores each chunk against its language's text. Typed query kept; a failed rewrite
+  falls back to the old path. Quota: the rewrite never takes the answer's last slot.
+- Measured (eval/results/README.md 2026-10-15): hit@5 0.909 -> 0.974, darija 0.66 -> 1.0,
+  cross-lingual 0.81 -> 0.98, typo variants losing the evidence 7/45 -> 1/45; e2e answers
+  correct 82% -> 85% (darija 54% -> 83%), false refusals 11% -> 4%.
+- Small-model A/B entries (granite-97m, e5-small, mmarco-L12, MiniLM-L6) and
+  `eval.bench_models` (embedder x reranker x typed/rewrite, gate analysis).
+- E2E report: chat and retrieval layers apart (the 0.84 false-answer rate was the open gate on
+  the retrieval layer), quality per language group, failure causes, failure traits.
+- `LLM_DISABLE_REASONING` for reasoning models (nemotron rewrite 20 s -> 2-3 s).
+
+### Blocked
+
+- Rewrite latency on the real provider: `gemma-4-31b-it:free` was rate-limited upstream all day.
+- p95 with a local rewrite was 9.3 s (> 8 s) with bge; mmarco should save ~1.1 s (not measured e2e).
+
+### Next
+
+- Reranker switched to mmarco-L12 (user's call, 2026-10-15): not yet checked on full answers
+  (run C skipped). Decide a gate for the rewrite path (t ~ 0.03 with mmarco).
+- Review with eequaled: `api/chat.py`, `main.py`, `config.py`, `llm/client.py`, `llm/quota.py`.
+- Snippet choice: 7 of 9 cases B lost were right answers whose cited snippet missed the evidence.
+
 ## 2026-10-13 evening (leaks, link noise, prompt rules)
 
 ### Shipped

@@ -25,7 +25,7 @@ class FakeRetrieval:
     calls: int = 0
     roles: list[Role] = field(default_factory=list)
 
-    async def retrieve(self, query: str, role: Role, history: object) -> Retrieval:
+    async def retrieve(self, query: str, role: Role, history: object, rewrite=None) -> Retrieval:
         self.calls += 1
         self.roles.append(role)
         return self.result

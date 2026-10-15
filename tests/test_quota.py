@@ -88,3 +88,12 @@ def test_breaker_success_resets_consecutive_failures() -> None:
     breaker.record_failure()
 
     assert breaker.allow() is True
+
+
+def test_acquire_keep_leaves_slots_for_the_answer(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=3, reserve=0, clock=clock)
+    assert quota.acquire(keep=1)
+    assert not quota.acquire(keep=2)  # 1 used, 2 left: taking one would leave 1 < 2
+    assert quota.acquire(keep=1)
+    assert not quota.acquire(keep=1)
+    assert quota.acquire()

@@ -267,3 +267,26 @@ async def test_expired_documents_are_not_retrieved(pipe, tmp_path):
     assert future.doc_id in {
         c.doc_id for c in await run(pipe, searcher(pipe), "cotisation", "member")
     }
+
+
+async def test_extra_dense_arms_filter_by_language(pipe, tmp_path, monkeypatch):
+    other = await _cross_lingual_corpus(pipe, tmp_path)
+    seen = {}
+    original = pipe.client.query_points
+
+    async def spy(*args, **kwargs):
+        seen.update(kwargs)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(pipe.client, "query_points", spy)
+    search = searcher(pipe, top_k=6, prefetch_limit=6, dense_weight=2.0)
+    dense, sparse = pipe.dense.embed_query("cotisation"), pipe.sparse.embed_query("cotisation")
+    extra = [(pipe.dense.embed_query("annual fee"), "en"), (dense, None)]
+    found = await search.search(dense, sparse, "public", extra_dense=extra)
+    assert other.doc_id in {c.doc_id for c in found}
+    assert {c.language for c in found if c.doc_id == other.doc_id} == {"en"}
+    arms = seen["prefetch"]
+    assert len(arms) == 4
+    assert arms[2].filter.must[1].match == qm.MatchValue(value="en")
+    assert arms[3].filter == arms[0].filter  # None: every language, same role filter
+    assert seen["query"].rrf.weights == [2.0, 1.0, 2.0, 2.0]
