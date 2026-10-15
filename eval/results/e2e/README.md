@@ -17,6 +17,9 @@ are local only so far. Chat results keep the answer text since `407807e` (I29).
 | `20261013T184620Z-prompt-old-12b` | 349 cases, ollama gemma4 12B, prompt before `8d04277` (A) | 260/349; false answers 9.4%, false refusals 6.6% |
 | `20261013T181541Z-prompt-new-12b` | same, first version of the I27/I28 prompt | 260/349; refused yes/no questions (`coc-08`, `fac-22`) |
 | `20261013T191937Z-prompt-new2-12b` | same, prompt `8d04277` (C): **latest** | 265/349; false answers 0%, false refusals 11.0%, evidence 80.7%, 29 language mismatches (I4, I6, I9, I23, I32) |
+| `20261015T105751Z-qr-A-typed` | quality, 349 cases, bge-m3 + bge reranker, no rewrite, ollama gemma4 12B + local judge | rule-correct 82% of answerable; darija retrieved 66%; p50 / p95 4.7 / 6.3 s |
+| `20261015T120400Z-qr-B-rewrite` | same + query rewrite (2 calls) | rule-correct 85%, retrieved 91% -> 98%, darija 54% -> 83% correct, false refusals 11% -> 4%; p95 9.3 s |
+| `20261015T121443Z-rb-A-typed`, `…123814Z-rb-B-rewrite` | robustness, test split (45 base cases, 140 variants), retrieval layer | evidence 85% -> 97%; typo variants lose the evidence 7/45 -> 1/45 |
 | `20261013T184844Z-replay-lost` | replay of the 10 answerable cases the first new prompt lost against A | 0/10 by design: used to read the refusals (`coc-08`, `fac-22` -> the yes/no rule) and find E6 (`cand-17`) |
 
 ## Retrieval-layer preview, 2026-10-11 (`preview-retrieval.json`)
