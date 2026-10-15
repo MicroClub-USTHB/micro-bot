@@ -107,6 +107,7 @@ class RerankerSpec:
     onnx_file: str
     onnx_sha256: str
     tokenizer_sha256: str
+    max_length: int | None = None  # model limit under RETRIEVAL_RERANK_MAX_LENGTH (BERT: 512)
 
     @property
     def slug(self) -> str:
@@ -140,6 +141,7 @@ MMARCO_RERANKER = RerankerSpec(
     onnx_file="onnx/model_quint8_avx2.onnx",
     onnx_sha256="6c2513767fb63d008a4377bef7a7a3555433d9436342bb53e35a3a72ffc52d4b",
     tokenizer_sha256="62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
+    max_length=512,
 )
 MINILM_RERANKER = RerankerSpec(
     repo="cross-encoder/ms-marco-MiniLM-L6-v2",  # English only, 22M
@@ -147,6 +149,7 @@ MINILM_RERANKER = RerankerSpec(
     onnx_file="onnx/model_quint8_avx2.onnx",
     onnx_sha256="c80a8b34256ea453093d612e3ac48d3d965a0c0a48c7906709af8b8e28461bf9",
     tokenizer_sha256="d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+    max_length=512,
 )
 
 # Keyed by the original model name (what config.py and .env use) and by the export's repo.

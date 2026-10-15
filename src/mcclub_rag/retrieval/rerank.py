@@ -63,6 +63,7 @@ class OnnxReranker:
     ) -> None:
         tokenizer_path = model_dir / "tokenizer.json"
         onnx_path = model_dir / spec.onnx_file
+        max_length = min(max_length, spec.max_length or max_length)  # 512-position models
         for path, expected in (
             (tokenizer_path, spec.tokenizer_sha256),
             (onnx_path, spec.onnx_sha256),
