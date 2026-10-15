@@ -176,10 +176,7 @@ call; it does not catch the remaining misses (they score high). Not turned on.
 - **LLM**: answers and rewrites come from a local gemma4 12B (`--llm ollama`), not
   `gemma-4-31b-it:free`, which was rate-limited upstream when tried. Calls are recorded by prompt
   hash (`eval/e2e/recordings/`, date masked) and replayed with `--mode replay` at no cost;
-  `--max-llm-calls` caps a run; answers produced after the cap are `not_run`, not scored.
-- **The judge is not reliable** with the local model: most of its "unfaithful" verdicts flag the
-  app's `[Title]` citations or facts outside the 500-character snippet. Report correctness by the
-  rule checks; read judge failures one by one.
+  `--max-llm-calls` caps a run; answers produced after the cap are `not_run`, not scored
 - **Timings**: dev machine, 4 threads, in-memory Qdrant, retrieval only in `bench_models`; e2e
   latency includes a local LLM. Production latency depends on the provider.
 - **Small groups**: noisy 4 base cases, followup 8, arabizi 22: one case moves arabizi by 4.5
@@ -215,43 +212,3 @@ Models: `scripts/download_models.py` (see AGENTS.md); A/B embedders sit in their
 - The production LLM end to end; the HTTP target and restart suite (Docker); `--suite all` after
   the latest reindex.
 - Check the labels of `dj-26`, `dj-27`.
-
-## Issue index
-
-Found by the e2e eval since 2026-10-11; details, evidence and the eval's own bugs (E1-E7) are
-in the local `results/e2e/ISSUES.md`. Code comments cite these ids.
-
-| # | Severity | Issue | Status |
-|---|---|---|---|
-| I1 | critical | The live app never calls the LLM | fixed `4deffe0` |
-| I2 | critical | Questions that must be refused get answered with pasted chunks | fixed `16fca02`, `b4156ef` |
-| I3 | critical | The fallback repeats injected instructions to users | fixed `16fca02` |
-| I4 | high | Answers come back in the document's language, not the question's | partly `60f7790`, `b93cd93` |
-| I5 | high | The gate refusal is always in English | fixed `60f7790` |
-| I6 | medium | The cited snippets often do not show the evidence | partly `16fca02`; cause found 2026-10-15 (snippet matched on the question's words) |
-| I7 | high | Small input noise flips the decision | fixed by the query rewrite (typo misses 7/45 -> 1/45) |
-| I8 | high | The gate score cannot separate answerable from unanswerable | fixed `b4156ef` (relevance floor); with the rewrite AUC 0.93 |
-| I9 | high | Same-language distractors beat the right cross-lingual document | fixed by the query rewrite (cross-lingual hit@5 0.81 -> 0.98) |
-| I10 | medium | A short new question is glued to the previous turn | fixed `5ae4008` |
-| I11 | medium | Injection text is pulled in by attack-style questions | partly `cb0e506` |
-| I12 | medium | Follow-ups in another language fail | fixed `5ae4008`, `60f7790` |
-| I13 | high | A photographed page loses whole paragraphs silently | fixed `faff80a` |
-| I14 | medium | `expires_at` is accepted and dropped | fixed `b7707ae`, `2bb84ad` |
-| I15 | medium | Upload has no title, and PDF titles are bad | partly `90767fc` |
-| I16 | medium | A share-bar-only page passes the empty-document check | fixed `db446b7` |
-| I17 | low | Deleting twice says 200 `{"ok": false}`, not 404 | accepted (frozen API) |
-| I18 | low | An empty or whitespace-only message is accepted | fixed `60f7790` |
-| I19 | medium | Throughput is one rerank at a time | accepted `607db82`; mmarco reranks 2.7x faster |
-| I20 | low | Auth reads the global settings, not the app's | fixed `3d55fdb` |
-| I21 | low | `config.py` defaults disagree with the measured retrieval defaults | fixed `1378526` |
-| I22 | high | Citations in other formats make answers ungrounded | fixed `16fca02` |
-| I23 | high | The LLM says it does not know although the evidence was retrieved | partly `b93cd93` (11 refusals left, 7 of them with the evidence retrieved) |
-| I24 | medium | Cited snippets rarely show the evidence once the LLM answers | partly `16fca02`; same cause as I6 |
-| I25 | critical | Refusals come back grounded | fixed `f38dd84` |
-| I26 | critical | The system prompt and raw passages leak | fixed `08d38b3` |
-| I27 | high | Example data read as facts | fixed `8d04277` |
-| I28 | medium | Partial refusals without `NOT_FOUND` | fixed `8d04277` |
-| I29 | medium | The scorecard mixes layers | fixed 2026-10-15 (answer rates from the chat layer only) |
-| I30 | high | Inline link URLs drown Wikipedia chunks | fixed `ddfaa8a` |
-| I31 | medium | The eval corpus predates the share-bar fix | fixed 2026-10-13 |
-| I32 | low | Answer language for arabizi | accepted `19ebb9e` |
