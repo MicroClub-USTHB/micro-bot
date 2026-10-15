@@ -91,7 +91,8 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
 - **LLM:** `google/gemma-4-31b-it:free` via the `openai` SDK, base_url
-  `https://openrouter.ai/api/v1`. **At most 1 LLM call per question** (50 requests/day budget).
+  `https://openrouter.ai/api/v1`. **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
+  (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). Visibility filter (`public` / `members`) goes **inside the query**.
 - **Embedder (default since 2026-10-13):** `BAAI/bge-m3` from `onnx-community/bge-m3-ONNX`
@@ -241,7 +242,14 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
 - **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history **and a
   follow-up cue** (`has_followup_cue`: leading and/et/و, pronoun or demonstrative, bare question
   word; not هو/هي, "ce", "en", "there") is searched as previous `user_message` + message; a short
-  new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. No LLM rewrite.
+  new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. With a query
+  rewrite the LLM makes the question standalone; these rules remain the fallback.
+- **Query rewrite** (`specs/query-rewrite/`): the chat route makes one LLM call first (JSON:
+  `lang`, standalone `query`, `fr` / `en` / `ar` translations) and passes it as
+  `retrieve(..., rewrite=)`. It only *adds* dense arms (each translation over its own language's
+  chunks) and picks the reranker query per chunk language; the typed query keeps its arms, so a
+  failed or bad rewrite falls back to the old path. Cached in memory; `REWRITE_TIMEOUT_S`;
+  `LLM_DISABLE_REASONING=true` for reasoning models (nemotron: 20 s -> 2-3 s).
 - **Query normalization** (`normalize_query`, before the encoder and reranker): repeated
   punctuation always collapsed; `RETRIEVAL_QUERY_FIX_CASE`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
   on (`eval.bench_robust`: noise flips 9.6% -> 6.6%, clean questions unchanged).

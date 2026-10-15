@@ -70,7 +70,7 @@ tests/          one test module per source module, plus contract, access and wir
 
 ## Key decisions
 
-- No framework: 1 LLM call per question, every call explicit.
+- No framework: at most 2 LLM calls per question (query rewrite + answer), every call explicit.
 - Qdrant hybrid search (dense + BM25 sparse), visibility filter inside the query.
 - bge-m3 embedder + bge-reranker-v2-m3 on the top 10 candidates, chosen on 128 eval questions
   (48 darija/arabizi) against granite, harrier-270m and gte: hit@5 0.793 -> 0.847, darija
