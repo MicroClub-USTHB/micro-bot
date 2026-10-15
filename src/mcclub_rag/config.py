@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     retrieve_top_k: int = Field(default=20, gt=0)
     rerank_top_n: int = Field(default=5, gt=0)
     gate_threshold: float | None = None
-    max_message_chars: int = Field(default=2000, gt=0)
     chat_rate_limit_requests: int = Field(default=20, gt=0)
     chat_rate_limit_window_s: int = Field(default=60, gt=0)
     log_level: str = "INFO"

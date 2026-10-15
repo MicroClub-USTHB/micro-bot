@@ -123,10 +123,6 @@ class OpenRouterClient:
         )
 
     @staticmethod
-    def _is_provider_5xx(exc: Exception) -> bool:
-        return 500 <= _status_code(exc) <= 599
-
-    @staticmethod
     def _error_kind(exc: Exception) -> str:
         status_code = _status_code(exc)
         if status_code == 429:
