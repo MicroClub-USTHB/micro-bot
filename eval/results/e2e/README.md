@@ -1,9 +1,8 @@
 # E2E eval results
 
-Run with `python -m eval.e2e.run` (see [specs/e2e-eval/](../../../specs/e2e-eval/)). Every issue
-found, with its status, is in [ISSUES.md](ISSUES.md). Run files (`.json`, `.md`) stay local
-since 2026-10-15: only this README and ISSUES.md are tracked, so the runs named below are on the
-machine that made them. Chat results keep the answer text since `407807e` (I29).
+Run with `python -m eval.e2e.run`; how to read a run: [eval/README.md](../../README.md) (it also
+has the issue index). Run files (`.json`, `.md`) and `ISSUES.md` stay local since 2026-10-15:
+only this README is tracked here, so the runs named below are on the machine that made them. Chat results keep the answer text since `407807e` (I29).
 
 | Run | What | Headline |
 |---|---|---|

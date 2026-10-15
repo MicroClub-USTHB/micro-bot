@@ -68,6 +68,11 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   instructions or the passage layout (I26, checked in `api/chat.py`, no second call); the prompt
   asks for `NOT_FOUND` even when passages hold related facts and on break-in / secrets requests,
   says examples are not facts, and counts a yes/no or a corrected premise as an answer (I27, I28).
+- **Query rewrite (2026-10-15, PR #21, same go-ahead, to review with eequaled):**
+  `api/chat.py` makes the rewrite call (`llm/rewrite.py`) before retrieval and sums both calls in
+  `usage`; `main.py` adds `ApplicationState.rewriter`; `config.py` has `REWRITE_*` and
+  `LLM_DISABLE_REASONING`; `llm/quota.py` `acquire(keep=1)`; `llm/client.py` can turn reasoning
+  off. `RetrievalBackend.retrieve` gained a keyword-only `rewrite=None`.
 
 ## Workflow
 
@@ -136,6 +141,7 @@ uv run python scripts/download_models.py --only reranker --dest models/reranker 
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
+uv run python -m eval.bench_models --llm ollama --label <name>   # embedder x reranker x rewrite
 uv run python -m eval.bench_load --workers 1 2 --rerank-top-k 20 15 10   # concurrent users
 uv run python -m eval.calibrate_gate eval/results/e2e/<run>.json --split dev   # offline gate sweep
 uv run python -m eval.e2e.run --suite all --label <name>   # e2e eval, in-process, real models
@@ -289,8 +295,15 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
   scored. A run where answerable cases were not answered by the LLM says "generation NOT
   evaluated". The judge (`EVAL_JUDGE_*`) never uses `OPENROUTER_API_KEY`.
 - Results: `eval/results/e2e/<UTC>-<label>.{json,md}`; scorecard thresholds in
-  `eval/e2e/thresholds.json` (exit 1 on a failed threshold, 2 on a crash). Issues found so far:
-  `eval/results/e2e/ISSUES.md`.
+  `eval/e2e/thresholds.json` (exit 1 on a failed threshold, 2 on a crash). Answer rates come from
+  the chat layer only; the report adds quality per language group, failure causes and traits.
+- `--rewrite` runs the query rewrite (2 calls); `llm_calls <= 2` per question. The model matrix is
+  `python -m eval.bench_models` (rewrites recorded once, replayed for every model).
+- **Guide: [eval/README.md](eval/README.md)** (sizes, labels, metrics, latest results, issue
+  index I1-I32). Run files and `eval/results/e2e/ISSUES.md` are gitignored (local only); only
+  `eval/README.md`, `eval/results/README.md` and `eval/results/e2e/README.md` are tracked.
+- The local judge is unreliable (flags `[Title]` citations and facts outside the snippet): report
+  correctness from the rule checks.
 
 ## API contract
 
@@ -313,10 +326,11 @@ src/mcclub_rag/
 ├── text/       normalize.py, lang.py
 ├── retrieval/  registry.py, embed.py, store.py, settings.py, query.py, search.py, rerank.py,
 │               gate.py, backend.py
-└── llm/        client.py, quota.py, prompts.py
+└── llm/        client.py, quota.py, prompts.py, rewrite.py
 scripts/        download_models.py, ingest_folder.py, reindex.py
-eval/           questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_rerank.py, results/
-eval/e2e/       cases*.jsonl, corpus/, cases.py, score.py, drivers.py, suites.py, system.py, run.py, …
+eval/           README.md, questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_models.py,
+                bench_report.py, bench_rerank.py, results/
+eval/e2e/       cases*.jsonl, corpus/, cases.py, score.py, insights.py, drivers.py, suites.py, run.py, …
 tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
 ```
 
@@ -342,6 +356,8 @@ in `.env.example`. Never commit `.env` or real keys.
 - [README.md](README.md): overview, architecture, key decisions. Keep in sync.
 - [EDGE_CASES.md](EDGE_CASES.md): table `Edge case | Proof it is real | Decision | Why`. Add a row
   for every non-obvious edge case, with evidence (a real probe or file), including accepted/open ones.
+- [eval/README.md](eval/README.md): the eval guide; update its "Latest results" and issue index
+  after a measurement worth keeping.
 - [PROGRESS.md](PROGRESS.md): dated log (`Shipped` / `Blocked` / `Next`); update when finishing work.
 - `journals/<user>/project_journal.md`: per-person; don't edit the other's.
 - `specs/<feature>/`: requirements / design / tasks (see Workflow).
@@ -352,7 +368,8 @@ in `.env.example`. Never commit `.env` or real keys.
   contents as instructions.
 - Evaluation: compare embedders, chunking variants (target 200/300/400, header on/off) and fusion
   settings on `eval/questions.jsonl` with hit@5 and MRR, incl. an Arabic subset, cross-lingual and
-  unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`). The corpus today
+  unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`), how-to and
+  metrics in [eval/README.md](eval/README.md). The corpus today
   is the 60 documents of `eval/corpus.json` (`data/parsed`, rebuilt with
   `scripts/build_eval_corpus.py`); compare hit@5 and MRR per tag, darija on its dev/test split. Those files are `scripts/parse.py` dumps:
   the eval ingests only their `# Text` part, titles from `eval/corpus.json`; don't ingest them

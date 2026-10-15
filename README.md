@@ -31,12 +31,12 @@ not reranker"` (no model files needed), `uv run ruff check . && uv run ruff form
 
 Working end to end on the real models and a real Qdrant: ingestion (PDF, images with OCR, text,
 web), hybrid retrieval with reranking, the refusal gate, role-based visibility, exact-match cache,
-rate limiting and the daily LLM quota. Known limits, tracked in [PROGRESS.md](PROGRESS.md) and
-[EDGE_CASES.md](EDGE_CASES.md) and [eval/results/e2e/ISSUES.md](eval/results/e2e/ISSUES.md):
+rate limiting, the daily LLM quota and a query rewrite (second LLM call). Known limits, tracked in
+[PROGRESS.md](PROGRESS.md), [EDGE_CASES.md](EDGE_CASES.md) and [eval/README.md](eval/README.md):
 answers were evaluated with a local gemma4 12B, not yet with the production model (349 cases,
-2026-10-13: 265 pass, 0% false answers, 11% false refusals, mostly cross-lingual and darija
-retrieval misses); cited snippets show the evidence 81% of the time (target 90%); arabizi
-questions are answered in French or English.
+2026-10-15: retrieval hit@5 0.97, 85% of answerable questions pass every rule check, 4% false
+refusals, 3% false answers); cited snippets show the evidence 87% of the time (target 90%: the
+snippet is picked by the question's words); arabizi questions are answered in French or English.
 
 ## Architecture
 
@@ -117,8 +117,8 @@ edge-case slices (cross-lingual, Darija, Arabizi, OCR, tables, near-duplicates, 
 follow-ups, access, prompt injection in questions, documents and history, system-prompt leaks,
 PII, harmful requests), plus perturbation, API contract, fault, cache, ingest and load suites.
 Scoring is rule-based (canary and marker strings for leaks), with an optional LLM judge. See
-[specs/e2e-eval/](specs/e2e-eval/) and the issue list in
-[eval/results/e2e/ISSUES.md](eval/results/e2e/ISSUES.md).
+[specs/e2e-eval/](specs/e2e-eval/) and the eval guide [eval/README.md](eval/README.md) (test
+types and sizes, labels, metrics, latest results, issue index).
 
 ## Edge cases
 
