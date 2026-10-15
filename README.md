@@ -1,41 +1,89 @@
-# mcclub-rag
+<p align="center">
+  <b>MC Club RAG</b><br>
+  <sub>A grounded assistant for MC Club: upload the club's documents, ask in Arabic, French,
+  darija or English, get an answer with its sources — or an honest "not in the corpus".</sub>
+</p>
 
-RAG chatbot for the MC Club RAG Chatbot Challenge. Upload documents (files or web pages, Arabic /
-French / English, scans included), ask questions in any of the three languages, and get a
-**grounded answer with sources**. Member-only documents stay hidden from public callers.
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white" alt="Python 3.12">
+  <img src="https://img.shields.io/badge/docker-compose%20up-2496ED?logo=docker&logoColor=white" alt="Docker Compose">
+  <img src="https://github.com/nisbenz/MC-RAG/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://img.shields.io/badge/LLM-gemma--4--31b--it%20(free)-8A2BE2" alt="gemma-4-31b-it free">
+  <img src="https://img.shields.io/badge/runtime-offline%20(HF_HUB_OFFLINE%3D1)-green" alt="Offline at runtime">
+</p>
 
-Plain Python (FastAPI, Qdrant, ONNX models on CPU). Runs offline in a container; the only outbound traffic is the
-explicit URL fetch and the OpenRouter LLM calls (at most 2 per question).
+<p align="center"><sub>FastAPI + Qdrant + ONNX on CPU. Two containers, one command, no paid API.</sub></p>
 
-Version **0.1.0**.
+---
 
-## Contents
+## Quick Start
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [How it works](#how-it-works)
-- [Quickstart](#quickstart)
-- [Configuration](#configuration)
-- [API](#api)
-- [Development](#development)
-- [Evaluation](#evaluation)
-- [Key decisions](#key-decisions)
-- [Repository layout](#repository-layout)
-- [More docs](#more-docs)
+```bash
+cp .env.example .env     # set OPENROUTER_API_KEY, MEMBER_TOKEN, ADMIN_API_KEY
+docker compose up -d --build
+```
 
-## Features
+That's it. The image build downloads every model (bge-m3, the mmarco reranker, BM25 stopwords,
+Tesseract `ara`/`fra`/`eng`), checks each file against a pinned sha256, and the API answers on
+`localhost:8000`.
 
-- **Multilingual**: Arabic, French, English, often mixed in one document or question; also darija
-  and arabizi.
-- **Ingestion**: PDF, images (OCR with Tesseract `ara`/`fra`/`eng`), text/Markdown, and web pages.
-- **Hybrid retrieval**: dense (bge-m3) + BM25 sparse, fused in Qdrant, then a cross-encoder rerank.
-- **Grounded answers**: citations rewritten as document titles, snippets from the cited chunk,
-  and a refusal when the corpus does not hold the answer.
-- **Access control**: `public` and `members` visibility, enforced inside the vector query.
-- **Safeguards**: SSRF guard on URL fetch, prompt-injection and prompt-leak checks, rate limiting,
-  a daily LLM quota with a circuit breaker, and an extractive fallback when the LLM is unavailable.
+Ask something:
 
-## Architecture
+```bash
+curl -s localhost:8000/api/v1/chat -H 'content-type: application/json' \
+  -d '{"message":"Quelle est la cotisation ?"}'
+```
+
+Feed it documents (any admin key works for a demo):
+
+```bash
+curl -s localhost:8000/api/v1/documents -H "X-Admin-Key: $ADMIN_API_KEY" \
+  -F file=@bylaws.pdf -F visibility=public
+```
+
+**You need:**
+- **Docker with Compose.** Nothing else — no Python, no GPU. Models run on CPU inside the image.
+- **An [OpenRouter](https://openrouter.ai) API key** (optional). With a key, answers are written by
+  `google/gemma-4-31b-it:free`. Without one the app still answers: it returns the retrieved passages
+  with a localized notice instead of calling out.
+- **Nothing else.** No paid API, no cloud vector store, no outbound traffic at runtime except the
+  LLM call and an explicit URL fetch (`HF_HUB_OFFLINE=1`).
+
+---
+
+## See it work
+
+<p align="center">
+  <i>a question in darija, typed the way people actually type</i><br>
+  <img src="./screenshots/chat-request.png" alt="Chat request with a darija question" width="700">
+</p>
+
+<p align="center">
+  <i>the answer, the document it came from, and what it cost: one LLM call</i><br>
+  <img src="./screenshots/chat-response.png" alt="Chat response with a cited answer, sources and usage" width="700">
+</p>
+
+Citations are rewritten by the app, not the model: the LLM only says `[S1]`, and the response
+carries `[Faculté d'informatique : organisation]` with a snippet from the chunk that was actually
+cited. A refusal is `grounded: false` with no sources.
+
+---
+
+## Why this exists
+
+MC Club's knowledge lives in PDFs, scans, Markdown and web pages, in three languages, and half of
+it is members-only. The brief asks for a chatbot that is accurate, cites its sources, and says "I
+don't know" instead of inventing — evaluated by a hidden test suite, on a free OpenRouter model
+with **50 requests per day**, and judged on whether every component earns its place.
+
+So: no framework, no agent loop, no hidden state between questions. One rewrite call and one answer
+call per question, hybrid retrieval with a cross-encoder rerank on CPU, a visibility filter inside
+the vector query, and refusals left to the model. Every number below was measured on the eval sets
+in `eval/`, and the reasoning for each choice is in [EDGE_CASES.md](EDGE_CASES.md).
+
+---
+
+## How it works
 
 ```mermaid
 flowchart LR
@@ -44,10 +92,10 @@ flowchart LR
     subgraph compose[docker compose]
         subgraph app[app container - FastAPI :8000]
             api[API routes<br/>chat, documents,<br/>feedback, health]
-            ingest[Ingest pipeline<br/>parse, OCR, chunk, embed]
-            retr[Hybrid retriever<br/>search, rerank, gate]
-            ans[Answer layer<br/>prompt, citations,<br/>quota, rate limit]
-            models[(ONNX models on CPU<br/>bge-m3, mmarco reranker,<br/>BM25 files, tessdata)]
+            ingest[Ingest pipeline<br/>sniff, parse, OCR,<br/>chunk, embed]
+            retr[Hybrid retriever<br/>dense + BM25,<br/>rerank, gate]
+            ans[Answer layer<br/>rewrite, prompt,<br/>citations, quota]
+            models[(ONNX models on CPU<br/>bge-m3 · mmarco<br/>BM25 · tessdata)]
             docs[(DATA_DIR<br/>parsed documents JSON)]
         end
         qdrant[(Qdrant<br/>dense + sparse vectors)]
@@ -69,60 +117,7 @@ flowchart LR
     ingest -.-> web
 ```
 
-Two containers: `app` (the API plus all models, loaded once at startup) and `qdrant` (persistent
-volume). Models are downloaded and sha256-verified at image build time; at runtime
-`HF_HUB_OFFLINE=1`.
-
-### Module map
-
-```mermaid
-flowchart TB
-    main[main.py<br/>app + lifespan + wiring] --> api
-    subgraph api[api/]
-        chat[chat.py]
-        documents[documents.py]
-        feedback[feedback.py]
-        health[health.py]
-    end
-    chat --> llm[llm/<br/>client, rewrite,<br/>prompts, quota]
-    chat --> answerpy[answer.py<br/>citations, fallback,<br/>leak check]
-    chat --> backend[retrieval/backend.py<br/>HybridRetriever]
-    documents --> pipeline[ingest/pipeline.py]
-    pipeline --> pre[ingest/preprocess.py<br/>sniff, parse, OCR, web]
-    pipeline --> chunk[ingest/chunk.py]
-    pipeline --> embed[retrieval/embed.py<br/>dense + BM25]
-    pipeline --> store[retrieval/store.py<br/>Qdrant]
-    backend --> search[search.py + rerank.py + gate.py]
-    search --> store
-    pre --> text[text/<br/>normalize, lang, sentences]
-```
-
-## How it works
-
-### Ingestion
-
-```mermaid
-flowchart LR
-    in[/File upload or URL/] --> sniff[Sniff type<br/>magic bytes]
-    sniff --> ext[Extract<br/>xberg / text / trafilatura<br/>OCR only pages without text]
-    ext --> norm[Normalize<br/>NFC, strip controls,<br/>detect language]
-    norm --> dup{Same topic and<br/>same sha256?}
-    dup -- yes --> dupres[duplicate]
-    dup -- no --> chunk[Chunk<br/>headings, paragraphs,<br/>sentences; ~300 tokens]
-    chunk --> enc[Encode<br/>bge-m3 dense +<br/>BM25 sparse]
-    enc --> up[Upsert to Qdrant<br/>index-0 point last]
-    up --> res[created / updated / replaced]
-```
-
-- `doc_id = uuid5(topic)`; topic defaults to the filename stem or the final URL. Same content is
-  `duplicate`, a new visibility is `updated`, new content is `replaced` (new points written first,
-  old ones deleted after).
-- The index-0 point of each version is written last, so listings and `corpus_version()` only see
-  complete documents.
-- Parsed documents are kept as JSON in `DATA_DIR/documents`; a model or chunking change rebuilds a
-  new collection from them (no re-parsing) and swaps the `QDRANT_COLLECTION` alias atomically.
-
-### Answering a question
+### Asking a question — at most 2 LLM calls
 
 ```mermaid
 sequenceDiagram
@@ -134,191 +129,200 @@ sequenceDiagram
 
     C->>A: message (+ token, conversation_id)
     A->>A: rate limit, role, language
-    A->>L: call 1: rewrite (standalone query + fr/en/ar translations)
-    L-->>A: JSON (skipped on timeout or low quota)
+    A->>L: call 1 — rewrite (standalone query + fr/en/ar)
+    L-->>A: JSON (skipped on timeout, or when it would take the answer's last quota slot)
     A->>R: retrieve(query, role, history, rewrite)
-    R->>Q: dense arms + BM25 arm, RRF fusion, visibility filter
+    R->>Q: dense arms + BM25, RRF fusion, visibility filter inside the query
     Q-->>R: candidates
-    R->>R: dedupe, rerank top 10 (cross-encoder), keep top 5
+    R->>R: dedupe, rerank top 10, keep top 5
     R-->>A: chunks + decision (answer / refuse)
-    alt decision is refuse, or quota spent, or LLM down
-        A-->>C: localized notice (fallback shows passages as sources)
+    alt refuse, quota spent, or LLM down
+        A-->>C: localized notice, passages as sources
     else answer
-        A->>L: call 2: answer from the passages
+        A->>L: call 2 — answer from the passages
         L-->>A: text with [S1] citations, or NOT_FOUND
         A->>A: leak check, citations to [Title], snippets
         A-->>C: answer, sources, grounded, usage, latency_ms
     end
 ```
 
-Key behaviours:
+- **Cost is the hard constraint.** The rewrite is skipped rather than steal the answer's last quota
+  slot, so a question costs **1 or 2 calls**; `usage` sums both. With no key, a spent quota or a
+  provider error, the answer costs **0 calls** and comes back as an extractive fallback.
+- **Visibility is a filter inside every Qdrant prefetch**, never a post-filter. `public` sees
+  `public`; `member` (bearer token) sees both.
+- **Refusals are the model's job**: it starts the reply with `NOT_FOUND`, the app then returns
+  `grounded: false`, no sources, in the question's language.
 
-- **At most 2 LLM calls per question**: the query rewrite (skipped when it would take the answer's
-  last quota slot) and the answer. No answer cache: identical questions are answered again.
-- **Visibility** is a filter inside every Qdrant prefetch and the fused query, never applied after
-  the fact. Roles: `public` sees `public`; `member` sees both.
-- **Refusals**: the model starts with `NOT_FOUND` when the passages don't answer; the reply is then
-  `grounded=false` with no sources, in the question's language.
-- **Without an LLM** (no key, quota spent, provider error, breaker open) the answer is a notice in
-  the user's language with the best passages as sources.
+### Ingestion
+
+```mermaid
+flowchart LR
+    in[/File upload or URL/] --> sniff[Sniff type<br/>magic bytes]
+    sniff --> ext[Extract<br/>xberg / text / trafilatura<br/>OCR only pages without a text layer]
+    ext --> norm[Normalize<br/>NFC, strip controls,<br/>detect language]
+    norm --> dup{Same topic and<br/>same sha256?}
+    dup -- yes --> dupres[duplicate]
+    dup -- no --> chunk[Chunk<br/>headings, paragraphs,<br/>sentences; ~300 tokens]
+    chunk --> enc[Encode<br/>bge-m3 dense + BM25 sparse]
+    enc --> up[Upsert to Qdrant<br/>marker point written last]
+    up --> res[created / updated / replaced]
+```
+
+- `doc_id = uuid5(topic)`; the topic defaults to the filename stem or the final URL. Same content is
+  `duplicate`, a new visibility is `updated`, new content is `replaced`.
+- The marker point (index 0) is written **last**, so listings and `corpus_version()` only ever see
+  complete documents.
+- Parsed documents are kept as JSON in `DATA_DIR/documents`, so a model or chunking change rebuilds
+  a new collection from them (no re-parsing, no re-OCR) and swaps the `QDRANT_COLLECTION` alias
+  atomically.
 
 ### Access control
 
 ```mermaid
 flowchart LR
     req[Request] --> h{Header}
-    h -- "Authorization: Bearer MEMBER_TOKEN" --> member[role = member<br/>sees public + members]
-    h -- "no header" --> pub[role = public<br/>sees public only]
+    h -- "Authorization: Bearer MEMBER_TOKEN" --> member[role = member<br/>public + members]
+    h -- "no header" --> pub[role = public<br/>public only]
     h -- "wrong token" --> bad[401 JSON error]
     req --> adm{X-Admin-Key}
     adm -- "matches ADMIN_API_KEY" --> admin[documents: upload, list, delete]
     adm -- otherwise --> deny[403 JSON error]
 ```
 
-## Quickstart
+---
 
-Requirements: Docker with Compose, an [OpenRouter](https://openrouter.ai) API key (optional: without
-it the app answers with the fallback notice).
+## Results
 
-```bash
-cp .env.example .env   # set OPENROUTER_API_KEY, MEMBER_TOKEN, ADMIN_API_KEY
-docker compose up -d --build   # downloads and sha256-checks the models at build time
-```
+Measured on the checked-in eval sets (68 documents, 969 chunks; 128 labelled questions; 349
+end-to-end cases across 42 slices). Full methodology and every run in
+[eval/README.md](eval/README.md) and [eval/results/README.md](eval/results/README.md).
 
-The API listens on port 8000. Upload a document, then ask a question:
+### Retrieval — `hit@5`, 2026-10-15
 
-```bash
-curl -H "X-Admin-Key: $ADMIN_API_KEY" -F file=@bylaws.pdf -F visibility=public \
-  localhost:8000/api/v1/documents
-```
+| Stack | all | fr | en | ar | darija | arabizi | cross-lingual | p50 / p95 |
+|---|---|---|---|---|---|---|---|---|
+| bge-m3 + mmarco, **with rewrite** (default) | **0.971** | 0.946 | 0.973 | 0.98 | **1.0** | 0.955 | **0.981** | 652 / 823 ms |
+| bge-m3 + mmarco, typed question | 0.898 | 0.929 | 0.973 | 0.90 | 0.657 | 0.818 | 0.808 | 533 / 663 ms |
+| bge-m3 + bge-reranker (571 MB), with rewrite | 0.974 | 0.964 | 0.973 | 0.98 | 1.0 | 0.955 | 0.981 | 1748 / 2286 ms |
 
-```bash
-curl -H 'content-type: application/json' -d '{"message":"Quelle est la cotisation ?"}' \
-  localhost:8000/api/v1/chat
-```
+The rewrite is what makes darija, arabizi and cross-lingual work: same models, same index,
+0.971 → 0.898 without it. The 119 MB reranker gives up 0.003 hit@5 against the 571 MB one and runs
+2.7x faster.
 
-Bulk-load a folder (needs Qdrant reachable):
+### Answers — end-to-end, 2026-10-15 (349 cases)
 
-```bash
-uv run python scripts/ingest_folder.py <dir> --visibility public
-```
-
-Rebuild the index after changing the embedder or chunking:
-
-```bash
-uv run python scripts/reindex.py
-```
-
-## Configuration
-
-Environment variables via pydantic-settings; every variable is documented in
-[.env.example](.env.example). The main ones:
-
-| Variable | Purpose |
+| Metric | Result |
 |---|---|
-| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | LLM access (default `google/gemma-4-31b-it:free`) |
-| `MEMBER_TOKEN`, `ADMIN_API_KEY` | Bearer token for members, key for document admin |
-| `QDRANT_URL`, `QDRANT_COLLECTION` | Vector store endpoint and alias |
-| `EMBED_MODEL`, `EMBED_DIM`, `RERANK_MODEL` | Models (registry in `retrieval/registry.py`) |
-| `LLM_DAILY_LIMIT`, `LLM_RESERVE`, `LLM_TIMEOUT_S` | Daily quota and timeout |
-| `REWRITE_ENABLED`, `REWRITE_TIMEOUT_S` | Query rewrite call |
-| `RETRIEVE_TOP_K`, `RERANK_TOP_N`, `GATE_THRESHOLD` | Retrieval sizes and relevance floor (unset = open) |
-| `CHAT_RATE_LIMIT_REQUESTS`, `CHAT_RATE_LIMIT_WINDOW_S` | Per-IP chat rate limit |
-| `INGEST_*` | Parsing, OCR, size limits, web fetch, chunking |
-| `MODELS_DIR`, `DATA_DIR` | Model files and persistent app data |
+| Answerable cases passing every rule check | **85%** (fr 88 · en 85 · ar 90 · darija 83 · arabizi 73 · cross-lingual 80) |
+| Same, question typed as-is (no rewrite) | 82% (darija 54 · cross-lingual 69) |
+| Gold fact present in the answer | 94% (135/143) |
+| False refusals (said "don't know" when it knew) | **4%**, down from 11% |
+| False answers (answered when it should refuse) | **3%** |
+| Member-only content leaked to a public caller | **0** |
+| Prompt injections followed | **0** |
+| Answered at all | 96% of answerable questions |
+| Latency, chat end to end | p50 7.5 s / p95 9.3 s |
+
+Robustness: 1,145 generated variants (typos, noise, filler words, diacritics) — cases losing their
+evidence under typos went **7/45 → 1/45** with the rewrite, and query normalization cut the noise
+flip rate from 9.6% to 6.6% without touching clean questions.
+
+System suites: contract 22/22, faults 9/9 (timeout, 429, 5xx, empty, quota, index down, rerank
+failure), ingest 16/16.
+
+**How to read these numbers.** Answers in that run were generated by a local `gemma4 12B`, because
+OpenRouter was rate-limiting the free tier that day; correctness is scored by rule checks against
+verbatim evidence, not by the (unreliable) local judge. `eval/e2e/thresholds.json` turns the table
+into a pass/fail scorecard, and `python -m eval.e2e.compare a.json b.json` shows metric deltas
+between two runs.
+
+---
 
 ## API
 
 | Endpoint | Auth | Purpose |
 |---|---|---|
 | `POST /api/v1/chat` | none or member | Ask a question |
-| `GET /api/v1/health` | none | Readiness of the app and document store |
-| `POST /api/v1/documents` | admin | Upload a file or URL, with `visibility` |
-| `GET /api/v1/documents` | admin | List documents |
-| `DELETE /api/v1/documents/{doc_id}` | admin | Delete a document |
-| `POST /api/v1/feedback` | none or member | Rate an answer |
+| `GET /api/v1/health` | none | `{"status": "ok" \| "degraded", "documents": n}` |
+| `POST /api/v1/documents` | admin | Upload a file or URL with `visibility` (`public` / `members`), optional `topic`, `expires_at` |
+| `GET /api/v1/documents` | admin | List documents with status and visibility |
+| `DELETE /api/v1/documents/{doc_id}` | admin | Delete a document and its points |
+| `POST /api/v1/feedback` | none or member | `{conversation_id, rating: "up" \| "down", comment?}` |
 
 - Members send `Authorization: Bearer <MEMBER_TOKEN>`; admins send `X-Admin-Key: <ADMIN_API_KEY>`.
-- Chat response: `answer`, `conversation_id`, `grounded`, `sources[{doc_id, title, snippet}]`,
-  `usage{llm_calls, prompt_tokens, completion_tokens}`, `latency_ms` (integer). A `message`
-  longer than 2000 characters returns 422.
-- Errors are always JSON: `{"error": {"code": "...", "message": "..."}}`.
+- `POST /api/v1/chat` takes `{message, conversation_id?}`; `message` over 2000 characters returns
+  `422`. It answers with `answer`, `conversation_id`, `grounded`,
+  `sources[{doc_id, title, snippet}]`, `usage{llm_calls, prompt_tokens, completion_tokens}` and
+  `latency_ms`.
+- Every error is JSON: `{"error": {"code": "...", "message": "..."}}`. No stack traces, no HTML.
+
+---
+
+## Configuration
+
+Every variable is documented in [.env.example](.env.example). The ones that matter:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` | `google/gemma-4-31b-it:free` | LLM access; optional |
+| `MEMBER_TOKEN`, `ADMIN_API_KEY` | — | Bearer token for members, key for document admin |
+| `LLM_DAILY_LIMIT`, `LLM_RESERVE`, `LLM_TIMEOUT_S` | 50, 5, 25 | The free-tier budget, held in `DATA_DIR` |
+| `REWRITE_ENABLED`, `REWRITE_TIMEOUT_S` | true, 6 | The rewrite call; on timeout the question is searched as typed |
+| `RETRIEVE_TOP_K`, `RETRIEVAL_RERANK_TOP_K`, `RERANK_TOP_N` | 20, 10, 5 | Fusion size, candidates reranked, chunks kept |
+| `GATE_THRESHOLD` | unset | Relevance floor; unset = open, the LLM refuses unknowns |
+| `QDRANT_URL`, `QDRANT_COLLECTION` | `http://qdrant:6333`, `mcclub` | Vector store and collection alias |
+| `EMBED_MODEL`, `EMBED_DIM`, `RERANK_MODEL` | bge-m3, 1024, mmarco | Models, all sha256-pinned in `retrieval/registry.py` |
+| `INGEST_*` | see `.env.example` | Parsing, OCR, size limits, web fetch, chunking |
+
+---
+
+## Key decisions
+
+Every one of these was measured; the numbers are in `eval/results/`.
+
+| Decision | Why (measured) |
+|---|---|
+| No RAG framework, ≤ 2 LLM calls per question | The model is free but capped at 50 calls/day. Every extra call is a question we cannot answer. `max_retries=0`: no hidden retries spend quota. |
+| Query rewrite before retrieval | hit@5 0.898 → 0.971 overall, darija 0.657 → 1.0, cross-lingual 0.808 → 0.981, and typos stop losing evidence (7/45 → 1/45). |
+| bge-m3 int8 ONNX (1024 dims, 568 MB) via onnxruntime + tokenizers | No PyTorch. One sequence per `session.run`: padded int8 batches moved vectors by up to 0.012 and were slower. |
+| Chunk sizes stay in granite tokens | bge-m3's own tokenizer lost 5 of 111 eval questions. |
+| mmarco reranker (119 MB) on the top 10 | 0.971 vs 0.974 for the 571 MB bge, 2.7x faster. Reranking one pair per `session.run` too — padded batches moved int8 scores by up to 1.8 logits. |
+| Chunk target 300 / max 400 / min 80 tokens, with a `title > heading path` header | The header wins at every size tested (+0.039 / +0.025 / +0.037 MRR). |
+| Visibility filter inside the query, never after | Member-only content cannot be retrieved by an unauthenticated caller at all; 0 leaks across the access cases. |
+| Relevance gate left open | Answerable and unknown scores overlap; bge scores correct darija matches near 0.03. Refusing unknowns is the LLM's job, and it does it at 3% false answers. |
+| Index signature + alias swap | An embedder or chunking change builds a new collection and swaps atomically, so search never sees a half-built index. |
+
+---
 
 ## Development
 
 ```bash
 uv sync --locked
 uv run ruff check . && uv run ruff format --check .
-uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"   # no model files
+uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"   # 1,084 tests, no model files
 ```
 
-Tests that need real models (download them first):
+Tests that need the real models (download them once):
 
 ```bash
-uv run python scripts/download_models.py --only tessdata --dest models/tessdata
 uv run python scripts/download_models.py --only embedder --dest models/embedder   # bge-m3, 568 MB
-uv run python scripts/download_models.py --only bm25 --dest models/bm25
 uv run python scripts/download_models.py --only reranker --dest models/reranker   # mmarco, 119 MB
+uv run python scripts/download_models.py --only tessdata --dest models/tessdata
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 ```
 
-Workflow: spec-driven (`specs/<feature>/requirements.md`, `design.md`, `tasks.md`), test-first,
-feature branches into `dev`, `dev` into `main`, commits named by change and effect (`, so …`) with
-no prefixes. CI runs `uv lock --check`,
-ruff, the fast tests, and a models job that runs the model-backed tests. See
-[AGENTS.md](AGENTS.md) for the full rules.
-
-## Evaluation
-
-```mermaid
-flowchart LR
-    q[eval/questions.jsonl<br/>128 questions] --> r[run_eval<br/>retrieval: hit@5, MRR]
-    c[eval/e2e/cases*.jsonl<br/>349 cases, 42 slices] --> e[eval.e2e.run<br/>chat + documents API]
-    r --> res[eval/results/]
-    e --> res
-    b[bench_models, bench_rerank,<br/>bench_load, calibrate_gate] --> res
-```
-
-Retrieval eval (real models, in-memory Qdrant, about 2 minutes):
+Evaluation, with real models:
 
 ```bash
-uv run python -m eval.run_eval --label <name>
+uv run python -m eval.run_eval --label <name>              # retrieval: hit@5, MRR, ~2 min
+uv run python -m eval.e2e.run --suite all --label <name>   # end-to-end through the public API
 ```
 
-End-to-end eval (in-process, real models; `--target http` for a running app):
-
-```bash
-uv run python -m eval.e2e.run --suite all --label <name>
-```
-
-Latest (2026-10-15, 349 cases): retrieval hit@5 0.97, 85% of answerable questions pass every rule
-check, 4% false refusals, 3% false answers. Answers were judged with a local gemma4 12B, not yet
-the production model. Cited snippets show the evidence 87% of the time (target 90%); arabizi
-questions are answered in French or English. Details, metrics and the issue index are in
-[eval/README.md](eval/README.md) and [eval/results/README.md](eval/results/README.md).
-
-## Key decisions
-
-- **No framework**: at most 2 LLM calls per question, every call explicit (no hidden retries that
-  spend quota).
-- **Qdrant hybrid search** (dense + BM25), visibility filter inside the query.
-- **Embedder**: `BAAI/bge-m3` int8 ONNX (1024 dims), via onnxruntime + tokenizers, no PyTorch. One
-  sequence per `session.run`: padded batches moved int8 vectors.
-- **Reranker**: `mmarco-mMiniLMv2-L12` int8 (119 MB) on the top 10, paired with the query rewrite:
-  hit@5 0.971 vs 0.974 for the 571 MB bge reranker at 2.7x less rerank time.
-- **Chunking** ([spec](specs/chunking/)): headings first, then paragraphs, lines and sentences
-  (Arabic-aware), size last. Target 300 / max 400 / min 80 tokens, no overlap, and a
-  "title > heading path" header on the embedded and BM25 text.
-- **No answer cache** (removed 2026-10-15): the in-process exact-match cache was dropped after
-  the jury's Redis-or-remove call; the rewrite call keeps a small in-memory LRU.
-- **Parsing**: `xberg` (bundled Tesseract) for files, httpx + trafilatura for web pages, own
-  magic-byte sniffing, SSRF guard on every redirect hop.
-
-Specs for each area: [data-preprocessing](specs/data-preprocessing/), [chunking](specs/chunking/),
-[ingest-pipeline](specs/ingest-pipeline/), [retrieval](specs/retrieval/),
-[query-rewrite](specs/query-rewrite/), [e2e-eval](specs/e2e-eval/).
-
-## Repository layout
+Workflow: spec-driven (`specs/<feature>/{requirements,design,tasks}.md`), test-first, feature
+branches into `dev`, `dev` into `main`, commits named by change and effect (`, so …`) with no
+prefixes. CI runs `uv lock --check`, ruff, the fast tests, and a models job that downloads the
+sha256-pinned models and runs the model-backed tests. Full rules in [AGENTS.md](AGENTS.md).
 
 ```
 src/mcclub_rag/
@@ -330,15 +334,19 @@ src/mcclub_rag/
 ├── retrieval/  registry.py, embed.py, store.py, settings.py, query.py, search.py, rerank.py,
 │               gate.py, backend.py
 └── llm/        client.py, quota.py, prompts.py, rewrite.py
-scripts/        download_models.py, ingest_folder.py, reindex.py, build_eval_corpus.py
 eval/           questions.jsonl, corpus.json, run_eval.py, e2e/, results/
 specs/          requirements / design / tasks per feature
 tests/          one module per source module, plus contract, access and wiring tests
 ```
 
-## More docs
+## Docs
 
-- [AGENTS.md](AGENTS.md): rules and fixed decisions for contributors and coding agents
-- [PROGRESS.md](PROGRESS.md): dated log of what shipped, is blocked and is next
-- [EDGE_CASES.md](EDGE_CASES.md): non-obvious edge cases, with evidence and decisions
-- [eval/README.md](eval/README.md): evaluation guide
+| File | What is in it |
+|---|---|
+| [eval/README.md](eval/README.md) | The evaluation guide: sets, metrics, suites, latest results |
+| [eval/results/README.md](eval/results/README.md) | Every measurement, with the run that produced it |
+| [EDGE_CASES.md](EDGE_CASES.md) | 68 non-obvious edge cases, each with proof and a decision |
+| [PROGRESS.md](PROGRESS.md) | Dated log: what shipped, what is blocked, what is next |
+| [AGENTS.md](AGENTS.md) | Fixed decisions and the rules for contributors and coding agents |
+| [journals/](journals/) | One `project_journal.md` per team member |
+| [specs/](specs/) | Requirements, design and tasks for every feature area |

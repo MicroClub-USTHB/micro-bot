@@ -120,9 +120,7 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   stays an A/B entry via `RERANK_MODEL`. All pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
-- **Web pages:** httpx + trafilatura. **No answer cache** (removed 2026-10-15, jury decision): the
-  in-process exact-match cache was dropped; the rewrite call keeps its small LRU
-  (`REWRITE_CACHE_SIZE`).
+- **Web pages:** httpx + trafilatura.
 - **Offline:** no network except the explicit URL fetch (`HF_HUB_OFFLINE=1`).
 
 ## Dependency rules

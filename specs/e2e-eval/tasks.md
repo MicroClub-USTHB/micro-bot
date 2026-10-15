@@ -101,11 +101,11 @@ stay under 200 changed lines; split a task across commits if needed. No file of 
 - [x] 7.3 `contract` and `faults` (Req 7.1 table as data, expected vs observed).
   - Test: the faults suite passes on the inprocess driver with fakes (runs in CI).
   - _Requirements: 7.1, 7.2_
-- [x] 7.4 `cache` and `load` (C users, S seconds, percentiles, 429 count, RSS when local).
-  - _Requirements: 7.3, 7.4_
+- [x] 7.4 `load` (C users, S seconds, percentiles, 429 count, RSS when local).
+  - _Requirements: 7.3_
 - [ ] 7.5 `restart` behind `--allow-docker`. Manual run on compose. (Built; not run: Docker was
   down on the dev machine.)
-  - _Requirements: 7.5_
+  - _Requirements: 7.4_
 - [x] 7.6 `ingest` suite over the documents API (Req 12.3 sequence), both drivers.
   - _Requirements: 12.3_
 
