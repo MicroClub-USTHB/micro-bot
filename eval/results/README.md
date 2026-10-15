@@ -1,9 +1,53 @@
 # Eval results
 
-One compact JSON per run (`python -m eval.run_eval --label <name>`): settings, model fingerprints,
+Run files stay local (gitignored since 2026-10-15); this README keeps the numbers. One compact
+JSON per run (`python -m eval.run_eval --label <name>`): settings, model fingerprints,
 corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files of `data/parsed`
 (`eval/corpus.json`), 48 questions (36 answerable), until the sections below say otherwise. Dev
 machine, 4 threads.
+
+## 2026-10-15: query rewrite (2nd LLM call) and smaller models (`matrix/…-matrix-1`)
+
+338 e2e cases (274 answerable with evidence, 64 unanswerable), 68 documents, in-memory Qdrant,
+`python -m eval.bench_models`. Rewrites by local ollama gemma4 12B (recorded, the same for every
+model). hit@5 = an answer chunk with the evidence in the 5 chunks the LLM gets. Times are
+retrieval only (encode + search + rerank, 4 threads), no LLM.
+
+| Embedder + reranker | typed hit@5 | rewrite hit@5 | darija typed / rewrite | arabizi | cross-lingual | p50 / p95 ms (rewrite) |
+|---|---|---|---|---|---|---|
+| bge-m3 + bge-rr (current) | 0.909 | **0.974** | 0.657 / **1.0** | 0.909 / 0.955 | 0.808 / 0.981 | 1748 / 2286 |
+| bge-m3 + gte-rr | 0.901 | **0.974** | 0.686 / 1.0 | 0.864 / 0.955 | 0.798 / 0.981 | 1000 / 1271 |
+| **bge-m3 + mmarco-L12** (119 MB) | 0.898 | 0.971 | 0.657 / 1.0 | 0.818 / 0.955 | 0.808 / 0.981 | **652 / 823** |
+| granite-311m + bge-rr | 0.872 | 0.942 | 0.629 / 0.886 | 0.864 / 0.955 | 0.75 / 0.942 | 1628 / 2151 |
+| e5-small + mmarco-L12 | 0.788 | 0.938 | 0.343 / 0.914 | 0.636 / 0.909 | 0.529 / 0.913 | 474 / 605 |
+| granite-97m + mmarco-L12 | 0.828 | 0.934 | 0.486 / 0.80 | 0.636 / 1.0 | 0.692 / 0.913 | 481 / 625 |
+| bge-m3 + MiniLM-L6 (English only) | 0.799 | 0.861 | 0.514 / 0.829 | 0.773 / 0.818 | 0.558 / 0.846 | 551 / 710 |
+
+- **The rewrite is the big win**: +6.5 points for the current pair, darija 0.66 -> 1.0,
+  cross-lingual 0.81 -> 0.98, typos fixed (robustness: 7/45 typo variants lost the evidence,
+  now 1/45).
+- **The reranker can shrink, the embedder should not.** With the rewrite, mmarco-L12 (119 MB)
+  is within 0.3 points of the bge reranker at 2.7x less rerank time. Small embedders lose 3-4
+  points with the rewrite (darija 0.80-0.91) and much more when the rewrite fails and the typed
+  query is searched (e5-small typed darija 0.34), so bge-m3 stays.
+- **English-only does not work**: the corpus stays French and Arabic; MiniLM drops French to 0.75.
+- **Gate**: with the rewrite, a low top score now flags no-answer questions (AUC vs unanswerable
+  0.85 -> 0.93, bge-rr). At t = 0.05 (bge-rr) the gate keeps 98% of the good retrievals and
+  refuses 47% of the unanswerable ones without the answer call; typed, the same 98% budget
+  refused 14%. It does not catch the few remaining retrieval misses (they score high).
+- Ingest: e5-small 68 chunks/s, granite-97m 38, bge-m3 11.
+- Rewrite latency: local gemma 12B p50 2.6 s. OpenRouter: `gemma-4-31b-it:free` was rate-limited
+  upstream all day (429); nemotron (reasoning) took p50 19.5 s, 2-3 s with
+  `LLM_DISABLE_REASONING=true`.
+
+E2E answers (`e2e/…-qr-A-typed`, `…-qr-B-rewrite`, gemma 12B, rule checks: behaviour, gold,
+evidence cited, language): answerable correct 82% -> 85%; ar 86% -> 90%, darija 54% -> 83%,
+cross-lingual 69% -> 80%, arabizi 77% -> 73% (citation snippets), fr 89% -> 88%. Evidence
+retrieved 91% -> 98%; false refusals 11% -> 4%; 2 darija "unanswerable" cases now answered
+(`dj-26` corrects a premise, `dj-27` is answered by the synthetic hackathon doc: label to check).
+p50 / p95 latency 4.7 / 6.3 s -> 7.5 / 9.3 s with a local rewrite; the mmarco reranker gives back
+about 1.1 s. The local judge's "unfaithful" verdicts are mostly wrong (it flags the `[Title]`
+citations and facts outside the snippet), so correctness above excludes it.
 
 ## 2026-10-13: darija set, embedders and rerankers
 

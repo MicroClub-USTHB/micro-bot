@@ -63,6 +63,7 @@ class OnnxReranker:
     ) -> None:
         tokenizer_path = model_dir / "tokenizer.json"
         onnx_path = model_dir / spec.onnx_file
+        max_length = min(max_length, spec.max_length or max_length)  # 512-position models
         for path, expected in (
             (tokenizer_path, spec.tokenizer_sha256),
             (onnx_path, spec.onnx_sha256),
@@ -101,11 +102,13 @@ class OnnxReranker:
             return self._tokenizers[1].encode(query, text)
 
     def _logit(self, query: str, text: str) -> float:
-        ids = np.asarray([self._encode(query, text).ids], dtype=np.int64)
+        encoding = self._encode(query, text)
+        ids = np.asarray([encoding.ids], dtype=np.int64)
         feed = {
             "input_ids": ids,
             "attention_mask": np.ones_like(ids),
-            "token_type_ids": np.zeros_like(ids),
+            # 1 on the passage for BERT cross-encoders (MiniLM); XLM-R tokenizers give all 0
+            "token_type_ids": np.asarray([encoding.type_ids], dtype=np.int64),
         }
         try:
             out = self._session.run(None, {k: v for k, v in feed.items() if k in self._inputs})

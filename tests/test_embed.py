@@ -171,3 +171,15 @@ def test_inference_failure_becomes_embedding_error(embedder_dir):
     enc = OnnxDenseEncoder(_spec(embedder_dir), embedder_dir, session=session)
     with pytest.raises(EmbeddingError, match="RuntimeError"):
         enc.embed_documents(["le club"])
+
+
+def test_dense_mean_pooling_and_prefixes(embedder_dir):
+    session = FakeSession()
+    spec = _spec(embedder_dir, pooling="mean", query_prefix="le ", passage_prefix="bonjour ")
+    enc = OnnxDenseEncoder(spec, embedder_dir, session=session)
+    doc = enc.embed_documents(["club"])[0]
+    query = enc.embed_query("club")
+    # prefixes add one token each: "bonjour club" / "le club"
+    assert [f["input_ids"].tolist() for f in session.feeds] == [[[1, 2]], [[3, 2]]]
+    # only the first token is non-zero: the mean has the same direction as CLS here
+    assert doc[:2] == pytest.approx([0.6, 0.8]) and query[:2] == pytest.approx([0.6, 0.8])

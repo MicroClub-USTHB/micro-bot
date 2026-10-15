@@ -67,3 +67,21 @@ def test_score_overlap_is_the_share_of_refuse_scores_above_answerable_q1():
     assert m.score_overlap(answerable, [0.5, 0.4, 0.1, 0.8]) == 0.5
     assert m.score_overlap([], [0.5]) is None
     assert m.score_overlap([0.5], []) is None
+
+
+def test_auc_separation():
+    from eval.metrics import auc
+
+    assert auc([0.9, 0.8], [0.1, 0.2]) == 1.0
+    assert auc([0.1], [0.9]) == 0.0
+    assert auc([0.5], [0.5]) == 0.5  # ties count half
+    assert auc([], [0.5]) is None
+
+
+def test_best_threshold_maximizes_youden():
+    from eval.metrics import best_threshold
+
+    best = best_threshold([0.9, 0.8, 0.3], [0.1, 0.2, 0.85])
+    assert best["threshold"] == 0.3
+    assert best["kept_good"] == 1.0 and best["caught_bad"] == round(2 / 3, 4)
+    assert best_threshold([], [0.1]) is None

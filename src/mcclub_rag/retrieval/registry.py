@@ -18,7 +18,9 @@ class EmbedderSpec:
     onnx_sha256: str
     tokenizer_sha256: str
     dim: int
-    pooling: Literal["cls"]
+    pooling: Literal["cls", "mean"]
+    query_prefix: str = ""  # e5: "query: " / "passage: "
+    passage_prefix: str = ""
 
     def url(self, filename: str) -> str:
         return f"https://huggingface.co/{self.repo}/resolve/{self.revision}/{filename}"
@@ -46,6 +48,29 @@ BGE_M3 = EmbedderSpec(
     pooling="cls",
 )
 
+# Small A/B entries for the query rewrite (specs/query-rewrite Req 3), 384 dims each.
+GRANITE_97M_R2 = EmbedderSpec(
+    repo="ibm-granite/granite-embedding-97m-multilingual-r2",
+    revision="835ad14087e140460703cf0fae09f97d469d65c2",
+    onnx_file="onnx/model_quint8_avx2.onnx",
+    onnx_sha256="a6022dd8220ea6f6595562a1328ee216f4a94faa55362f2f4747c80f1e78772e",
+    tokenizer_sha256="4f2842d568e2724370aec203652a42ac783c7937f8347a1a2cc7506d71f1582f",
+    dim=384,
+    pooling="cls",
+)
+# intfloat's own ONNX is avx512-vnni only; Xenova's int8 export of the same weights (MIT).
+E5_SMALL = EmbedderSpec(
+    repo="Xenova/multilingual-e5-small",
+    revision="761b726dd34fb83930e26aab4e9ac3899aa1fa78",
+    onnx_file="onnx/model_int8.onnx",
+    onnx_sha256="4d24e2bc01a447951524466ef533e52944bf48509e6552810bcee1a2711cb02c",
+    tokenizer_sha256="0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+    dim=384,
+    pooling="mean",
+    query_prefix="query: ",
+    passage_prefix="passage: ",
+)
+
 DEFAULT_EMBEDDER = "BAAI/bge-m3"
 # Chunk sizes are counted in granite tokens, whatever the embedder: cutting with bge-m3's tokenizer
 # instead lost 5 of 111 eval questions (eval/results/README.md, 2026-10-13).
@@ -56,6 +81,9 @@ EMBEDDERS: dict[str, EmbedderSpec] = {
     GRANITE_R2.repo: GRANITE_R2,
     "BAAI/bge-m3": BGE_M3,
     BGE_M3.repo: BGE_M3,
+    GRANITE_97M_R2.repo: GRANITE_97M_R2,
+    "intfloat/multilingual-e5-small": E5_SMALL,
+    E5_SMALL.repo: E5_SMALL,
 }
 
 # Stopword lists only: stemming is off, so nothing else from the repo is needed.
@@ -79,6 +107,7 @@ class RerankerSpec:
     onnx_file: str
     onnx_sha256: str
     tokenizer_sha256: str
+    max_length: int | None = None  # model limit under RETRIEVAL_RERANK_MAX_LENGTH (BERT: 512)
 
     @property
     def slug(self) -> str:
@@ -105,12 +134,34 @@ BGE_RERANKER = RerankerSpec(
     tokenizer_sha256="8bf8afbfd11306bd872018c53bfdf2e160a56f8edbcf49933324404791c148d3",
 )
 
+# Small A/B entries (query-rewrite Req 3), avx2 int8 exports from the original repos (Apache 2.0).
+MMARCO_RERANKER = RerankerSpec(
+    repo="cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",  # multilingual, 118M
+    revision="1427fd652930e4ba29e8149678df786c240d8825",
+    onnx_file="onnx/model_quint8_avx2.onnx",
+    onnx_sha256="6c2513767fb63d008a4377bef7a7a3555433d9436342bb53e35a3a72ffc52d4b",
+    tokenizer_sha256="62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
+    max_length=512,
+)
+MINILM_RERANKER = RerankerSpec(
+    repo="cross-encoder/ms-marco-MiniLM-L6-v2",  # English only, 22M
+    revision="233902d25c440f23af6f7d6e94d2946bac0bee0a",
+    onnx_file="onnx/model_quint8_avx2.onnx",
+    onnx_sha256="c80a8b34256ea453093d612e3ac48d3d965a0c0a48c7906709af8b8e28461bf9",
+    tokenizer_sha256="d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+    max_length=512,
+)
+
 # Keyed by the original model name (what config.py and .env use) and by the export's repo.
 RERANKERS: dict[str, RerankerSpec] = {
     "Alibaba-NLP/gte-multilingual-reranker-base": GTE_RERANKER,
     GTE_RERANKER.repo: GTE_RERANKER,
     "BAAI/bge-reranker-v2-m3": BGE_RERANKER,
     BGE_RERANKER.repo: BGE_RERANKER,
+    MMARCO_RERANKER.repo: MMARCO_RERANKER,
+    MINILM_RERANKER.repo: MINILM_RERANKER,
 }
-# bge since 2026-10-13: gte dropped darija matches bge-m3 had found (eval/results/README.md).
-DEFAULT_RERANKER = "BAAI/bge-reranker-v2-m3"
+# mmarco since 2026-10-15: with the query rewrite, hit@5 0.971 vs bge's 0.974 at 2.7x less rerank
+# time (eval/results/README.md). bge (2026-10-13) stays the A/B entry: better when the rewrite
+# fails (typed arabizi 0.909 vs 0.818).
+DEFAULT_RERANKER = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"

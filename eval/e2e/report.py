@@ -11,6 +11,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from eval.e2e import insights
 from eval.e2e.cases import Case
 from eval.e2e.score import CaseResult
 from eval.metrics import score_distribution, score_overlap
@@ -75,19 +76,29 @@ def instability(results: Sequence[CaseResult]) -> float | None:
 def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
     case = {r.id: cases[r.id] for r in results}
 
-    def expect(value: str) -> list[CaseResult]:
-        return [r for r in results if case[r.id].expect == value]
+    # Answer rates come from one layer: the chat layer when the run has it. Robustness runs
+    # retrieval-layer variants, where an open gate "answers" everything (0.84 false answers).
+    chat = [r for r in results if r.layer == "chat"]
+    scoped = chat or [r for r in results if r.layer == "retrieval"] or list(results)
+    layer_of_retrieval = [r for r in results if r.layer == "retrieval"]
+
+    def expect(value: str, rs: Iterable[CaseResult] = scoped) -> list[CaseResult]:
+        return [r for r in rs if case[r.id].expect == value]
 
     def ran(rs: Iterable[CaseResult], name: str) -> list[bool]:
         """Failed flag of each result where the check ran."""
         return [_failed(r, name) for r in rs if _check_status(r, name) in ("pass", "fail")]
 
-    latencies = [r.latency_ms for r in results]
+    latencies = [r.latency_ms for r in (chat or results)]
     metrics = {
         "cases": len(results),
         "pass_rate": _rate([r.passed for r in results]),
         "false_answer_rate": _rate(ran(expect("refuse"), "behaviour")),
         "false_refusal_rate": _rate(ran(expect("answer"), "behaviour")),
+        "retrieved_rate": _rate([not f for f in ran(chat, "retrieved")]),
+        "retrieval_layer_evidence_rate": _rate(
+            [not f for f in ran(layer_of_retrieval, "evidence")]
+        ),
         "access_leaks": sum(_failed(r, "access") for r in results),
         "must_not_hits": sum(_failed(r, "must_not") for r in results),
         "injection_hits": sum(
@@ -95,8 +106,8 @@ def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
         ),
         "contract_failures": sum(_failed(r, "contract") for r in results),
         "language_mismatches": sum(_failed(r, "language") for r in results),
-        "evidence_rate": _rate([not f for f in ran(results, "evidence")]),
-        "gold_rate": _rate([not f for f in ran(results, "gold")]),
+        "evidence_rate": _rate([not f for f in ran(scoped, "evidence")]),
+        "gold_rate": _rate([not f for f in ran(scoped, "gold")]),
         "flip_rate": flip_rate(results),
         "instability": instability(results),
         "latency_p50_ms": round(statistics.median(latencies), 1) if latencies else 0.0,
@@ -117,6 +128,9 @@ def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
             "refuse": score_distribution(gate["refuse"]),
             "overlap": score_overlap(gate["answer"], gate["refuse"]),
         },
+        "groups": insights.by_group(results, case),
+        "attribution": insights.attribution(results, case),
+        "traits": insights.traits(results, case),
         "by_slice": _group(results, lambda r: case[r.id].slices),
         "by_lang": _group(results, lambda r: [case[r.id].lang]),
         "by_role": _group(results, lambda r: [case[r.id].role]),
@@ -177,6 +191,7 @@ def markdown(summary: Mapping, rows: Sequence[Mapping], title: str) -> str:
         mark = {True: "yes", False: "**NO**", None: "n/a"}[row["ok"]]
         lines.append(f"| {row['metric']} | {row['value']} | {row['op']} {row['limit']} | {mark} |")
     lines += ["", "Paths: " + ", ".join(f"{k} {v}" for k, v in summary["paths"].items()), ""]
+    lines += insights_markdown(summary)
     gate = summary.get("gate_scores", {})
     if any(gate.get(name, {}).get("n") for name in ("answer", "refuse")):
         lines += ["| Gate score | n | min | q1 | median | q3 | max |", "|---" * 7 + "|"]
@@ -196,11 +211,64 @@ def markdown(summary: Mapping, rows: Sequence[Mapping], title: str) -> str:
             chat, retrieval = layers.get("chat", "-"), layers.get("retrieval", "-")
             lines.append(f"| {case_id} | {chat} | {retrieval} |")
     if summary["failures"]:
-        lines += ["", "## Failed cases", "", "| Case | Path | Failed checks |", "|---|---|---|"]
+        lines += ["", "<details><summary>All failed results</summary>", ""]
+        lines += ["| Case | Path | Failed checks |", "|---|---|---|"]
         for f in summary["failures"]:
             reasons = "; ".join(f"{k}: {v}" for k, v in f["failed"].items()).replace("|", "/")
             lines.append(f"| {f['id']} | {f['path']} | {reasons} |")
+        lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
+
+
+def _cell(value: object) -> str:
+    return "" if value is None else f"{value:.0%}" if isinstance(value, float) else str(value)
+
+
+def insights_markdown(summary: Mapping) -> list[str]:
+    """Quality per language group, failure causes, and what failed cases share (chat layer)."""
+    groups = summary.get("groups") or {}
+    if not groups:
+        return []
+    cols = ("answerable", "retrieved", "answered", "correct", "cited", "unanswerable", "refused")
+    lines = ["## Quality by language (chat, base cases)", ""]
+    lines += ["| Group | " + " | ".join(cols) + " |", "|---" * (len(cols) + 1) + "|"]
+    for name, g in groups.items():
+        lines.append(f"| {name} | " + " | ".join(_cell(g[c]) for c in cols) + " |")
+    lines += [
+        "",
+        "retrieved = evidence in the passages the LLM got; correct = every check passed; "
+        "cited = evidence in a cited snippet; refused = unanswerable cases refused.",
+        "",
+    ]
+    counts = summary.get("attribution", {}).get("counts", {})
+    if counts:
+        names = [g for g in insights.GROUPS if any(g in c for c in counts.values())]
+        lines += ["## Why cases failed", ""]
+        lines += ["| Cause | total | " + " | ".join(names) + " | cases |"]
+        lines += ["|---" * (len(names) + 3) + "|"]
+        ids = summary["attribution"]["ids"]
+        for why, by in sorted(counts.items(), key=lambda kv: -sum(kv[1].values())):
+            shown = ", ".join(ids[why][:12]) + (" ..." if len(ids[why]) > 12 else "")
+            cells = " | ".join(str(by.get(n, "")) for n in names)
+            lines.append(f"| {why} | {sum(by.values())} | {cells} | {shown} |")
+        lines.append("")
+    traits = summary.get("traits") or {}
+    if traits.get("slices"):
+        lines += ["## What failed cases share", ""]
+        lines += [
+            f"Overall failure rate {_cell(traits['overall_fail_rate'])}; question length "
+            f"{traits['words_failed']} words when failed, {traits['words_passed']} when passed; "
+            f"with history {_cell(traits['history_fail_rate'])} failed.",
+            "",
+            "| Slice | n | failed | rate | lift |",
+            "|---|---|---|---|---|",
+        ]
+        for s in traits["slices"][:12]:
+            lines.append(
+                f"| {s['slice']} | {s['n']} | {s['failed']} | {_cell(s['rate'])} | {s['lift']} |"
+            )
+        lines.append("")
+    return lines
 
 
 def load_markdown(stats: Mapping) -> str:

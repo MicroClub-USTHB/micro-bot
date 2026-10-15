@@ -22,7 +22,7 @@ class RoleAwareRetrieval:
     member_chunks: list[Chunk]
     roles: list[Role] = field(default_factory=list)
 
-    async def retrieve(self, query: str, role: Role, history: object) -> Retrieval:
+    async def retrieve(self, query: str, role: Role, history: object, rewrite=None) -> Retrieval:
         self.roles.append(role)
         chunks = self.member_chunks if role == "member" else self.public_chunks
         return Retrieval(chunks=chunks, top_score=0.9, decision="answer")
