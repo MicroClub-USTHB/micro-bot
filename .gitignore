@@ -23,4 +23,10 @@ eval/cache/
 # E2E eval caches (answers may quote members-only documents)
 eval/e2e/judge_cache.jsonl
 eval/e2e/recordings/
-eval/results/e2e/2*.md
+
+# Benchmark results stay local; only the write-ups are tracked
+eval/results/**
+!eval/results/**/
+!eval/results/README.md
+!eval/results/e2e/README.md
+!eval/results/e2e/ISSUES.md

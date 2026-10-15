@@ -1,6 +1,7 @@
 # Eval results
 
-One compact JSON per run (`python -m eval.run_eval --label <name>`): settings, model fingerprints,
+Run files stay local (gitignored since 2026-10-15); this README keeps the numbers. One compact
+JSON per run (`python -m eval.run_eval --label <name>`): settings, model fingerprints,
 corpus version, per-question rows, summary and gate sweep. Corpus: the 4 files of `data/parsed`
 (`eval/corpus.json`), 48 questions (36 answerable), until the sections below say otherwise. Dev
 machine, 4 threads.

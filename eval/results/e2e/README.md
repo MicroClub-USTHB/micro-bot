@@ -1,9 +1,9 @@
 # E2E eval results
 
 Run with `python -m eval.e2e.run` (see [specs/e2e-eval/](../../../specs/e2e-eval/)). Every issue
-found, with its status, is in [ISSUES.md](ISSUES.md). The `.md` reports are gitignored and the
-`.json` files are committed with `git add -f` when a run is worth keeping; the 2026-10-13 runs
-are local only so far. Chat results keep the answer text since `407807e` (I29).
+found, with its status, is in [ISSUES.md](ISSUES.md). Run files (`.json`, `.md`) stay local
+since 2026-10-15: only this README and ISSUES.md are tracked, so the runs named below are on the
+machine that made them. Chat results keep the answer text since `407807e` (I29).
 
 | Run | What | Headline |
 |---|---|---|
