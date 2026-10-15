@@ -70,11 +70,11 @@ tests/          one test module per source module, plus contract, access and wir
 
 ## Key decisions
 
-- No framework: at most 2 LLM calls per question (query rewrite + answer), every call explicit.
+- No framework: 1 LLM call per question, every call explicit.
 - Qdrant hybrid search (dense + BM25 sparse), visibility filter inside the query.
-- bge-m3 embedder + mmarco-mMiniLMv2-L12 reranker (119 MB) on the top 10 candidates, with the
-  query rewrite: hit@5 0.974 with bge-reranker-v2-m3, 0.971 with mmarco at 2.7x less rerank
-  time; small embedders lost 3-4 points ([results](eval/results/README.md), 2026-10-15).
+- bge-m3 embedder + bge-reranker-v2-m3 on the top 10 candidates, chosen on 128 eval questions
+  (48 darija/arabizi) against granite, harrier-270m and gte: hit@5 0.793 -> 0.847, darija
+  0.667 -> 0.771, same rerank time ([results](eval/results/README.md)).
 - Exact-match cache keyed by question + role + corpus version, instead of a semantic answer cache.
 - Chunking ([spec](specs/chunking/)): structure first (headings), then paragraphs, lines and
   sentences (Arabic `؟ ؛ ۔` aware), size last. Target 300 / max 400 / min 80 **embedder tokens**,
@@ -93,8 +93,8 @@ tests/          one test module per source module, plus contract, access and wir
 
 - Retrieval ([spec](specs/retrieval/)): one Qdrant query with dense + BM25 prefetches fused by
   RRF (k=2), the visibility filter on every level, dedupe by document and chunk index, then the
-  mmarco-mMiniLMv2-L12 int8 cross-encoder (one pair per run: batching moved bge scores by up to
-  1.8 logits) on the top 10, each chunk scored against the rewrite in its own language. The relevance-floor gate is off: bge scores right darija matches near
+  bge-reranker-v2-m3 int8 cross-encoder (one pair per run: batching moved scores by up to 1.8
+  logits) on the top 10. The relevance-floor gate is off: bge scores right darija matches near
   0, so no threshold works, and the LLM refuses unknowns (with gte it refused below 0.31). Short follow-ups with a
   follow-up cue ("and…", "it", "وكم") are searched together with the previous question (no LLM
   rewrite). Without the LLM (no key, budget spent, provider error) the answer is a notice in the

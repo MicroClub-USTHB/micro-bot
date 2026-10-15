@@ -112,7 +112,7 @@ jobs:
           uv run python scripts/download_models.py --only embedder --dest models/embedder
           uv run python scripts/download_models.py --only bm25 --dest models/bm25
 
-      - name: Cache reranker (mmarco int8 + tokenizer)
+      - name: Cache reranker (bge int8 + tokenizer)
         uses: actions/cache@v4
         with:
           path: models/reranker

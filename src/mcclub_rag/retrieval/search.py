@@ -27,7 +27,6 @@ _PAYLOAD = [
     "visibility",
     "ingested_at",
     "instruction_like",
-    "language",
 ]
 
 
@@ -45,7 +44,6 @@ class Candidate:
     fused_score: float
     fused_rank: int
     instruction_like: bool = False  # payload schema 2; absent on older points
-    language: str = "und"  # the chunk's language: picks the rewrite text the reranker sees
 
     @classmethod
     def from_point(cls, point: qm.ScoredPoint | qm.Record, rank: int) -> "Candidate":
@@ -63,7 +61,6 @@ class Candidate:
             fused_score=float(getattr(point, "score", 0.0) or 0.0),
             fused_rank=rank,
             instruction_like=bool(p.get("instruction_like", False)),
-            language=p.get("language") or "und",
         )
 
 
@@ -116,8 +113,8 @@ class HybridSearch:
         if s.fusion == "dbsf":
             return qm.FusionQuery(fusion=qm.Fusion.DBSF)
         weights = None
-        if s.dense_weight != s.sparse_weight:  # every arm after the BM25 one is a dense arm
-            weights = [s.dense_weight, s.sparse_weight] + [s.dense_weight] * (arms - 2)
+        if s.dense_weight != s.sparse_weight:  # the cross-language arm is a dense arm
+            weights = [s.dense_weight, s.sparse_weight, s.dense_weight][:arms]
         return qm.RrfQuery(rrf=qm.Rrf(k=s.rrf_k, weights=weights))
 
     async def search(
@@ -127,15 +124,12 @@ class HybridSearch:
         role: Role,
         *,
         query_language: str | None = None,
-        extra_dense: Sequence[tuple[list[float], str | None]] = (),
     ) -> list[Candidate]:
         """Fused candidates (at most ``top_k``) visible to ``role``, deduplicated.
 
         With ``RETRIEVAL_CROSS_LANG_PREFETCH`` > 0 and the query's language, a third dense arm
         brings chunks in *other* languages: both main arms favour same-language chunks, so an
         English answer to an Arabic question often never reached the reranker (ISSUES.md I9).
-        ``extra_dense`` adds one dense arm per rewrite text (query-rewrite Req 2.2), over the
-        chunks of the given language, or all chunks for None.
         """
         flt = visibility_filter(role)
         limit = self.settings.prefetch_limit
@@ -152,12 +146,6 @@ class HybridSearch:
                 ],
             )
             prefetch.append(qm.Prefetch(query=dense, using=DENSE, limit=cross, filter=other))
-        for vector, language in extra_dense:
-            arm = flt
-            if language:
-                same = qm.FieldCondition(key="language", match=qm.MatchValue(value=language))
-                arm = qm.Filter(must=[flt, same])
-            prefetch.append(qm.Prefetch(query=vector, using=DENSE, limit=limit, filter=arm))
         async with guard("search"):
             response = await self.client.query_points(
                 self.alias,

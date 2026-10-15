@@ -263,8 +263,7 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
             body = first.json()
             assert body["grounded"] is True
             assert body["sources"][0]["doc_id"] == doc_id
-            # the rewrite call got the same stub (not JSON: searched as typed), then the answer
-            assert body["usage"]["llm_calls"] == 2
+            assert body["usage"]["llm_calls"] == 1
 
             # Same question without a conversation_id hits the exact-match cache.
             second = client.post("/api/v1/chat", json=message, headers=member)

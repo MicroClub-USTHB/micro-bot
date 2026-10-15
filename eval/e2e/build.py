@@ -60,16 +60,11 @@ async def inprocess(args, work: Path):
         model = get_settings().openrouter_model
     generator = RecordingGenerator(inner, E2E / "recordings", args.mode, budget, model)
     driver = InProcessDriver(pipeline, retriever, generator, work / "app")
-    if args.rewrite:  # the same recorder serves the rewrite and the answer calls
-        from mcclub_rag.llm.rewrite import QueryRewriter
-
-        driver.state.rewriter = QueryRewriter(timeout_s=args.rewrite_timeout)
     info = {
         "gate_threshold": retrieval.gate_threshold,
         "rerank_model": retrieval.rerank_model,
         "llm_configured": inner is not None,
         "mode": args.mode,
         "model": model,
-        "rewrite": bool(args.rewrite),
     }
     return driver, budget, generator, info, pipeline

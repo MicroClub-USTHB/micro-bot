@@ -5,7 +5,6 @@
     uv run python -m eval.e2e.run --suite quality --mode replay
     uv run python -m eval.e2e.run --suite quality --llm ollama --max-llm-calls 400   # local
     uv run python -m eval.e2e.run --suite quality --llm ollama --ollama-model gemma4-12b-eval
-    uv run python -m eval.e2e.run --suite quality --llm ollama --rewrite --max-llm-calls 800
     uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
 
 Ollama RAM: llama.cpp keeps the KV state of past prompts in system RAM (up to 8 GB; every eval
@@ -202,12 +201,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="ollama: a local test model (no OpenRouter quota), not the production provider",
     )
     parser.add_argument("--ollama-model", default="gemma4:e4b")
-    parser.add_argument(
-        "--rewrite", action="store_true", help="rewrite each question first (2 LLM calls)"
-    )
-    parser.add_argument(
-        "--rewrite-timeout", type=float, default=120.0, help="seconds; local models are slow"
-    )
     parser.add_argument("--max-judge-calls", type=int, default=20)
     parser.add_argument("--repeat", type=int, default=2)
     parser.add_argument("--concurrency", type=int, default=4)
