@@ -45,3 +45,23 @@
   One more sentence fixed it. Lesson: run the whole set with only the prompt changed, or every
   number is mixed with the corpus and code changes.
 - Found a scorer bug too: a correct refusal said "you should vote for", which was a must_not.
+
+2026-10-15
+
+- The organizers allowed a second LLM call, so darija, arabizi and typos became one problem:
+  have the LLM rewrite the question (standalone, corrected, translated into fr / en / ar) before
+  searching. No arabizi detector needed: every question goes through it.
+- Kept the typed query in the search on purpose. The rewrite only adds arms, so a bad or missing
+  rewrite can't lose what we had. That mattered the same day: the free gemma endpoint answered
+  429 to every call, and nemotron took 20 s until reasoning was turned off.
+- Results: darija hit@5 0.66 -> 1.0, cross-lingual 0.81 -> 0.98, typos mostly gone. Answers
+  85% fully correct by the rules, darija 54% -> 83%.
+- I expected clean queries to let us shrink both models. Half true: the reranker shrank (mmarco,
+  5x smaller, same hit@5), the embedder did not. Small embedders are fine with a rewrite and bad
+  without one, and the fallback is exactly when we need it.
+- The eval reports were hard to act on: 42 pass/fail slices and a 600-line dump. Rebuilt them
+  around "where did it fail": retrieval, refusal, wrong fact, citation. Found the 84% false-answer
+  rate was the open gate on the retrieval layer, not the chatbot.
+- The biggest leftover is not retrieval: right answers whose snippet shows the wrong sentence,
+  because the snippet is matched on the question's words. Next fix.
+- The local judge is not worth much: it calls the app's own [Title] citations unsupported.
