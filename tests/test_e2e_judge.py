@@ -1,4 +1,4 @@
-"""Optional judge (Req 4): off by default, cached, capped, unparsable is skip."""
+"""Optional judge (Req 4): off by default, cached, capped, unparsable or failed is skip."""
 
 from types import SimpleNamespace
 
@@ -35,3 +35,17 @@ def test_cap_and_unparsable(tmp_path):
     judge = Judge(FakeClient("looks fine to me"), "m", 1, cache=tmp_path / "c.jsonl")
     assert judge.check("a", ["p"]).reason == "unparsable verdict"
     assert judge.check("b", ["p"]).reason == "judge budget spent"
+
+
+def test_failed_call_is_skip_and_not_cached(tmp_path):
+    client = FakeClient('{"supported": true}')
+
+    def boom(**kwargs):
+        raise TimeoutError("slow")
+
+    ok = client.chat.completions.create
+    client.chat.completions.create = boom
+    judge = Judge(client, "m", 5, cache=tmp_path / "c.jsonl")
+    assert judge.check("a", ["p"]).reason == "judge error: TimeoutError"
+    client.chat.completions.create = ok
+    assert judge.check("a", ["p"]).status == "pass"
