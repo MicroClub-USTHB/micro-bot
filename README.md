@@ -237,6 +237,27 @@ verbatim evidence, not by the (unreliable) local judge. `eval/e2e/thresholds.jso
 into a pass/fail scorecard, and `python -m eval.e2e.compare a.json b.json` shows metric deltas
 between two runs.
 
+### Deployment — the whole stack on a 4 GB / 2-core VPS, 2026-10-15
+
+The jury's target box, simulated for real: a separate Compose project over the unchanged image with
+the WSL 2 VM capped at 2 CPUs / 3.83 GB (`specs/vps-simulation/`, runbook
+[docs/simulation/4gb-vps.md](docs/simulation/4gb-vps.md)).
+
+| Load (retrieval only) | 1 user | 2 users | 4 users | 8 users |
+|---|---|---|---|---|
+| Throughput | 1.03 req/s | 2.01 req/s | 4.00 req/s | **5.19 req/s** |
+| p50 / p95 | 152 / 188 ms | 150 / 242 ms | 147 / 391 ms | **1520 / 1957 ms** |
+| App peak RSS | 1895 MB | 1895 MB | 1904 MB | 1913 MB |
+
+Throughput scales linearly to 4 concurrent users with p50 flat at ~150 ms, then saturates at
+**5.2 req/s (≈310 requests/minute)**, where p50 rises 10x. The limiter is the **app's CPU quota**
+(pinned at its entire 1.5 CPU from 4 users on), not memory: peak RSS stayed flat at 1.9 GB of the
+2.73 GB limit, Qdrant at 75 MB and 1.6% CPU, and no run produced an OOM kill, a restart, an error or
+a rate limit. Generation (S1) is not in that table because OpenRouter's free pool returned HTTP 429
+throughout the window.
+
+Full method, all seven runs and the caveat: [eval/results/simulation/README.md](eval/results/simulation/README.md).
+
 ---
 
 ## API
@@ -345,6 +366,8 @@ tests/          one module per source module, plus contract, access and wiring t
 |---|---|
 | [eval/README.md](eval/README.md) | The evaluation guide: sets, metrics, suites, latest results |
 | [eval/results/README.md](eval/results/README.md) | Every measurement, with the run that produced it |
+| [eval/results/simulation/README.md](eval/results/simulation/README.md) | The 4 GB / 2-core VPS run: ramp numbers, verdict, caveat |
+| [docs/simulation/4gb-vps.md](docs/simulation/4gb-vps.md) | Runbook for reproducing the 4 GB / 2-core simulation |
 | [EDGE_CASES.md](EDGE_CASES.md) | 68 non-obvious edge cases, each with proof and a decision |
 | [PROGRESS.md](PROGRESS.md) | Dated log: what shipped, what is blocked, what is next |
 | [AGENTS.md](AGENTS.md) | Fixed decisions and the rules for contributors and coding agents |

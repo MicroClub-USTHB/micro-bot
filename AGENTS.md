@@ -158,6 +158,28 @@ cp .env.example .env && docker compose up -d --build
 OCR tests **fail with an instruction** (not skip) when traineddata is missing. Tests that need real
 Arabic scans (`tests/fixtures/arabic_scan.pdf`, `arabic_photo.jpg`) skip until the files are added.
 
+## 4 GB / 2-core VPS simulation (`specs/vps-simulation/`, `docs/simulation/4gb-vps.md`)
+
+A separate Compose **project** (`mc-rag-sim`) over the unchanged image and services, with the WSL 2 VM
+capped at 4 GB / 2 CPUs. Production files stay untouched (`Dockerfile`, `docker-compose.yml`,
+`.env.example`, app code); the eval harness gained only `--requests-per-minute` and the load report
+now prints the load generator's peak RSS. S0 = no provider key (health is `degraded`, retrieval
+works, 0 LLM calls), S1 = the free OpenRouter model. Profile A keeps the shipped 20/60 s rate limit,
+Profile B raises it to 1000/60 s in a simulation-only overlay.
+
+```powershell
+powershell -File scripts/simulation/Set-SimVmLimits.ps1 -Mode Show      # then -Mode Apply, -Mode Restore
+powershell -File scripts/simulation/Test-SimPreflight.ps1               # stage 1: proves the setup parses
+powershell -File scripts/simulation/Start-Simulation.ps1 -Build        # stage 3: build, up, wait for health
+powershell -File scripts/simulation/Invoke-SimBenchmark.ps1 -Scenario S0 -Profile B -Concurrency 4 -Duration 120 -RequestsPerMinute 240 -Label simB-c4
+powershell -File scripts/simulation/Stop-Simulation.ps1                # stage 8: this project only (-v deletes its data)
+uv run python -m eval.e2e.run --target http --base-url http://127.0.0.1:8001 --suite load --requests-per-minute 240 --label manual
+```
+
+Build **before** applying the VM ceiling (deps + ~700 MB of models). Nothing prints a secret: the
+scripts redact it, because `docker compose config` does not. Results land in
+`eval/results/simulation/*.csv` (git-ignored).
+
 ## Data preprocessing (implemented on `origin/dev`)
 
 Entry points (async): `preprocess_file(data, filename, *, visibility, title=None)` and

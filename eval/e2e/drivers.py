@@ -197,7 +197,13 @@ class InProcessDriver(_Api):
 
 
 class HttpDriver(_Api):
-    """A running app (compose or uvicorn). Tokens come from MEMBER_TOKEN / ADMIN_API_KEY."""
+    """A running app (compose or uvicorn). Tokens come from MEMBER_TOKEN / ADMIN_API_KEY.
+
+    Chat requests are paced to a **maximum offered rate** of ``requests_per_window`` per
+    ``window_s``, shared by every caller of this driver: ``_wait`` reserves the next slot under a
+    lock, so concurrent load tasks cannot read the same slot and burst. The achieved rate is still
+    bounded by latency and by saturation on the server.
+    """
 
     def __init__(self, base_url: str, *, requests_per_window: int = 20, window_s: float = 60):
         client = httpx.AsyncClient(base_url=base_url, timeout=120)
@@ -205,15 +211,17 @@ class HttpDriver(_Api):
         admin = os.environ.get("ADMIN_API_KEY", "")
         super().__init__(client, member, admin)
         self.interval = window_s / requests_per_window
+        self._pace = asyncio.Lock()
         self._next = 0.0
         self.uploaded: list[str] = []
 
     async def _wait(self) -> None:
-        """Pace chat requests under the server's per-IP limit (Req 5.4)."""
-        now = time.monotonic()
-        if now < self._next:
-            await asyncio.sleep(self._next - now)
-        self._next = max(now, self._next) + self.interval
+        """Pace chat requests under the server's per-IP limit (Req 5.4), one slot at a time."""
+        async with self._pace:
+            now = time.monotonic()
+            if now < self._next:
+                await asyncio.sleep(self._next - now)
+            self._next = max(now, self._next) + self.interval
 
     async def setup(self, sources: Sequence[Source]) -> dict[str, str]:
         """Upload through the API under ``eval-`` topics (titles come from the files)."""

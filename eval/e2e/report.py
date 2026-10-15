@@ -273,11 +273,15 @@ def insights_markdown(summary: Mapping) -> list[str]:
 
 def load_markdown(stats: Mapping) -> str:
     """Load suite block: throughput, latency, and where the time goes per retrieval stage."""
+    peak = stats.get("peak_rss_mb")
     lines = [
         "## Load",
         "",
         f"{stats['requests']} requests, {stats['throughput_rps']} req/s, "
         f"p50 {stats['p50_ms']} ms, p95 {stats['p95_ms']} ms",
+        # the load generator's own peak memory, not the server's: it is null where the harness
+        # cannot read it (Windows has no resource.getrusage), and n/a says so instead of hiding it
+        f"load generator peak RSS: {peak if peak is not None else 'n/a'} MB",
     ]
     if stats.get("stages"):
         lines += ["", "| Stage | n | p50 ms | p95 ms |", "|---|---|---|---|"]

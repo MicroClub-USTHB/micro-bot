@@ -73,6 +73,17 @@ def _git_sha() -> str:
     return run.stdout.strip() or "unknown"
 
 
+def _positive_int(value: str) -> int:
+    """An argparse type that rejects 0 and negatives (a rate of zero would divide by zero)."""
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{value!r} is not a whole number") from None
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be greater than 0")
+    return number
+
+
 async def run(args) -> int:
     os.environ.setdefault("MODELS_DIR", str(REPO / "models"))
     os.environ.setdefault("TESSDATA_PREFIX", str(Path(os.environ["MODELS_DIR"]) / "tessdata"))
@@ -84,7 +95,9 @@ async def run(args) -> int:
         loaded = build.sources(corpus, work)
         pipeline = generator = None
         if args.target == "http":
-            driver, budget, info = HttpDriver(args.base_url), None, {"base_url": args.base_url}
+            driver = HttpDriver(args.base_url, requests_per_window=args.requests_per_minute)
+            budget = None
+            info = {"base_url": args.base_url, "offered_rpm": args.requests_per_minute}
             suites = [s for s in suites if s not in INPROCESS_ONLY]
         else:
             driver, budget, generator, info, pipeline = await build.inprocess(args, work)
@@ -203,6 +216,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--concurrency", type=int, default=4)
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--qdrant-url")
+    parser.add_argument(
+        "--requests-per-minute",
+        type=_positive_int,
+        default=20,
+        help=(
+            "http: maximum offered chat rate (default 20, the app's per-IP limit). Achieved "
+            "throughput is lower when latency or the server saturates"
+        ),
+    )
     parser.add_argument("--allow-docker", action="store_true")
     parser.add_argument("--label", default="run")
     args = parser.parse_args(argv)
