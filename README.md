@@ -4,8 +4,7 @@ RAG chatbot for the MC Club RAG Chatbot Challenge. Upload documents (files or we
 French / English, scans included), ask questions in any of the three languages, and get a
 **grounded answer with sources**. Member-only documents stay hidden from public callers.
 
-Plain Python (FastAPI, Qdrant, ONNX models on CPU), **no RAG or agent framework** (no LlamaIndex,
-LangChain, Haystack, CrewAI). Runs offline in a container; the only outbound traffic is the
+Plain Python (FastAPI, Qdrant, ONNX models on CPU). Runs offline in a container; the only outbound traffic is the
 explicit URL fetch and the OpenRouter LLM calls (at most 2 per question).
 
 Version **0.1.0**.
@@ -311,8 +310,7 @@ questions are answered in French or English. Details, metrics and the issue inde
 - **Chunking** ([spec](specs/chunking/)): headings first, then paragraphs, lines and sentences
   (Arabic-aware), size last. Target 300 / max 400 / min 80 tokens, no overlap, and a
   "title > heading path" header on the embedded and BM25 text.
-- **Gate off by default**: bge scores right darija matches near 0, so no threshold works; the LLM
-  refuses unknowns.
+-
 - **Exact-match cache** keyed by question + role + corpus version, no semantic answer cache.
 - **Parsing**: `xberg` (bundled Tesseract) for files, httpx + trafilatura for web pages, own
   magic-byte sniffing, SSRF guard on every redirect hop.
