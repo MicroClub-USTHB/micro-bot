@@ -1,5 +1,21 @@
 # progress
 
+## 2026-10-15 (readme rewrite, docs sweep)
+
+### Shipped
+
+- `README.md` is now a front page: centered header and badges, two-command quick start, the live
+  darija question and its cited answer as screenshots, and tables for the measured numbers
+  (retrieval hit@5 with and without the rewrite, end-to-end answer rates, false refusals and
+  answers, leaks, latency) with the 1-or-2 LLM-call rule stated up front and an honest note on how
+  the run was judged.
+- Dropped the last caching mentions from the docs (`.env.example`, `AGENTS.md`, `EDGE_CASES.md`,
+  the eval-fixes and e2e-eval specs). The decision record stays: the EDGE_CASES row and this log.
+
+### Blocked
+
+- Nothing. Slides are a teammate's task; the public URL still needs adding to the readme.
+
 ## 2026-10-15 (jury: the answer cache is removed)
 
 ### Shipped
