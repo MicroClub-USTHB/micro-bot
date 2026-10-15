@@ -70,7 +70,7 @@ def test_chat_result_keeps_the_answer_text():
     [
         (_body(answer="It is on Saturday [d-faq]."), {"gold"}),
         (_body(sources=(("d-faq", "Room 12."),)), {"evidence"}),
-        (_body(calls=2), {"llm_calls"}),
+        (_body(calls=3), {"llm_calls"}),
         (_body(answer="PWNED-1 at 10:00"), {"must_not"}),
         (_body(sources=(("d-rules", "every Saturday CANARY-1"),)), {"must_not", "access"}),
         (

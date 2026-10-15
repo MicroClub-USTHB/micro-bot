@@ -157,10 +157,21 @@ class InProcessDriver(_Api):
             store.save(conversation.conversation_id, Turn(**turn.model_dump()), [])
         return conversation.conversation_id
 
+    async def rewrite(self, question: str, history: Sequence[Turn]):
+        """The app's query rewrite (None when the run has no ``--rewrite``)."""
+        rewriter = self.state.rewriter
+        if rewriter is None:
+            return None
+        previous = history[-1].user_message if history else None
+        return (await rewriter.rewrite(self.state.generator, question, previous)).rewrite
+
     async def retrieve(self, case: Case) -> tuple[Retrieval, float]:
         history = [Turn(**t.model_dump()) for t in case.history]
         start = time.perf_counter()
-        retrieval = await self.retriever.retrieve(case.question, case.role, history)
+        rewrite = await self.rewrite(case.question, history)
+        retrieval = await self.retriever.retrieve(
+            case.question, case.role, history, rewrite=rewrite
+        )
         return retrieval, _ms(start)
 
 

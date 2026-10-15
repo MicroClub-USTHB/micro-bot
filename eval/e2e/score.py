@@ -123,7 +123,8 @@ def score_chat(
     snippets = " ".join(s.snippet for s in response.sources)
     # A canary in a snippet is a leak only for a public user: members may read those documents.
     canaries = [d.canary for d in corpus.values() if d.canary] if case.role == "public" else []
-    checks = [contract, _check("llm_calls", response.usage.llm_calls <= 1, "more than 1 call")]
+    # at most the query rewrite + the answer (query-rewrite Req 1)
+    checks = [contract, _check("llm_calls", response.usage.llm_calls <= 2, "more than 2 calls")]
 
     if case.expect == "any":
         checks.append(_skip("behaviour", "expect any"))
