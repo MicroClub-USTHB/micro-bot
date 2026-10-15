@@ -1,5 +1,67 @@
 # progress
 
+## 2026-10-15 (readme rewrite, docs sweep)
+
+### Shipped
+
+- `README.md` is now a front page: centered header and badges, two-command quick start, the live
+  darija question and its cited answer as screenshots, and tables for the measured numbers
+  (retrieval hit@5 with and without the rewrite, end-to-end answer rates, false refusals and
+  answers, leaks, latency) with the 1-or-2 LLM-call rule stated up front and an honest note on how
+  the run was judged.
+- Dropped the last caching mentions from the docs (`.env.example`, `AGENTS.md`, `EDGE_CASES.md`,
+  the eval-fixes and e2e-eval specs). The decision record stays: the EDGE_CASES row and this log.
+
+### Blocked
+
+- Nothing. Slides are a teammate's task; the public URL still needs adding to the readme.
+
+## 2026-10-15 (jury: the answer cache is removed)
+
+### Shipped
+
+- Removed the in-process exact-match answer cache (`cache.py` deleted, `ApplicationState.chat_cache`
+  gone, contract + e2e cache checks removed): every question runs retrieval and generation again.
+  The rewrite call keeps its small in-memory LRU (`REWRITE_CACHE_SIZE`).
+- Why: the jury asked for Redis caching or removal; Redis adds no answer quality and no extra hits
+  under the single worker (only restart persistence and cross-process sharing), so the cache was
+  dropped. Reasoning in the new EDGE_CASES row.
+
+## 2026-10-15 (query rewrite, smaller models, eval report)
+
+### Shipped (PR #21; eequaled's files changed with the user's go-ahead)
+
+- Second LLM call per question, approved by the organizers: the query rewrite
+  (`llm/rewrite.py`, `specs/query-rewrite/`). JSON with the language, a standalone corrected
+  query and fr / en / ar translations; each translation searches its own language's chunks and
+  the reranker scores each chunk against its language's text. Typed query kept; a failed rewrite
+  falls back to the old path. Quota: the rewrite never takes the answer's last slot.
+- Measured (eval/README.md): hit@5 0.909 -> 0.974, darija 0.66 -> 1.0, cross-lingual
+  0.81 -> 0.98, typo variants losing the evidence 7/45 -> 1/45; e2e answers correct 82% -> 85%
+  (darija 54% -> 83%), false refusals 11% -> 4%.
+- Reranker default is now mmarco-mMiniLMv2-L12 (119 MB): hit@5 0.971 vs bge's 0.974 with the
+  rewrite, rerank 2.7x faster; bge stays an A/B entry. Embedder stays bge-m3 (small ones lost 3-4
+  points, and much more when the rewrite fails).
+- `eval.bench_models` (embedder x reranker x typed/rewrite, gate analysis); e2e report with the
+  layers apart (I29), quality per language group, failure causes and traits.
+- `LLM_DISABLE_REASONING` for reasoning models (nemotron rewrite 20 s -> 2-3 s).
+- Docs: `eval/README.md` is the eval guide (test types and sizes, labels, metrics, results,
+  issue index). Run files and `eval/results/e2e/ISSUES.md` are no longer tracked.
+
+### Blocked
+
+- Rewrite latency on the real provider: `gemma-4-31b-it:free` was rate-limited upstream all day.
+- p95 with a local rewrite was 9.3 s (> 8 s) with bge; mmarco should save ~1.1 s (not measured
+  end to end).
+
+### Next
+
+- Snippet choice by the answer's words: 24 of the remaining failures are right answers whose
+  cited snippet misses the evidence (EDGE_CASES.md).
+- Run mmarco end to end; decide a gate for the rewrite path (t ~ 0.03 with mmarco).
+- Review with eequaled: `api/chat.py`, `main.py`, `config.py`, `llm/client.py`, `llm/quota.py`.
+- Check the labels of `dj-26`, `dj-27`.
+
 ## 2026-10-13 evening (leaks, link noise, prompt rules)
 
 ### Shipped

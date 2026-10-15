@@ -16,7 +16,6 @@ from mcclub_rag.api.chat import router as chat_router
 from mcclub_rag.api.documents import router as documents_router
 from mcclub_rag.api.feedback import router as feedback_router
 from mcclub_rag.api.health import router as health_router
-from mcclub_rag.cache import ExactMatchCache
 from mcclub_rag.config import Settings, get_settings
 from mcclub_rag.conversation import ConversationStore
 from mcclub_rag.errors import IngestError, install_error_handlers
@@ -25,11 +24,11 @@ from mcclub_rag.ingest import pipeline as ingest_pipeline
 from mcclub_rag.ingest.models import DocumentInfo as IngestDocumentInfo
 from mcclub_rag.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
 from mcclub_rag.llm.quota import CircuitBreaker, DailyQuota
+from mcclub_rag.llm.rewrite import QueryRewrite, QueryRewriter
 from mcclub_rag.logging import RequestLoggingMiddleware
 from mcclub_rag.rate_limit import SlidingWindowRateLimiter
 from mcclub_rag.retrieval.backend import HybridRetriever
 from mcclub_rag.schemas import (
-    ChatResponse,
     DocInfo,
     IngestResult,
     Retrieval,
@@ -63,7 +62,9 @@ class ReadinessProbe(Protocol):
 
 
 class RetrievalBackend(Protocol):
-    async def retrieve(self, query: str, role: Role, history: list[object]) -> Retrieval: ...
+    async def retrieve(
+        self, query: str, role: Role, history: list[object], *, rewrite: QueryRewrite | None = None
+    ) -> Retrieval: ...
 
 
 class LanguageDetector(Protocol):
@@ -147,7 +148,9 @@ class FakeRetrievalBackend:
         default_factory=lambda: Retrieval(chunks=[], top_score=0.0, decision="refuse")
     )
 
-    async def retrieve(self, query: str, role: Role, history: list[object]) -> Retrieval:
+    async def retrieve(
+        self, query: str, role: Role, history: list[object], *, rewrite: QueryRewrite | None = None
+    ) -> Retrieval:
         return self.retrieval
 
 
@@ -311,9 +314,9 @@ class ApplicationState:
     retrieval: RetrievalBackend = field(default_factory=FakeRetrievalBackend)
     language_detector: LanguageDetector = field(default_factory=FakeLanguageDetector)
     generator: GenerationService = field(default_factory=FakeGenerationService)
+    rewriter: QueryRewriter | None = None  # the optional first LLM call (query-rewrite)
     conversations: ConversationStore = field(default_factory=ConversationStore)
     rate_limiter: SlidingWindowRateLimiter | None = None
-    chat_cache: ExactMatchCache[ChatResponse] | None = None
     quota: DailyQuota | None = None
     breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
     corpus_version: str = "0"
@@ -324,8 +327,6 @@ class ApplicationState:
                 self.settings.chat_rate_limit_requests,
                 self.settings.chat_rate_limit_window_s,
             )
-        if self.chat_cache is None:
-            self.chat_cache = ExactMatchCache(lambda: self.corpus_version)
         if self.quota is None:
             self.quota = DailyQuota(
                 self.settings.data_dir,
@@ -336,13 +337,20 @@ class ApplicationState:
 
 def default_state(settings: Settings) -> ApplicationState:
     """Production state wired to nisbenz's real ingestion and retrieval backends."""
+    generator = _generator(settings)
+    rewriter = None
+    if settings.rewrite_enabled and settings.openrouter_api_key:
+        rewriter = QueryRewriter(
+            timeout_s=settings.rewrite_timeout_s, cache_size=settings.rewrite_cache_size
+        )
     return ApplicationState(
         settings=settings,
         documents=RealDocumentBackend(),
         document_probe=PipelineProbe(),
         provider_probe=ProviderProbe(settings),
         language_detector=RealLanguageDetector(),
-        generator=_generator(settings),
+        generator=generator,
+        rewriter=rewriter,
     )
 
 

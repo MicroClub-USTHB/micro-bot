@@ -23,7 +23,7 @@ driver, so a live run and an in-process run are comparable.
 | Gate refusal text is always `"I don't know based on the available documents."` | `api/chat.py:113` | Separate `refusal_language` metric, else every ar/fr refusal fails the language check. |
 | Quota or breaker closed -> `extractive_fallback`, `grounded` may be true, `llm_calls=0` | `api/chat.py:121` | Classified `fallback`, never counted as an LLM answer. |
 | LLM failure -> fallback with `llm_calls=1` | `api/chat.py:139` | Fault suite expects 200 + `llm_calls == 1`. |
-| Cache skipped when the request has a `conversation_id`; unknown id -> new conversation, no history | `api/chat.py:43-57`, `conversation.py` | `eval-<uuid>` per request bypasses the cache without an API change. |
+| Unknown `conversation_id` -> new conversation, no history | `api/chat.py`, `conversation.py` | `eval-<uuid>` per request starts clean without an API change. |
 | Rate limit 20 requests / 60 s per client IP | `config.py`, `rate_limit.py` | HTTP driver paces; in-process driver passes its own `SlidingWindowRateLimiter` with a high limit. |
 | `grounded` needs at least one valid `[doc_id]` citation and no refusal phrase | `answer.py` | Answer pass requires `grounded`; evidence checked in `sources[].snippet` (first 500 chars of the chunk). |
 | Quota state lives in `DATA_DIR/llm_quota.json` | `llm/quota.py` | In-process runs use a temp `DATA_DIR`, so they do not eat the app's quota, but the provider's daily limit is shared: `--max-llm-calls` still applies. |
@@ -42,7 +42,7 @@ eval/e2e/
 ├── generator.py    RecordingGenerator (record / replay), FaultyGenerator
 ├── score.py        rule checks -> CheckResult(name, status, reason)
 ├── judge.py        optional judge client + verdict cache
-├── suites.py       quality, robustness, contract, faults, cache, load, restart
+├── suites.py       quality, robustness, contract, faults, load, restart
 ├── report.py       summary, markdown, scorecard
 ├── compare.py      diff two result files
 ├── thresholds.json
@@ -131,7 +131,6 @@ check is `fail`. Path classification:
 | 1 | any | any | `llm` |
 | 0 | false | none, answer = refusal text | `gate_refusal` |
 | 0 | any | some, or any answer text | `fallback` |
-| 0 | any | any, response equals a cached one (cache suite only) | `cache` |
 
 Retrieval layer (`--layer retrieval`): `behaviour` from `Retrieval.decision`, `evidence` in any
 returned chunk text, `must_not` / `access` on chunk texts and doc ids. No LLM involved.
@@ -160,11 +159,10 @@ expectations are unchanged.
 | `robustness` | inprocess | 0 (retrieval layer) | base + variants, `--repeat` |
 | `contract` | both | 0 | auth matrix, 422s, error shape |
 | `faults` | inprocess | 0 (fake generator) | Req 7.1 table |
-| `cache` | both | <= 1 | same question twice, then a corpus change |
 | `load` | both | 0 | refuse-expected + gate-path cases, C users, S seconds |
 | `restart` | http + `--allow-docker` | 0 | `docker compose restart app`, then `qdrant`, then re-check |
 
-`all` = `contract, faults, robustness, quality (replay), cache, load` on inprocess.
+`all` = `contract, faults, robustness, quality (replay), load` on inprocess.
 
 ### Report (`report.py`)
 

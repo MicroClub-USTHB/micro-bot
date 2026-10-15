@@ -3,8 +3,8 @@
 Kept separate from the app-wide ``config.Settings`` like ``IngestSettings``. Retrieval-only
 variables use the ``RETRIEVAL_`` prefix; the names the app config already declares
 (``RETRIEVE_TOP_K``, ``RERANK_TOP_N``, ``GATE_THRESHOLD``, ``RERANK_MODEL``, ``MODELS_DIR``,
-``QDRANT_COLLECTION``) are read as they are. ``RERANK_MODEL`` defaults to gte here (decided
-2026-10-10, see specs/retrieval/requirements.md).
+``QDRANT_COLLECTION``) are read as they are. ``RERANK_MODEL`` defaults to the registry's
+``DEFAULT_RERANKER`` (mmarco since 2026-10-15).
 """
 
 from functools import lru_cache
@@ -13,6 +13,8 @@ from typing import Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from mcclub_rag.retrieval.registry import DEFAULT_RERANKER
 
 MIN_RERANK_MAX_LENGTH = 640  # chunk cap 400 x 1.28 reranker/granite token ratio + query
 
@@ -33,7 +35,7 @@ class RetrievalSettings(BaseSettings):
     gate_threshold: float | None = Field(
         default=None, ge=0, le=1, validation_alias="GATE_THRESHOLD"
     )
-    rerank_model: str = Field(default="BAAI/bge-reranker-v2-m3", validation_alias="RERANK_MODEL")
+    rerank_model: str = Field(default=DEFAULT_RERANKER, validation_alias="RERANK_MODEL")
     models_dir: Path = Field(default=Path("/app/models"), validation_alias="MODELS_DIR")
     qdrant_collection: str = Field(default="mcclub", validation_alias="QDRANT_COLLECTION")
 
@@ -62,6 +64,11 @@ class RetrievalSettings(BaseSettings):
     query_fix_case: bool = True  # lower-case an ALL-CAPS query (eval-fixes Req 9)
     query_strip_harakat: bool = True  # drop Arabic diacritics from the query
     neighbours: bool = False
+    # With a query rewrite (query-rewrite Req 2): each translation searches only the chunks of
+    # its language; the reranker query per chunk: its language's translation (chunk_lang), the
+    # standalone rewrite (query), the typed question (original) or the English one (en)
+    rewrite_lang_filter: bool = True
+    rewrite_rerank: Literal["chunk_lang", "query", "original", "en"] = "chunk_lang"
     # Rank multiplier for chunks flagged ``instruction_like`` at ingest; 1.0 = off (Req 4.4)
     instruction_penalty: float = Field(default=1.0, gt=0, le=1)
 

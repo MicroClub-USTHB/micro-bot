@@ -1,22 +1,26 @@
-"""System suites: faults, cache, load (Req 7) and restart.
+"""System suites: faults, load (Req 7) and restart.
 
 Probes are checked with ``eval.e2e.contract.expect``. Faults swap parts of the in-process app
 state (generator, quota, retrieval) and restore them afterwards.
 """
 
 import asyncio
-import resource
 import statistics
 import subprocess
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 
 import httpx
 import structlog
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - deployed target is Linux; Windows has no rusage
+    resource = None  # type: ignore[assignment]
+
 from eval.e2e.cases import Case
-from eval.e2e.contract import check, expect, json_body
+from eval.e2e.contract import check, expect
 from eval.e2e.generator import FaultyGenerator
 from eval.e2e.score import CaseResult
 from mcclub_rag.ingest.errors import IndexUnavailable, RerankError
@@ -32,7 +36,7 @@ class _Raising:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    async def retrieve(self, query, role, history):
+    async def retrieve(self, query, role, history, rewrite=None):
         raise self.error
 
 
@@ -42,7 +46,7 @@ async def faults(driver, probe: Case) -> list[CaseResult]:
     saved = (state.generator, state.quota, state.retrieval, state.breaker)
     headers = driver.headers(probe.role)
 
-    async def ask() -> httpx.Response:  # a fresh conversation id: no cache hit between faults
+    async def ask() -> httpx.Response:  # a fresh conversation: no stored context between faults
         body = {"message": probe.question, "conversation_id": f"eval-{uuid.uuid4()}"}
         return await driver.request("POST", "/api/v1/chat", json=body, headers=headers)
 
@@ -68,28 +72,6 @@ async def faults(driver, probe: Case) -> list[CaseResult]:
             results.append(expect(f"fault-{name}", "faults", await ask(), status, code))
     finally:
         state.generator, state.quota, state.retrieval, state.breaker = saved
-    return results
-
-
-async def cache(driver, probe: Case, upload: Callable[[], Awaitable[object]]) -> list[CaseResult]:
-    """Req 7.3: second identical request is a cache hit; a corpus change or another role misses."""
-    body = {"message": probe.question}
-
-    async def ask(headers: dict | None = None) -> httpx.Response:
-        return await driver.request("POST", "/api/v1/chat", json=body, headers=headers or {})
-
-    first, second = await ask(), await ask()
-    same = json_body(first).get("answer") == json_body(second).get("answer")
-    results = [
-        expect("cache-first", "cache", first, 200, calls=1),
-        expect("cache-hit", "cache", second, 200, calls=0),
-        CaseResult("cache-same-answer", "cache", "cache", [check("same", same, "differs")]),
-        expect(
-            "cache-other-role-misses", "cache", await ask(driver.headers("member")), 200, calls=1
-        ),
-    ]
-    await upload()
-    results.append(expect("cache-corpus-change-misses", "cache", await ask(), 200, calls=1))
     return results
 
 
@@ -146,7 +128,11 @@ async def load(
         "p99_ms": pick(0.99),
         "error_rate": round(errors / len(statuses), 4) if statuses else None,
         "rate_limited": statuses.count(429),
-        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
+        "peak_rss_mb": (
+            round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+            if resource is not None
+            else None
+        ),
         "stages": stage_times(events),
     }
     ok = errors == 0

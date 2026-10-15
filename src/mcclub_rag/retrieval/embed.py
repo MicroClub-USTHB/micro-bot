@@ -112,6 +112,7 @@ class OnnxDenseEncoder:
         self._session = session
         self._inputs = {i.name for i in session.get_inputs()}
         self._dim = spec.dim
+        self._spec = spec
         self._fingerprint = f"{spec.repo}@{spec.revision}:{spec.onnx_sha256}"
 
     @property
@@ -124,20 +125,26 @@ class OnnxDenseEncoder:
 
     def _embed(self, text: str) -> list[float]:
         ids = np.asarray([self._tokenizer.encode(text).ids], dtype=np.int64)
-        feed = {"input_ids": ids, "attention_mask": np.ones_like(ids)}
+        feed = {
+            "input_ids": ids,
+            "attention_mask": np.ones_like(ids),
+            "token_type_ids": np.zeros_like(ids),  # BERT-style exports (e5) ask for it
+        }
         try:
             hidden = self._session.run(None, {k: v for k, v in feed.items() if k in self._inputs})
         except _ORT_ERRORS as exc:
             raise EmbeddingError(f"embedding model failed: {type(exc).__name__}") from exc
-        cls = np.asarray(hidden[0][0, 0], dtype=np.float32)
-        norm = float(np.linalg.norm(cls))
-        return (cls / norm if norm > 0 else cls).tolist()
+        states = np.asarray(hidden[0][0], dtype=np.float32)
+        # No padding (one sequence per run): the mean over every token is the masked mean.
+        pooled = states.mean(axis=0) if self._spec.pooling == "mean" else states[0]
+        norm = float(np.linalg.norm(pooled))
+        return (pooled / norm if norm > 0 else pooled).tolist()
 
     def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self._embed(text) for text in texts]
+        return [self._embed(self._spec.passage_prefix + text) for text in texts]
 
     def embed_query(self, text: str) -> list[float]:
-        return self._embed(text)
+        return self._embed(self._spec.query_prefix + text)
 
 
 class SparseEncoder(Protocol):

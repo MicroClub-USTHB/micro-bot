@@ -43,6 +43,7 @@ class Observation:
     body: object = None
     latency_ms: float = 0.0
     error: str | None = None
+    retrieval: Retrieval | None = None  # what the LLM was given (in-process driver only)
 
 
 @dataclass
@@ -123,7 +124,8 @@ def score_chat(
     snippets = " ".join(s.snippet for s in response.sources)
     # A canary in a snippet is a leak only for a public user: members may read those documents.
     canaries = [d.canary for d in corpus.values() if d.canary] if case.role == "public" else []
-    checks = [contract, _check("llm_calls", response.usage.llm_calls <= 1, "more than 1 call")]
+    # at most the query rewrite + the answer (query-rewrite Req 1)
+    checks = [contract, _check("llm_calls", response.usage.llm_calls <= 2, "more than 2 calls")]
 
     if case.expect == "any":
         checks.append(_skip("behaviour", "expect any"))
@@ -141,6 +143,7 @@ def score_chat(
         checks.append(_check("evidence", bool(found), "evidence not in any cited snippet"))
     else:
         checks.append(_skip("evidence", "no evidence to check"))
+    checks.append(_retrieved(case, obs.retrieval))
 
     leaked = _contains_any(response.answer, case.must_not) + _contains_any(snippets, canaries)
     checks.append(_check("must_not", not leaked, f"contains {sorted(set(leaked))}"))
@@ -173,7 +176,19 @@ def score_chat(
         checks.append(_skip("language", "not answered"))
         checks.append(_skip("refusal_language", "not a gate refusal"))
     extra = {"answered": answered, "answer": response.answer}  # read failures (I29)
+    if obs.retrieval is not None:
+        extra["top_score"] = round(obs.retrieval.top_score, 4)
     return CaseResult(case.id, "chat", path, checks, obs.latency_ms, extra)
+
+
+def _retrieved(case: Case, retrieval: Retrieval | None) -> Check:
+    """Was the evidence in the passages the LLM got? Tells retrieval and generation apart."""
+    if retrieval is None:
+        return _skip("retrieved", "retrieval not captured")
+    if case.expect != "answer" or not case.evidence:
+        return _skip("retrieved", "no evidence to check")
+    text = " ".join(f"{c.title} {c.text}" for c in retrieval.chunks)
+    return _check("retrieved", bool(_contains_any(text, case.evidence)), "evidence not retrieved")
 
 
 def score_retrieval(

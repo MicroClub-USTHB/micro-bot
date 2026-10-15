@@ -21,10 +21,10 @@ def _report(capsys) -> list[str]:
 def corpus(tmp_path):
     folder = tmp_path / "corpus"
     (folder / "sub").mkdir(parents=True)
-    (folder / "rules.md").write_text("# Règlement\n\nLe club se réunit le mardi.")
-    (folder / "page.md").write_text("# Programme\n\nAtelier Python le samedi.")
-    (folder / ".hidden.md").write_text("# Caché\n\nIgnoré.")
-    (folder / "sub" / "deep.md").write_text("# Profond\n\nSous-dossier.")
+    (folder / "rules.md").write_text("# Règlement\n\nLe club se réunit le mardi.", encoding="utf-8")
+    (folder / "page.md").write_text("# Programme\n\nAtelier Python le samedi.", encoding="utf-8")
+    (folder / ".hidden.md").write_text("# Caché\n\nIgnoré.", encoding="utf-8")
+    (folder / "sub" / "deep.md").write_text("# Profond\n\nSous-dossier.", encoding="utf-8")
     return folder
 
 
@@ -60,7 +60,8 @@ def test_recursive_includes_subfolders(corpus, factory, capsys):
     assert (
         script.main([str(corpus), "--visibility", "members", "--recursive"], factory=factory) == 0
     )
-    assert any("sub/deep.md" in line for line in _report(capsys))
+    deep = str(Path("sub") / "deep.md")
+    assert any(deep in line for line in _report(capsys))
 
 
 def test_failed_file_gives_exit_code_1(corpus, factory, capsys):

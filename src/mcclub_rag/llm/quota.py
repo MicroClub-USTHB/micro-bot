@@ -51,10 +51,14 @@ class DailyQuota:
         """
         return self.used < self._usable_limit
 
-    def acquire(self) -> bool:
-        """Atomically reserve one generation slot outside the safety reserve."""
+    def acquire(self, keep: int = 0) -> bool:
+        """Atomically reserve one generation slot outside the safety reserve.
+
+        ``keep`` slots must stay free after this one: the query rewrite passes 1, so it never
+        takes the last slot from the answer call.
+        """
         with self._locked_state() as state:
-            if state["count"] >= self._usable_limit:
+            if state["count"] + keep >= self._usable_limit:
                 return False
             state["count"] += 1
             return True

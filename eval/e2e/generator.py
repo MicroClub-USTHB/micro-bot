@@ -156,7 +156,7 @@ class FaultyGenerator:
 class CitingStub:
     """Answers by citing the first passage's label, one 'call' each, no network.
 
-    For the cache and load suites, which test the system around generation, not generation.
+    For the load suite, which tests the system around generation, not generation.
     """
 
     _FIRST_PASSAGE = "[S1]\n```untrusted-source"

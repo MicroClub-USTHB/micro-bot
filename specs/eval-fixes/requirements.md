@@ -35,8 +35,8 @@ fix for one issue cannot quietly break another.
 1. WHEN a change claims to fix an issue THEN the change SHALL include a before and an after run
    (`eval.run_eval` and/or `eval.e2e.run` with the suites named in that issue's requirement),
    saved in `eval/results/` and compared with `python -m eval.e2e.compare`.
-2. WHEN a change lands THEN access leaks SHALL stay 0, contract failures 0, the fault suite and the
-   cache suite all passing, and instability 0.
+2. WHEN a change lands THEN access leaks SHALL stay 0, contract failures 0, the fault, ingest and
+   load suites all passing, and instability 0.
 3. WHEN a retrieval or ingest change lands THEN retrieval hit@5 and MRR on `eval/questions.jsonl`
    (all, Arabic subset, cross-lingual) SHALL NOT drop by more than 0.01, unless the requirement it
    serves accepts the trade and the result file says so.

@@ -93,3 +93,29 @@ def score_overlap(answerable: Sequence[float], refuse: Sequence[float]) -> float
 def access_violations(rows: Iterable[dict]) -> int:
     """Public questions that got any members-only chunk, whatever its rank."""
     return sum(r["role"] == "public" and "members" in r.get("visibilities", ()) for r in rows)
+
+
+def auc(good: Sequence[float], bad: Sequence[float]) -> float | None:
+    """ROC AUC: chance that a good case scores above a bad one (ties half). 0.5 = no signal."""
+    if not good or not bad:
+        return None
+    wins = sum((g > b) + 0.5 * (g == b) for g in good for b in bad)
+    return round(wins / (len(good) * len(bad)), 4)
+
+
+def best_threshold(good: Sequence[float], bad: Sequence[float]) -> dict[str, float] | None:
+    """Gate threshold with the best Youden J (share of good kept + share of bad refused - 1).
+
+    Candidates are the observed scores; ``kept_good`` = good scores >= t, ``caught_bad`` = bad
+    scores < t.
+    """
+    if not good or not bad:
+        return None
+    best = None
+    for t in sorted(set(good) | set(bad)):
+        kept = sum(g >= t for g in good) / len(good)
+        caught = sum(b < t for b in bad) / len(bad)
+        if best is None or kept + caught > best["kept_good"] + best["caught_bad"]:
+            best = {"threshold": round(t, 4), "kept_good": round(kept, 4)}
+            best["caught_bad"] = round(caught, 4)
+    return best

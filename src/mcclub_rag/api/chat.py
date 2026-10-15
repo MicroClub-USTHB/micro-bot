@@ -11,6 +11,7 @@ from mcclub_rag.conversation import Conversation, Turn
 from mcclub_rag.deps import get_role
 from mcclub_rag.llm.client import GenerationUsage
 from mcclub_rag.llm.prompts import build_prompt
+from mcclub_rag.llm.rewrite import RewriteOutcome
 from mcclub_rag.logging import set_request_log_context
 from mcclub_rag.messages import EMPTY_MESSAGE, NO_ANSWER
 from mcclub_rag.schemas import (
@@ -57,28 +58,6 @@ async def chat(
     history = previous.messages if previous else []
 
     state.corpus_version = await state.documents.corpus_version()
-    # Skip cache when conversation history is present or when the request carried a conversation_id
-    skip_cache = has_conversation_param or bool(history)
-    cached = None if skip_cache else state.chat_cache.get(payload.message, role)
-    if cached is not None:
-        response = cached.model_copy(
-            update={
-                "conversation_id": conversation.conversation_id,
-                "usage": Usage(llm_calls=0, prompt_tokens=0, completion_tokens=0),
-                "latency_ms": _latency_ms(started_at),
-            }
-        )
-        _save_and_log(
-            request,
-            payload.message,
-            response,
-            role,
-            state.corpus_version,
-            conversation,
-            [],
-        )
-        return response
-
     if not payload.message.strip():  # I18: nothing to search; the API shape stays the same
         retrieval = Retrieval(chunks=[], top_score=0.0, decision="refuse")
         response = _response(
@@ -94,7 +73,10 @@ async def chat(
         )
         return response
 
-    retrieval = await state.retrieval.retrieve(payload.message, role, history)
+    rewrite = await _rewrite(state, payload.message, history)
+    retrieval = await state.retrieval.retrieve(
+        payload.message, role, history, rewrite=rewrite.rewrite
+    )
     response = await _answer(
         payload.message,
         retrieval,
@@ -104,8 +86,7 @@ async def chat(
         started_at,
         history=history,
     )
-    if not skip_cache:
-        state.chat_cache.set(payload.message, role, response)
+    response = _add_usage(response, rewrite.usage)
     _save_and_log(
         request,
         payload.message,
@@ -116,6 +97,38 @@ async def chat(
         retrieval.chunks,
     )
     return response
+
+
+async def _rewrite(state: object, message: str, history: list[Turn]) -> RewriteOutcome:
+    """The optional first LLM call (query-rewrite Req 1); never blocks the answer."""
+    rewriter = getattr(state, "rewriter", None)
+    if rewriter is None:
+        return RewriteOutcome(None, GenerationUsage(llm_calls=0))
+    previous = history[-1].user_message if history else None
+
+    def allow() -> bool:  # leave a quota slot for the answer call
+        return state.breaker.allow() and state.quota.acquire(keep=1)
+
+    outcome = await rewriter.rewrite(state.generator, message, previous, allow)
+    if outcome.failed:
+        state.breaker.record_failure()
+    elif outcome.usage.llm_calls:
+        state.breaker.record_success()
+    if outcome.error:
+        log.warning("rewrite_skipped", reason=outcome.error)
+    return outcome
+
+
+def _add_usage(response: ChatResponse, extra: GenerationUsage) -> ChatResponse:
+    if not extra.llm_calls:
+        return response
+    usage = response.usage
+    total = Usage(
+        llm_calls=usage.llm_calls + extra.llm_calls,
+        prompt_tokens=usage.prompt_tokens + extra.prompt_tokens,
+        completion_tokens=usage.completion_tokens + extra.completion_tokens,
+    )
+    return response.model_copy(update={"usage": total})
 
 
 async def _answer(

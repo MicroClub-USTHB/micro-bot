@@ -5,6 +5,7 @@
     uv run python -m eval.e2e.run --suite quality --mode replay
     uv run python -m eval.e2e.run --suite quality --llm ollama --max-llm-calls 400   # local
     uv run python -m eval.e2e.run --suite quality --llm ollama --ollama-model gemma4-12b-eval
+    uv run python -m eval.e2e.run --suite quality --llm ollama --rewrite --max-llm-calls 800
     uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
 
 Ollama RAM: llama.cpp keeps the KV state of past prompts in system RAM (up to 8 GB; every eval
@@ -45,8 +46,8 @@ REPO = Path(__file__).resolve().parents[2]
 E2E = REPO / "eval" / "e2e"
 MANIFESTS = (REPO / "eval" / "corpus.json", E2E / "corpus" / "manifest.json")
 CASE_FILES = (E2E / "cases_retrieval.jsonl", E2E / "cases.jsonl")
-ALL = ("contract", "faults", "quality", "robustness", "cache", "ingest", "load")
-INPROCESS_ONLY = {"faults", "cache"}
+ALL = ("contract", "faults", "quality", "robustness", "ingest", "load")
+INPROCESS_ONLY = {"faults"}
 
 
 def select(cases: Sequence[Case], loaded: set[str], args) -> list[Case]:
@@ -107,16 +108,6 @@ async def run(args) -> int:
                 results += await contract(driver)
             elif suite == "faults":
                 results += await system.faults(driver, probe)
-            elif suite == "cache":
-                # Fresh breaker: earlier suites may have opened it (a spent LLM budget fails
-                # every call), and an open breaker would skip the stub (0 calls).
-                driver.state.generator, driver.state.breaker = CitingStub(), CircuitBreaker()
-
-                async def bump() -> object:  # any upload changes the corpus version
-                    return await driver.upload(loaded[0], "eval-cache-bump")
-
-                results += await system.cache(driver, probe, bump)
-                driver.state.generator = generator
             elif suite == "ingest":
                 results += await ingest(driver)
             elif suite == "load":
@@ -201,6 +192,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="ollama: a local test model (no OpenRouter quota), not the production provider",
     )
     parser.add_argument("--ollama-model", default="gemma4:e4b")
+    parser.add_argument(
+        "--rewrite", action="store_true", help="rewrite each question first (2 LLM calls)"
+    )
+    parser.add_argument(
+        "--rewrite-timeout", type=float, default=120.0, help="seconds; local models are slow"
+    )
     parser.add_argument("--max-judge-calls", type=int, default=20)
     parser.add_argument("--repeat", type=int, default=2)
     parser.add_argument("--concurrency", type=int, default=4)

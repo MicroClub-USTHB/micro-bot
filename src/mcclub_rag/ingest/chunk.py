@@ -29,7 +29,7 @@ from mcclub_rag.text.sentences import split_sentences, split_words
 log = structlog.get_logger(__name__)
 
 # Bump when the algorithm changes output for the same input and settings: it feeds the
-# corpus version, so a bump invalidates the answer cache and triggers a reindex.
+# corpus version, so a bump triggers a reindex.
 CHUNKER_VERSION = 2  # 2: link targets dropped from embed_text (I30)
 
 BlockKind = Literal["para", "list", "table", "code"]

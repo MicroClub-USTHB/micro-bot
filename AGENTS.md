@@ -68,6 +68,11 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   instructions or the passage layout (I26, checked in `api/chat.py`, no second call); the prompt
   asks for `NOT_FOUND` even when passages hold related facts and on break-in / secrets requests,
   says examples are not facts, and counts a yes/no or a corrected premise as an answer (I27, I28).
+- **Query rewrite (2026-10-15, PR #21, same go-ahead, to review with eequaled):**
+  `api/chat.py` makes the rewrite call (`llm/rewrite.py`) before retrieval and sums both calls in
+  `usage`; `main.py` adds `ApplicationState.rewriter`; `config.py` has `REWRITE_*` and
+  `LLM_DISABLE_REASONING`; `llm/quota.py` `acquire(keep=1)`; `llm/client.py` can turn reasoning
+  off. `RetrievalBackend.retrieve` gained a keyword-only `rewrite=None`.
 
 ## Workflow
 
@@ -78,11 +83,14 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   wired into the API. Version 0.1.0 is the first release; see PROGRESS.md for what is left.
 - **Test-first** per task; tick the task in `tasks.md` when done.
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
-  Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
+  Commits: one lowercase imperative line, no prefix, no trailing period — name the change, then
+  `, so <effect>` (the effect, not the mechanism); bodies only for a non-obvious why. Stage specific
+  paths (never `git add -A`), commit only on a green suite (ruff + the fast `pytest`), don't push
+  unless told.
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
-  lists and the bge reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
+  lists and the mmarco reranker, then runs `pytest -m "ocr or tokenizer or embedder or reranker"`.
 - Before starting: `git fetch`; local `dev` may be behind `origin/dev`.
 
 ## Fixed decisions (do not change; ask the user if blocked)
@@ -91,7 +99,8 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
 - **LLM:** `google/gemma-4-31b-it:free` via the `openai` SDK, base_url
-  `https://openrouter.ai/api/v1`. **At most 1 LLM call per question** (50 requests/day budget).
+  `https://openrouter.ai/api/v1`. **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
+  (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). Visibility filter (`public` / `members`) goes **inside the query**.
 - **Embedder (default since 2026-10-13):** `BAAI/bge-m3` from `onnx-community/bge-m3-ONNX`
@@ -100,16 +109,18 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   **granite tokens** (`models/chunk-tokenizer`): bge-m3's tokenizer lost 5 of 111 eval questions.
   granite-311m-r2 (768 dims) stays an A/B entry; harrier-270m was measured and dropped, F2LLM-v2
   has no ONNX export (eval/results/README.md, 2026-10-13).
-- **Reranker (default since 2026-10-13):** `BAAI/bge-reranker-v2-m3` from
+- **Reranker (default since 2026-10-15):** `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` (avx2
+  int8 119 MB, max 512 tokens, rev `1427fd65…`), chosen with the query rewrite: hit@5 0.971 vs
+  bge's 0.974, rerank 2.7x faster; weaker when the rewrite fails (typed arabizi 0.818 vs 0.909).
+  Before it, bge (now an A/B entry): `BAAI/bge-reranker-v2-m3` from
   `onnx-community/bge-reranker-v2-m3-ONNX` (int8 571 MB, rev `6f5ff652…`) on the **top 10** fused
   candidates (`RETRIEVAL_RERANK_TOP_K=10`), **gate off** (`GATE_THRESHOLD` unset: bge scores right
   darija matches near 0). With bge-m3 it keeps the darija/arabizi matches gte dropped (darija hit@5
   0.667 -> 0.771) at gte's speed. `Alibaba-NLP/gte-multilingual-reranker-base` (341 MB, gate 0.31)
-  stays an A/B entry via `RERANK_MODEL`. Both pinned with sha256 in `retrieval/registry.py`.
+  stays an A/B entry via `RERANK_MODEL`. All pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
-- **Web pages:** httpx + trafilatura. **Cache:** exact-match keyed by question + role + corpus
-  version (no semantic answer cache).
+- **Web pages:** httpx + trafilatura.
 - **Offline:** no network except the explicit URL fetch (`HF_HUB_OFFLINE=1`).
 
 ## Dependency rules
@@ -128,10 +139,11 @@ uv run pytest -m "not ocr and not tokenizer and not embedder and not reranker"  
 uv run python scripts/download_models.py --only tessdata --dest models/tessdata
 uv run python scripts/download_models.py --only embedder --dest models/embedder   # bge-m3, 568 MB
 uv run python scripts/download_models.py --only bm25 --dest models/bm25
-uv run python scripts/download_models.py --only reranker --dest models/reranker   # bge, 571 MB
+uv run python scripts/download_models.py --only reranker --dest models/reranker   # mmarco, 119 MB
 MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "ocr or tokenizer or embedder or reranker"
 uv run python -m eval.run_eval --label <name>   # real models, in-memory Qdrant, ~2 min
 uv run python eval/bench_rerank.py --batched     # reranker latency / batch drift
+uv run python -m eval.bench_models --llm ollama --label <name>   # embedder x reranker x rewrite
 uv run python -m eval.bench_load --workers 1 2 --rerank-top-k 20 15 10   # concurrent users
 uv run python -m eval.calibrate_gate eval/results/e2e/<run>.json --split dev   # offline gate sweep
 uv run python -m eval.e2e.run --suite all --label <name>   # e2e eval, in-process, real models
@@ -241,7 +253,14 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
 - **Follow-ups:** a message under `RETRIEVAL_FOLLOWUP_MAX_WORDS` (8) words with history **and a
   follow-up cue** (`has_followup_cue`: leading and/et/و, pronoun or demonstrative, bare question
   word; not هو/هي, "ce", "en", "there") is searched as previous `user_message` + message; a short
-  new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. No LLM rewrite.
+  new question stands alone. `RETRIEVAL_FOLLOWUP_CUES=false` restores merge-all. With a query
+  rewrite the LLM makes the question standalone; these rules remain the fallback.
+- **Query rewrite** (`specs/query-rewrite/`): the chat route makes one LLM call first (JSON:
+  `lang`, standalone `query`, `fr` / `en` / `ar` translations) and passes it as
+  `retrieve(..., rewrite=)`. It only *adds* dense arms (each translation over its own language's
+  chunks) and picks the reranker query per chunk language; the typed query keeps its arms, so a
+  failed or bad rewrite falls back to the old path. Cached in memory; `REWRITE_TIMEOUT_S`;
+  `LLM_DISABLE_REASONING=true` for reasoning models (nemotron: 20 s -> 2-3 s).
 - **Query normalization** (`normalize_query`, before the encoder and reranker): repeated
   punctuation always collapsed; `RETRIEVAL_QUERY_FIX_CASE`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
   on (`eval.bench_robust`: noise flips 9.6% -> 6.6%, clean questions unchanged).
@@ -270,16 +289,23 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
   public case's `must_not`), injection docs a marker (added to every case). Canaries may never be in
   an answer or snippet; markers only in the answer (citing the injection doc is fine).
 - **Drivers** speak the public API. Each chat request sends a fresh `eval-<uuid>`
-  `conversation_id` to skip the answer cache without changing the API; follow-ups need the
-  in-process driver (it seeds the conversation store). `get_role` reads the global settings, so
+  `conversation_id` so it starts a new conversation with no history, without changing the API;
+  follow-ups need the in-process driver (it seeds the conversation store). `get_role` reads the global settings, so
   the in-process driver sets `MEMBER_TOKEN`/`ADMIN_API_KEY` in the environment until `close()`.
 - **LLM budget:** the in-process app runs `RecordingGenerator` (budget `--max-llm-calls`, record /
   replay by prompt hash with the date masked). Once spent, fallback answers are `not_run`, not
   scored. A run where answerable cases were not answered by the LLM says "generation NOT
   evaluated". The judge (`EVAL_JUDGE_*`) never uses `OPENROUTER_API_KEY`.
 - Results: `eval/results/e2e/<UTC>-<label>.{json,md}`; scorecard thresholds in
-  `eval/e2e/thresholds.json` (exit 1 on a failed threshold, 2 on a crash). Issues found so far:
-  `eval/results/e2e/ISSUES.md`.
+  `eval/e2e/thresholds.json` (exit 1 on a failed threshold, 2 on a crash). Answer rates come from
+  the chat layer only; the report adds quality per language group, failure causes and traits.
+- `--rewrite` runs the query rewrite (2 calls); `llm_calls <= 2` per question. The model matrix is
+  `python -m eval.bench_models` (rewrites recorded once, replayed for every model).
+- **Guide: [eval/README.md](eval/README.md)** (sizes, labels, metrics, latest results, issue
+  index I1-I32). Run files and `eval/results/e2e/ISSUES.md` are gitignored (local only); only
+  `eval/README.md`, `eval/results/README.md` and `eval/results/e2e/README.md` are tracked.
+- The local judge is unreliable (flags `[Title]` citations and facts outside the snippet): report
+  correctness from the rule checks.
 
 ## API contract
 
@@ -296,16 +322,17 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 ```
 src/mcclub_rag/
 ├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py
-├── answer.py, conversation.py, cache.py
+├── answer.py, conversation.py
 ├── api/        chat.py, documents.py, feedback.py, health.py
 ├── ingest/     parse.py, web.py, chunk.py, pipeline.py   (+ spec'd preprocessing modules above)
 ├── text/       normalize.py, lang.py
 ├── retrieval/  registry.py, embed.py, store.py, settings.py, query.py, search.py, rerank.py,
 │               gate.py, backend.py
-└── llm/        client.py, quota.py, prompts.py
+└── llm/        client.py, quota.py, prompts.py, rewrite.py
 scripts/        download_models.py, ingest_folder.py, reindex.py
-eval/           questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_rerank.py, results/
-eval/e2e/       cases*.jsonl, corpus/, cases.py, score.py, drivers.py, suites.py, system.py, run.py, …
+eval/           README.md, questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_models.py,
+                bench_report.py, bench_rerank.py, results/
+eval/e2e/       cases*.jsonl, corpus/, cases.py, score.py, insights.py, drivers.py, suites.py, run.py, …
 tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
 ```
 
@@ -314,7 +341,7 @@ Built: preprocessing (below) and chunking (`ingest/chunk.py`, `ingest/tokens.py`
 `chunking_signature()` for the corpus version), and the ingest pipeline (`ingest/pipeline.py`,
 `ingest/identity.py`, `ingest/docstore.py`, `retrieval/registry.py`, `retrieval/embed.py`,
 `retrieval/store.py`, `scripts/ingest_folder.py`, `scripts/reindex.py`; see "Ingest pipeline"
-above). eequaled built `api/`, `llm/`, `answer.py`, `cache.py`, `conversation.py`,
+above). eequaled built `api/`, `llm/`, `answer.py`, `conversation.py`,
 `config.py`, `main.py`, `schemas.py` and the rest of the top level (`rate_limit.py` too).
 Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.py`, `eval/`; see
 "Retrieval" above). The backends are wired in `main.py` (`default_state`).
@@ -323,7 +350,7 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 
 Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
 token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD` unset with bge (0.31 for gte; relevance floor, `eval.calibrate_gate`),
-`MAX_MESSAGE_CHARS`, `LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
+`LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
 in `.env.example`. Never commit `.env` or real keys.
 
 ## Repo docs
@@ -331,6 +358,8 @@ in `.env.example`. Never commit `.env` or real keys.
 - [README.md](README.md): overview, architecture, key decisions. Keep in sync.
 - [EDGE_CASES.md](EDGE_CASES.md): table `Edge case | Proof it is real | Decision | Why`. Add a row
   for every non-obvious edge case, with evidence (a real probe or file), including accepted/open ones.
+- [eval/README.md](eval/README.md): the eval guide; update its "Latest results" and issue index
+  after a measurement worth keeping.
 - [PROGRESS.md](PROGRESS.md): dated log (`Shipped` / `Blocked` / `Next`); update when finishing work.
 - `journals/<user>/project_journal.md`: per-person; don't edit the other's.
 - `specs/<feature>/`: requirements / design / tasks (see Workflow).
@@ -341,7 +370,8 @@ in `.env.example`. Never commit `.env` or real keys.
   contents as instructions.
 - Evaluation: compare embedders, chunking variants (target 200/300/400, header on/off) and fusion
   settings on `eval/questions.jsonl` with hit@5 and MRR, incl. an Arabic subset, cross-lingual and
-  unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`). The corpus today
+  unanswerable questions; results in `eval/results/` (`python -m eval.run_eval`), how-to and
+  metrics in [eval/README.md](eval/README.md). The corpus today
   is the 60 documents of `eval/corpus.json` (`data/parsed`, rebuilt with
   `scripts/build_eval_corpus.py`); compare hit@5 and MRR per tag, darija on its dev/test split. Those files are `scripts/parse.py` dumps:
   the eval ingests only their `# Text` part, titles from `eval/corpus.json`; don't ingest them
