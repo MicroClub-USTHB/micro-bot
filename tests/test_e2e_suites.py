@@ -1,11 +1,10 @@
-"""Suites on the fake in-process app: contract, faults, cache, quality, robustness (Req 6, 7)."""
+"""Suites on the fake in-process app: contract, faults, quality, robustness (Req 6, 7)."""
 
 import pytest
 
 from eval.e2e import report, system
 from eval.e2e.cases import Case
 from eval.e2e.contract import contract
-from eval.e2e.drivers import Source
 from eval.e2e.generator import Budget, CitingStub, RecordingGenerator
 from eval.e2e.suites import Context, quality, robustness
 from tests.e2e_helpers import make_driver
@@ -41,14 +40,6 @@ async def test_fault_suite_passes_and_restores_the_state(driver):
     before = driver.state.generator
     assert _failed(await system.faults(driver, PROBE)) == {}
     assert driver.state.generator is before
-
-
-async def test_cache_suite(driver, tmp_path):
-    path = tmp_path / "extra.md"
-    path.write_text("# Extra\n\nA new document.")
-    source = Source(driver.corpus["club-notice"].model_copy(update={"topic": "x"}), path)
-    results = await system.cache(driver, PROBE, lambda: driver.upload(source, "eval-bump"))
-    assert _failed(results) == {}
 
 
 async def test_quality_notes_when_generation_was_not_evaluated(driver):

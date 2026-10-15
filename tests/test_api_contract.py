@@ -153,19 +153,17 @@ def test_retrieval_refusal_is_ungrounded_and_never_calls_generator(tmp_path: Pat
     assert generator.calls == 0
 
 
-def test_exact_cache_hit_skips_retrieval_and_generation(tmp_path: Path) -> None:
+def test_repeated_questions_are_not_cached(tmp_path: Path) -> None:
     retrieval = FakeRetrieval(Retrieval(chunks=[chunk()], top_score=0.9, decision="answer"))
     generator = FakeGenerator(GenerationResult("Answer [doc-1]", GenerationUsage(1)))
     with build_client(tmp_path, retrieval=retrieval, generator=generator) as client:
-        first = client.post(
-            "/api/v1/chat", json={"message": "Hello, when does registration close?"}
-        )
+        first = client.post("/api/v1/chat", json={"message": "When does registration close?"})
         second = client.post("/api/v1/chat", json={"message": "When does registration close?"})
 
     assert first.status_code == second.status_code == 200
-    assert second.json()["usage"]["llm_calls"] == 0
-    assert retrieval.calls == 1
-    assert generator.calls == 1
+    assert second.json()["usage"]["llm_calls"] == 1
+    assert retrieval.calls == 2
+    assert generator.calls == 2
 
 
 def test_short_follow_up_reuses_stored_conversation_language(tmp_path: Path) -> None:

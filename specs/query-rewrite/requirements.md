@@ -21,8 +21,8 @@ retrieval runs as before the rewrite existed. So does a provider failure, a time
 answer call keeps its slot).
 1.5 Rewrites are cached in memory by (message, previous user message); a cache hit costs no call.
 1.6 `REWRITE_ENABLED=false` turns the call off (the app then behaves as before this spec).
-1.7 `usage` in the chat response counts both calls (calls and tokens). A cached answer is still
-0 calls.
+1.7 `usage` in the chat response counts both calls (calls and tokens); a rewrite-cache hit
+costs no call.
 
 ## Req 2: Retrieval with a rewrite
 

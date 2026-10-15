@@ -46,8 +46,8 @@ REPO = Path(__file__).resolve().parents[2]
 E2E = REPO / "eval" / "e2e"
 MANIFESTS = (REPO / "eval" / "corpus.json", E2E / "corpus" / "manifest.json")
 CASE_FILES = (E2E / "cases_retrieval.jsonl", E2E / "cases.jsonl")
-ALL = ("contract", "faults", "quality", "robustness", "cache", "ingest", "load")
-INPROCESS_ONLY = {"faults", "cache"}
+ALL = ("contract", "faults", "quality", "robustness", "ingest", "load")
+INPROCESS_ONLY = {"faults"}
 
 
 def select(cases: Sequence[Case], loaded: set[str], args) -> list[Case]:
@@ -108,16 +108,6 @@ async def run(args) -> int:
                 results += await contract(driver)
             elif suite == "faults":
                 results += await system.faults(driver, probe)
-            elif suite == "cache":
-                # Fresh breaker: earlier suites may have opened it (a spent LLM budget fails
-                # every call), and an open breaker would skip the stub (0 calls).
-                driver.state.generator, driver.state.breaker = CitingStub(), CircuitBreaker()
-
-                async def bump() -> object:  # any upload changes the corpus version
-                    return await driver.upload(loaded[0], "eval-cache-bump")
-
-                results += await system.cache(driver, probe, bump)
-                driver.state.generator = generator
             elif suite == "ingest":
                 results += await ingest(driver)
             elif suite == "load":

@@ -1,5 +1,16 @@
 # progress
 
+## 2026-10-15 (jury: the answer cache is removed)
+
+### Shipped
+
+- Removed the in-process exact-match answer cache (`cache.py` deleted, `ApplicationState.chat_cache`
+  gone, contract + e2e cache checks removed): every question runs retrieval and generation again.
+  The rewrite call keeps its small in-memory LRU (`REWRITE_CACHE_SIZE`).
+- Why: the jury asked for Redis caching or removal; Redis adds no answer quality and no extra hits
+  under the single worker (only restart persistence and cross-process sharing), so the cache was
+  dropped. Reasoning in the new EDGE_CASES row.
+
 ## 2026-10-15 (query rewrite, smaller models, eval report)
 
 ### Shipped (PR #21; eequaled's files changed with the user's go-ahead)

@@ -506,7 +506,7 @@ class IngestPipeline:
         Read from Qdrant on every call (one marker scroll), so writes made by another process
         (the CLI) are seen at once; nothing is cached in memory.
         """
-        # Expired documents drop out, so cached answers citing them are invalidated (I14).
+        # Expired documents drop out, so the version changes when one expires (I14).
         now = datetime.now(UTC)
         documents = [
             [m.doc_id, m.content_hash, m.visibility, _epoch(m.expires_at)]

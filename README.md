@@ -46,7 +46,7 @@ flowchart LR
             api[API routes<br/>chat, documents,<br/>feedback, health]
             ingest[Ingest pipeline<br/>parse, OCR, chunk, embed]
             retr[Hybrid retriever<br/>search, rerank, gate]
-            ans[Answer layer<br/>prompt, citations, cache,<br/>quota, rate limit]
+            ans[Answer layer<br/>prompt, citations,<br/>quota, rate limit]
             models[(ONNX models on CPU<br/>bge-m3, mmarco reranker,<br/>BM25 files, tessdata)]
             docs[(DATA_DIR<br/>parsed documents JSON)]
         end
@@ -133,7 +133,7 @@ sequenceDiagram
     participant Q as Qdrant
 
     C->>A: message (+ token, conversation_id)
-    A->>A: rate limit, role, language, exact-match cache
+    A->>A: rate limit, role, language
     A->>L: call 1: rewrite (standalone query + fr/en/ar translations)
     L-->>A: JSON (skipped on timeout or low quota)
     A->>R: retrieve(query, role, history, rewrite)
@@ -154,13 +154,11 @@ sequenceDiagram
 Key behaviours:
 
 - **At most 2 LLM calls per question**: the query rewrite (skipped when it would take the answer's
-  last quota slot) and the answer. Cached repeats use 0.
+  last quota slot) and the answer. No answer cache: identical questions are answered again.
 - **Visibility** is a filter inside every Qdrant prefetch and the fused query, never applied after
   the fact. Roles: `public` sees `public`; `member` sees both.
 - **Refusals**: the model starts with `NOT_FOUND` when the passages don't answer; the reply is then
   `grounded=false` with no sources, in the question's language.
-- **Cache**: exact match on question + role + corpus version (no semantic cache). Skipped inside a
-  conversation.
 - **Without an LLM** (no key, quota spent, provider error, breaker open) the answer is a notice in
   the user's language with the best passages as sources.
 
@@ -265,7 +263,8 @@ MODELS_DIR=$PWD/models TESSDATA_PREFIX=$PWD/models/tessdata uv run pytest -m "oc
 ```
 
 Workflow: spec-driven (`specs/<feature>/requirements.md`, `design.md`, `tasks.md`), test-first,
-feature branches into `dev`, `dev` into `main`, conventional commits. CI runs `uv lock --check`,
+feature branches into `dev`, `dev` into `main`, commits named by change and effect (`, so …`) with
+no prefixes. CI runs `uv lock --check`,
 ruff, the fast tests, and a models job that runs the model-backed tests. See
 [AGENTS.md](AGENTS.md) for the full rules.
 
@@ -310,8 +309,8 @@ questions are answered in French or English. Details, metrics and the issue inde
 - **Chunking** ([spec](specs/chunking/)): headings first, then paragraphs, lines and sentences
   (Arabic-aware), size last. Target 300 / max 400 / min 80 tokens, no overlap, and a
   "title > heading path" header on the embedded and BM25 text.
--
-- **Exact-match cache** keyed by question + role + corpus version, no semantic answer cache.
+- **No answer cache** (removed 2026-10-15): the in-process exact-match cache was dropped after
+  the jury's Redis-or-remove call; the rewrite call keeps a small in-memory LRU.
 - **Parsing**: `xberg` (bundled Tesseract) for files, httpx + trafilatura for web pages, own
   magic-byte sniffing, SSRF guard on every redirect hop.
 
@@ -324,7 +323,7 @@ Specs for each area: [data-preprocessing](specs/data-preprocessing/), [chunking]
 ```
 src/mcclub_rag/
 ├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py, rate_limit.py, messages.py
-├── answer.py, conversation.py, cache.py
+├── answer.py, conversation.py
 ├── api/        chat.py, documents.py, feedback.py, health.py
 ├── ingest/     preprocess.py, parse.py, ocr.py, web.py, chunk.py, pipeline.py, docstore.py, ...
 ├── text/       normalize.py, lang.py, sentences.py, snippet.py

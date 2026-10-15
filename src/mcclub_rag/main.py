@@ -16,7 +16,6 @@ from mcclub_rag.api.chat import router as chat_router
 from mcclub_rag.api.documents import router as documents_router
 from mcclub_rag.api.feedback import router as feedback_router
 from mcclub_rag.api.health import router as health_router
-from mcclub_rag.cache import ExactMatchCache
 from mcclub_rag.config import Settings, get_settings
 from mcclub_rag.conversation import ConversationStore
 from mcclub_rag.errors import IngestError, install_error_handlers
@@ -30,7 +29,6 @@ from mcclub_rag.logging import RequestLoggingMiddleware
 from mcclub_rag.rate_limit import SlidingWindowRateLimiter
 from mcclub_rag.retrieval.backend import HybridRetriever
 from mcclub_rag.schemas import (
-    ChatResponse,
     DocInfo,
     IngestResult,
     Retrieval,
@@ -319,7 +317,6 @@ class ApplicationState:
     rewriter: QueryRewriter | None = None  # the optional first LLM call (query-rewrite)
     conversations: ConversationStore = field(default_factory=ConversationStore)
     rate_limiter: SlidingWindowRateLimiter | None = None
-    chat_cache: ExactMatchCache[ChatResponse] | None = None
     quota: DailyQuota | None = None
     breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
     corpus_version: str = "0"
@@ -330,8 +327,6 @@ class ApplicationState:
                 self.settings.chat_rate_limit_requests,
                 self.settings.chat_rate_limit_window_s,
             )
-        if self.chat_cache is None:
-            self.chat_cache = ExactMatchCache(lambda: self.corpus_version)
         if self.quota is None:
             self.quota = DailyQuota(
                 self.settings.data_dir,

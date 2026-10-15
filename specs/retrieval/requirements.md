@@ -37,7 +37,7 @@ candidates is bounded by latency: 30 candidates is already 3.3 s with the faster
 entries in `retrieval/registry.py` and `scripts/download_models.py`, `RETRIEVAL_*` settings,
 `eval/questions.jsonl`, `eval/run_eval.py`, and tests. **Out of scope:** the `DocumentBackend`
 adapter and readiness probe (separate task), wiring into `main.py` (eequaled's file, done together
-later), prompts and answer formatting, the answer cache, and any change to `schemas.py`, `main.py`
+later), prompts and answer formatting, and any change to `schemas.py`, `main.py`
 or `config.py`.
 
 ## Requirements

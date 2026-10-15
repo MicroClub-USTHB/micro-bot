@@ -7,7 +7,7 @@ The ingest pipeline is the last ingest stage. It takes a file or a URL, runs pre
 sparse), and stores the result in Qdrant so that retrieval can run hybrid search with the
 visibility filter inside the query. It also owns document identity (`doc_id` from the topic),
 deduplication and replacement, deletion and listing for the admin endpoints, and the
-`corpus_version()` that keys the answer cache.
+`corpus_version()` that identifies the current indexed corpus.
 
 Fixed decisions this spec builds on (AGENTS.md): granite-embedding-311m-multilingual-r2 shipped
 ONNX int8 via onnxruntime + tokenizers (no PyTorch), CLS pooling + L2 normalize, no query prefix,
@@ -160,8 +160,9 @@ or chunking settings not to require re-uploading or re-OCRing everything.
 
 ### Requirement 8: Corpus version and reindexing
 
-**User Story:** As the answer cache, I want a version string that changes whenever the indexed
-content or how it was indexed changes, so that I never serve an answer built from stale chunks.
+**User Story:** As the system, I want a version string that changes whenever the indexed content
+or how it was indexed changes, so that logs, evals and comparisons can tell two corpus states
+apart.
 
 #### Acceptance Criteria
 

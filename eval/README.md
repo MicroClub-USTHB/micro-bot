@@ -181,8 +181,9 @@ call; it does not catch the remaining misses (they score high). Not turned on.
   latency includes a local LLM. Production latency depends on the provider.
 - **Small groups**: noisy 4 base cases, followup 8, arabizi 22: one case moves arabizi by 4.5
   points.
-- **Each chat request uses a fresh `eval-<uuid>` conversation id** to skip the answer cache
-  without changing the API; follow-up cases need the in-process driver (it seeds history).
+- **Each chat request uses a fresh `eval-<uuid>` conversation id** so it starts a new
+  conversation with no history, without changing the API; follow-up cases need the in-process
+  driver (it seeds history).
 - **Comparisons**: `python -m eval.e2e.compare <a.json> <b.json>`; change one thing per run
   (prompt, model, setting) or the deltas mix causes.
 
@@ -194,7 +195,7 @@ uv run python -m eval.bench_models --llm ollama --label m1             # records
 uv run python -m eval.bench_models --mode replay --rerankers cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
 uv run python -m eval.e2e.run --suite quality --llm ollama --rewrite --max-llm-calls 800 --label q
 uv run python -m eval.e2e.run --suite robustness --split test --rewrite --label rb
-uv run python -m eval.e2e.run --suite all --label full                  # + contract, faults, cache, ingest, load
+uv run python -m eval.e2e.run --suite all --label full                  # + contract, faults, ingest, load
 uv run python -m eval.e2e.run --target http --base-url http://localhost:8000 --suite contract
 ```
 

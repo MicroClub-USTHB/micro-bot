@@ -210,7 +210,7 @@ the defaults are backed by our corpus and not only by external benchmarks.
    settings (no hidden constants), so that `target_tokens` ∈ {200, 300, 400} and `context_header`
    on/off can be evaluated with hit@5 and MRR, including the Arabic subset.
 2. The chunking settings SHALL be part of the corpus version (`corpus_version()` in the pipeline
-   spec), so that changing them invalidates the answer cache and triggers a reindex.
+   spec), so that changing them changes the version and triggers a reindex.
 
 ## Open questions
 

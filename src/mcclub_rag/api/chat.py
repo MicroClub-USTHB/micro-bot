@@ -58,28 +58,6 @@ async def chat(
     history = previous.messages if previous else []
 
     state.corpus_version = await state.documents.corpus_version()
-    # Skip cache when conversation history is present or when the request carried a conversation_id
-    skip_cache = has_conversation_param or bool(history)
-    cached = None if skip_cache else state.chat_cache.get(payload.message, role)
-    if cached is not None:
-        response = cached.model_copy(
-            update={
-                "conversation_id": conversation.conversation_id,
-                "usage": Usage(llm_calls=0, prompt_tokens=0, completion_tokens=0),
-                "latency_ms": _latency_ms(started_at),
-            }
-        )
-        _save_and_log(
-            request,
-            payload.message,
-            response,
-            role,
-            state.corpus_version,
-            conversation,
-            [],
-        )
-        return response
-
     if not payload.message.strip():  # I18: nothing to search; the API shape stays the same
         retrieval = Retrieval(chunks=[], top_score=0.0, decision="refuse")
         response = _response(
@@ -109,8 +87,6 @@ async def chat(
         history=history,
     )
     response = _add_usage(response, rewrite.usage)
-    if not skip_cache:
-        state.chat_cache.set(payload.message, role, response)
     _save_and_log(
         request,
         payload.message,

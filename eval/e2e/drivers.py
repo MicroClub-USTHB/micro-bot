@@ -2,9 +2,9 @@
 
 Both speak the public API through httpx; only the transport and the corpus setup differ. Each
 chat request carries a fresh unknown ``conversation_id`` (``eval-<uuid>``): the chat route then
-starts a new conversation with no history and skips the answer cache, without any API change
-(Req 5.3). Follow-up cases need history in the server's store, which only the in-process
-driver can seed; the HTTP driver reports them as unsupported.
+starts a new conversation with no history, without any API change (Req 5.3). Follow-up cases
+need history in the server's store, which only the in-process driver can seed; the HTTP driver
+reports them as unsupported.
 """
 
 import asyncio
@@ -152,7 +152,7 @@ class InProcessDriver(_Api):
     async def chat(self, case: Case, message: str | None = None) -> Observation:
         captured = self.state.retrieval
         if isinstance(captured, _Captured):
-            captured.last = None  # a cache hit or a blank message retrieves nothing
+            captured.last = None  # a blank message retrieves nothing
         observation = await super().chat(case, message)
         if isinstance(captured, _Captured):
             observation.retrieval = captured.last

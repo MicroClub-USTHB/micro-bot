@@ -3,8 +3,8 @@
 ## Flow
 
 ```
-chat: message -> cache? -> rewrite (LLM call 1, optional) -> retrieve(message, role, history,
-      rewrite=...) -> answer (LLM call 2)
+chat: message -> rewrite (LLM call 1, optional) -> retrieve(message, role, history, rewrite=...)
+      -> answer (LLM call 2)
 ```
 
 `llm/rewrite.py` holds the prompt, the parser and `QueryRewriter` (cache + timeout). The chat

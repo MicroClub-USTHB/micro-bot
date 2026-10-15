@@ -93,7 +93,7 @@ that most of the eval is free, fast and reproducible.
 4. Language: `detect_language(answer)` equals the case `lang` for answers; refusals are scored
    on a separate `refusal_language` metric (today's refusal text is always English).
 5. Path: each response is classified as `llm` (`llm_calls == 1`), `fallback` (answered with
-   `llm_calls == 0`), `gate_refusal` or `cache`. A run where any answerable case is not `llm`
+   `llm_calls == 0`) or `gate_refusal`. A run where any answerable case is not `llm`
    SHALL print a warning naming the count and the reason, and the scorecard marks generation
    as **not evaluated** instead of passing it.
 6. Each check SHALL record `pass` / `fail` / `skip` with a short reason, so a failure can be read
@@ -115,7 +115,7 @@ spending the app's daily quota.
    verdicts keyed by (answer, snippets, rubric version, model) so a rerun costs nothing.
 4. An unparsable verdict is `skip` with the reason, never `pass`.
 
-### Requirement 5: Budget, cache and replay
+### Requirement 5: Budget and replay
 
 **User Story:** As the developer, I want to run the full suite many times a day while the app has
 only 50 LLM requests a day.
@@ -128,9 +128,8 @@ only 50 LLM requests a day.
    (system and user prompt hash, model, text, usage, error) under `eval/e2e/recordings/`, and a
    `--replay` mode that serves recorded generations and fails a case whose prompt hash is absent
    (prompt changed) instead of calling the provider.
-3. Each request SHALL bypass the exact-match answer cache without changing the API: it sends a
-   fresh unknown `conversation_id` (`eval-<uuid>`), which the chat route treats as no history and
-   no cache. A separate cache check (Req 7.3) tests the cache on purpose.
+3. Each request SHALL send a fresh unknown `conversation_id` (`eval-<uuid>`), which the chat
+   route treats as a new conversation with no history, without changing the API.
 4. The harness SHALL pace requests under `CHAT_RATE_LIMIT_REQUESTS` per window for the HTTP
    driver, and record any 429 as a failure of that case, not a crash.
 
@@ -165,12 +164,10 @@ time, so that "reliable" is a measured claim.
    `llm_calls == 0`. Each fault records expected vs observed status, code and `llm_calls`.
 2. API contract: the auth matrix (no token, bad token, member token, admin key) on every route,
    a 2001-character message -> 422, malformed JSON -> 422, all errors in the JSON error shape.
-3. Cache: the same question twice without `conversation_id` -> the second has `llm_calls == 0`
-   and the same answer; after an upload changes `corpus_version` the cache misses.
-4. Load (`--suite load`): `--concurrency C` virtual users for `--duration S` seconds on the
+3. Load (`--suite load`): `--concurrency C` virtual users for `--duration S` seconds on the
    gated and retrieval paths only (no LLM), reporting throughput, p50/p95/p99 latency, error
    rate and 429 count, and peak RSS of the app process when it is local.
-5. Restart (HTTP driver, `--allow-docker` only): restart the `app` and then the `qdrant`
+4. Restart (HTTP driver, `--allow-docker` only): restart the `app` and then the `qdrant`
    container mid-run; the health endpoint recovers, the document list is unchanged and the same
    questions give the same decisions.
 

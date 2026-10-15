@@ -83,7 +83,10 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   wired into the API. Version 0.1.0 is the first release; see PROGRESS.md for what is left.
 - **Test-first** per task; tick the task in `tasks.md` when done.
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
-  Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
+  Commits: one lowercase imperative line, no prefix, no trailing period — name the change, then
+  `, so <effect>` (the effect, not the mechanism); bodies only for a non-obvious why. Stage specific
+  paths (never `git add -A`), commit only on a green suite (ruff + the fast `pytest`), don't push
+  unless told.
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
@@ -117,8 +120,9 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   stays an A/B entry via `RERANK_MODEL`. All pinned with sha256 in `retrieval/registry.py`.
 - **Parsing:** `xberg` 1.3.6 (pinned, MIT) with bundled Tesseract; `ara`, `fra`, `eng` traineddata
   (tessdata_fast 4.1.0, sha256-pinned) baked into the image, `TESSDATA_PREFIX` set.
-- **Web pages:** httpx + trafilatura. **Cache:** exact-match keyed by question + role + corpus
-  version (no semantic answer cache).
+- **Web pages:** httpx + trafilatura. **No answer cache** (removed 2026-10-15, jury decision): the
+  in-process exact-match cache was dropped; the rewrite call keeps its small LRU
+  (`REWRITE_CACHE_SIZE`).
 - **Offline:** no network except the explicit URL fetch (`HF_HUB_OFFLINE=1`).
 
 ## Dependency rules
@@ -287,8 +291,8 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
   public case's `must_not`), injection docs a marker (added to every case). Canaries may never be in
   an answer or snippet; markers only in the answer (citing the injection doc is fine).
 - **Drivers** speak the public API. Each chat request sends a fresh `eval-<uuid>`
-  `conversation_id` to skip the answer cache without changing the API; follow-ups need the
-  in-process driver (it seeds the conversation store). `get_role` reads the global settings, so
+  `conversation_id` so it starts a new conversation with no history, without changing the API;
+  follow-ups need the in-process driver (it seeds the conversation store). `get_role` reads the global settings, so
   the in-process driver sets `MEMBER_TOKEN`/`ADMIN_API_KEY` in the environment until `close()`.
 - **LLM budget:** the in-process app runs `RecordingGenerator` (budget `--max-llm-calls`, record /
   replay by prompt hash with the date masked). Once spent, fallback answers are `not_run`, not
@@ -320,7 +324,7 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 ```
 src/mcclub_rag/
 ├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py
-├── answer.py, conversation.py, cache.py
+├── answer.py, conversation.py
 ├── api/        chat.py, documents.py, feedback.py, health.py
 ├── ingest/     parse.py, web.py, chunk.py, pipeline.py   (+ spec'd preprocessing modules above)
 ├── text/       normalize.py, lang.py
@@ -339,7 +343,7 @@ Built: preprocessing (below) and chunking (`ingest/chunk.py`, `ingest/tokens.py`
 `chunking_signature()` for the corpus version), and the ingest pipeline (`ingest/pipeline.py`,
 `ingest/identity.py`, `ingest/docstore.py`, `retrieval/registry.py`, `retrieval/embed.py`,
 `retrieval/store.py`, `scripts/ingest_folder.py`, `scripts/reindex.py`; see "Ingest pipeline"
-above). eequaled built `api/`, `llm/`, `answer.py`, `cache.py`, `conversation.py`,
+above). eequaled built `api/`, `llm/`, `answer.py`, `conversation.py`,
 `config.py`, `main.py`, `schemas.py` and the rest of the top level (`rate_limit.py` too).
 Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.py`, `eval/`; see
 "Retrieval" above). The backends are wired in `main.py` (`default_state`).
