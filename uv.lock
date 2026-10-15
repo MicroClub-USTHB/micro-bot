@@ -158,15 +158,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dill"
-version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
-]
-
-[[package]]
 name = "dnspython"
 version = "2.9.0"
 source = { registry = "https://pypi.org/simple" }
@@ -721,7 +712,6 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "fastembed" },
     { name = "httpx" },
-    { name = "huggingface-hub" },
     { name = "lxml" },
     { name = "numpy" },
     { name = "onnxruntime" },
@@ -730,7 +720,6 @@ dependencies = [
     { name = "py3langid" },
     { name = "pydantic-settings" },
     { name = "qdrant-client" },
-    { name = "semchunk" },
     { name = "structlog" },
     { name = "tokenizers" },
     { name = "trafilatura" },
@@ -753,7 +742,6 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = "~=0.143" },
     { name = "fastembed", specifier = ">=0.9" },
     { name = "httpx", specifier = "~=0.28" },
-    { name = "huggingface-hub", specifier = ">=0.36" },
     { name = "lxml", specifier = "~=6.1" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "onnxruntime", specifier = ">=1.31" },
@@ -762,7 +750,6 @@ requires-dist = [
     { name = "py3langid", specifier = "~=0.4" },
     { name = "pydantic-settings", specifier = "~=2.15" },
     { name = "qdrant-client", specifier = "~=1.19" },
-    { name = "semchunk", specifier = "~=4.1" },
     { name = "structlog", specifier = ">=26.1" },
     { name = "tokenizers", specifier = ">=0.23" },
     { name = "trafilatura", specifier = "~=2.3" },
@@ -1419,19 +1406,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/78/fa/0f9c2020dc316c53d983be011720b8157cc052b97e3f4dfa7db6d0f880a6/ruff-0.16.10-py3-none-win32.whl", hash = "sha256:2a12e01cb9156c10c466f63b46eaae5ecea28dfbd21b5836353ae498e7d1349a", size = 10139176, upload-time = "2026-10-01T18:03:13.267Z" },
     { url = "https://files.pythonhosted.org/packages/99/29/cfb0df9448d4d4ad48c2de029ada9ebd71baa6da983a6c77ee6c6cd0fe82/ruff-0.16.10-py3-none-win_amd64.whl", hash = "sha256:97f2015c92aa97105b0eab19eb5d224884399281cfc5da86a92db4ab5e7fb2ca", size = 10584734, upload-time = "2026-10-01T18:03:16.006Z" },
     { url = "https://files.pythonhosted.org/packages/fc/05/c16957eb287c3fc062e032619a25868d93d408a844b725bcf514f7a378ff/ruff-0.16.10-py3-none-win_arm64.whl", hash = "sha256:25a65fe998c4e6861ec079ada5826a2fc605e6cbccbe9dcd7fac1f54e791621b", size = 10366440, upload-time = "2026-10-01T18:03:19.04Z" },
-]
-
-[[package]]
-name = "semchunk"
-version = "4.1.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dill", marker = "sys_platform == 'win32'" },
-    { name = "tqdm" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b4/ab/74030fb91d965e3feecaad2bea1fbc5adeef8836cc5f15aab492d6bc0319/semchunk-4.1.1.tar.gz", hash = "sha256:f27dc85716a0e9509a3f99c78b961cc476b3120efe711ee9a9a950ed1bd0f8ba", size = 24910, upload-time = "2026-06-13T00:45:02.446Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ac/67/892571d1a035a146c8f3cad38306b90cb6a7cd4e042aa8e5554144757d9e/semchunk-4.1.1-py3-none-any.whl", hash = "sha256:acbc535e89824dce954a554e297438b2ee3506b71505f1472eb2bf8057fcba3c", size = 18706, upload-time = "2026-06-13T00:45:00.974Z" },
 ]
 
 [[package]]
