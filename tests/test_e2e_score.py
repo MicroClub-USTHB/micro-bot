@@ -173,3 +173,15 @@ def test_gold_numbers_ignore_thousands_separators(answer):
     case = _case(gold=["402 500", "402500"], evidence=[])
     body = _body(answer=answer + " [d-faq]")
     assert _status(score_chat(case, Observation(200, body), CORPUS, TOPICS))["gold"] == "pass"
+
+
+def test_retrieved_check_uses_the_captured_passages():
+    from eval.e2e.score import _retrieved
+
+    case = Case(id="x", question="q", lang="en", role="public", expect="answer", evidence=["fee"])
+    chunk = Chunk(chunk_id="c", doc_id="d", title="T", text="The fee is 10.", score=0.5)
+    hit = Retrieval(chunks=[chunk], top_score=0.5, decision="answer")
+    miss = Retrieval(chunks=[], top_score=0.0, decision="refuse")
+    assert _retrieved(case, hit).status == "pass"
+    assert _retrieved(case, miss).status == "fail"
+    assert _retrieved(case, None).status == "skip"
