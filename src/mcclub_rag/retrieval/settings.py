@@ -62,6 +62,11 @@ class RetrievalSettings(BaseSettings):
     query_fix_case: bool = True  # lower-case an ALL-CAPS query (eval-fixes Req 9)
     query_strip_harakat: bool = True  # drop Arabic diacritics from the query
     neighbours: bool = False
+    # With a query rewrite (query-rewrite Req 2): each translation searches only the chunks of
+    # its language; the reranker query per chunk: its language's translation (chunk_lang), the
+    # standalone rewrite (query), the typed question (original) or the English one (en)
+    rewrite_lang_filter: bool = True
+    rewrite_rerank: Literal["chunk_lang", "query", "original", "en"] = "chunk_lang"
     # Rank multiplier for chunks flagged ``instruction_like`` at ingest; 1.0 = off (Req 4.4)
     instruction_penalty: float = Field(default=1.0, gt=0, le=1)
 
