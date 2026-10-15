@@ -13,6 +13,7 @@ import structlog
 from qdrant_client import AsyncQdrantClient
 
 from mcclub_rag.ingest.pipeline import IngestPipeline
+from mcclub_rag.llm.rewrite import QueryRewrite
 from mcclub_rag.retrieval.embed import DenseEncoder, SparseEncoder
 from mcclub_rag.retrieval.gate import decide
 from mcclub_rag.retrieval.query import build_search_query, normalize_query
@@ -136,7 +137,9 @@ class HybridRetriever:
             texts[h.point_id] = "\n\n".join(t for t in (before, h.text, after) if t)
         return texts
 
-    async def retrieve(self, query: str, role: Role, history: list[object]) -> Retrieval:
+    async def retrieve(
+        self, query: str, role: Role, history: list[object], *, rewrite: QueryRewrite | None = None
+    ) -> Retrieval:
         s = self.settings
         visibility_filter(role)  # unknown role: ValueError before any work
         search_query, used_history = self.search_query(query, history)

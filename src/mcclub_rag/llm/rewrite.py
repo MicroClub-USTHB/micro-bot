@@ -108,16 +108,23 @@ def parse_rewrite(reply: str) -> QueryRewrite | None:
 
 
 class QueryRewriter:
-    """One rewrite call per new (message, previous question); results cached in memory."""
+    """One rewrite call per new (message, previous question); results cached in memory.
 
-    def __init__(self, generator: _Generator, *, timeout_s: float, cache_size: int = 512):
-        self.generator = generator
+    The generator is passed per call: the app's current generation service, so a swapped
+    service (tests, the eval's recorder) serves both calls.
+    """
+
+    def __init__(self, *, timeout_s: float, cache_size: int = 512):
         self.timeout_s = timeout_s
         self.cache_size = cache_size
         self._cache: OrderedDict[tuple[str, str | None], QueryRewrite | None] = OrderedDict()
 
     async def rewrite(
-        self, message: str, previous: str | None, allow: Callable[[], bool] = lambda: True
+        self,
+        generator: _Generator,
+        message: str,
+        previous: str | None,
+        allow: Callable[[], bool] = lambda: True,
     ) -> RewriteOutcome:
         """``allow`` (breaker, quota) is asked only on a cache miss, right before the call."""
         key = (message, previous)
@@ -129,7 +136,7 @@ class QueryRewriter:
         system, user = build_rewrite_prompt(message, previous)
         try:
             result = await asyncio.wait_for(
-                self.generator.generate(system, user), timeout=self.timeout_s
+                generator.generate(system, user), timeout=self.timeout_s
             )
         except TimeoutError:
             return RewriteOutcome(None, GenerationUsage(llm_calls=1), True, "timeout")

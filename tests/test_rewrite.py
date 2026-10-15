@@ -76,10 +76,10 @@ def _ok(text: str) -> GenerationResult:
 
 async def test_rewriter_caches_by_message_and_previous():
     generator = FakeGenerator(_ok(json.dumps(GOOD)))
-    rewriter = QueryRewriter(generator, timeout_s=5)
-    first = await rewriter.rewrite("wach kayen parking?", None)
-    again = await rewriter.rewrite("wach kayen parking?", None)
-    other = await rewriter.rewrite("wach kayen parking?", "previous")
+    rewriter = QueryRewriter(timeout_s=5)
+    first = await rewriter.rewrite(generator, "wach kayen parking?", None)
+    again = await rewriter.rewrite(generator, "wach kayen parking?", None)
+    other = await rewriter.rewrite(generator, "wach kayen parking?", "previous")
     assert first.rewrite == again.rewrite == other.rewrite
     assert first.usage.llm_calls == 1 and again.usage.llm_calls == 0
     assert generator.calls == 2
@@ -88,41 +88,41 @@ async def test_rewriter_caches_by_message_and_previous():
 
 async def test_rewriter_failures_are_none():
     failed = FakeGenerator(GenerationResult(None, GenerationUsage(1), "timeout"))
-    outcome = await QueryRewriter(failed, timeout_s=5).rewrite("q", None)
+    outcome = await QueryRewriter(timeout_s=5).rewrite(failed, "q", None)
     assert outcome.rewrite is None and outcome.failed and outcome.usage.llm_calls == 1
 
     garbage = FakeGenerator(_ok("no json here"))
-    outcome = await QueryRewriter(garbage, timeout_s=5).rewrite("q", None)
+    outcome = await QueryRewriter(timeout_s=5).rewrite(garbage, "q", None)
     assert outcome.rewrite is None and not outcome.failed  # the provider worked
     assert outcome.usage.llm_calls == 1
 
     slow = FakeGenerator(_ok(json.dumps(GOOD)), delay=1)
-    outcome = await QueryRewriter(slow, timeout_s=0.05).rewrite("q", None)
+    outcome = await QueryRewriter(timeout_s=0.05).rewrite(slow, "q", None)
     assert outcome.rewrite is None and outcome.failed and outcome.error == "timeout"
 
 
 async def test_rewriter_does_not_cache_failures():
     generator = FakeGenerator(GenerationResult(None, GenerationUsage(1), "provider_5xx"))
-    rewriter = QueryRewriter(generator, timeout_s=5)
-    await rewriter.rewrite("q", None)
-    await rewriter.rewrite("q", None)
+    rewriter = QueryRewriter(timeout_s=5)
+    await rewriter.rewrite(generator, "q", None)
+    await rewriter.rewrite(generator, "q", None)
     assert generator.calls == 2
 
 
 async def test_rewriter_cache_is_bounded():
     generator = FakeGenerator(_ok(json.dumps(GOOD)))
-    rewriter = QueryRewriter(generator, timeout_s=5, cache_size=2)
+    rewriter = QueryRewriter(timeout_s=5, cache_size=2)
     for message in ("a", "b", "c", "a"):
-        await rewriter.rewrite(message, None)
+        await rewriter.rewrite(generator, message, None)
     assert generator.calls == 4  # "a" was evicted by "c"
 
 
 async def test_allow_is_asked_only_on_a_miss():
     generator = FakeGenerator(_ok(json.dumps(GOOD)))
-    rewriter = QueryRewriter(generator, timeout_s=5)
-    denied = await rewriter.rewrite("q", None, allow=lambda: False)
+    rewriter = QueryRewriter(timeout_s=5)
+    denied = await rewriter.rewrite(generator, "q", None, allow=lambda: False)
     assert denied.rewrite is None and denied.error == "skipped" and denied.usage.llm_calls == 0
-    await rewriter.rewrite("q", None)
+    await rewriter.rewrite(generator, "q", None)
     asked = []
-    hit = await rewriter.rewrite("q", None, allow=lambda: asked.append(1) or False)
+    hit = await rewriter.rewrite(generator, "q", None, allow=lambda: asked.append(1) or False)
     assert hit.rewrite is not None and not asked
