@@ -9,7 +9,7 @@ once as typed and once with its rewrite. Rewrites are made once, before the matr
 e2e ``RecordingGenerator`` (recorded or replayed by prompt hash), so every model sees the same
 rewrites. Reranker scores are cached by (query, passage) with the time each pair took, so a
 pair seen by several embedders is scored once and the rerank time stays exact. Writes
-``eval/results/models/<UTC>-<label>.json`` and ``.md`` (``eval/bench_report.py``).
+``eval/results/matrix/<UTC>-<label>.json`` and ``.md`` (``eval/bench_report.py``).
 """
 
 import argparse
@@ -224,7 +224,7 @@ async def run(args) -> Path:
         "ingest": ingest,
         "rows": rows,
     }
-    out = REPO / "eval" / "results" / "models"
+    out = REPO / "eval" / "results" / "matrix"
     out.mkdir(parents=True, exist_ok=True)
     stem = out / f"{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{args.label}"
     stem.with_suffix(".json").write_text(json.dumps(payload, ensure_ascii=False) + "\n")
