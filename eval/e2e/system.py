@@ -32,7 +32,7 @@ class _Raising:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    async def retrieve(self, query, role, history, rewrite=None):
+    async def retrieve(self, query, role, history):
         raise self.error
 
 

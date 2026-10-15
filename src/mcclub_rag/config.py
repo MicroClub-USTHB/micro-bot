@@ -17,17 +17,12 @@ class Settings(BaseSettings):
     embed_model: str = "BAAI/bge-m3"
     embed_dim: int = Field(default=1024, gt=0)
     # Retrieval reads these through RetrievalSettings (retrieval/settings.py); keep them equal (I21)
-    rerank_model: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    rerank_model: str = "BAAI/bge-reranker-v2-m3"
     models_dir: Path = Path("/app/models")
     data_dir: Path = Path("/data")
     llm_daily_limit: int = Field(default=50, gt=0)
     llm_reserve: int = Field(default=5, ge=0)
     llm_timeout_s: int = Field(default=25, gt=0)
-    llm_disable_reasoning: bool = False  # ask OpenRouter to skip a reasoning model's thinking
-    # Query rewrite, the optional first LLM call of a question (specs/query-rewrite)
-    rewrite_enabled: bool = True
-    rewrite_timeout_s: float = Field(default=6.0, gt=0)
-    rewrite_cache_size: int = Field(default=512, ge=0)
     retrieve_top_k: int = Field(default=20, gt=0)
     rerank_top_n: int = Field(default=5, gt=0)
     gate_threshold: float | None = None

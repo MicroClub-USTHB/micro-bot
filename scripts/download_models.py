@@ -243,7 +243,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--model",
         choices=sorted(RERANKERS),
         default=os.environ.get("RERANK_MODEL") or DEFAULT_RERANKER,
-        help="reranker to download (default: $RERANK_MODEL or mmarco-mMiniLMv2-L12)",
+        help="reranker to download (default: $RERANK_MODEL or bge-reranker-v2-m3)",
     )
     parser.add_argument("--variant", choices=["fast", "best"], default="fast")
     args = parser.parse_args(argv)

@@ -97,18 +97,6 @@ class _Api:
         await self.client.aclose()
 
 
-class _Captured:
-    """The app's retrieval backend, keeping the last result for the scorer."""
-
-    def __init__(self, inner) -> None:
-        self.inner = inner
-        self.last: Retrieval | None = None
-
-    async def retrieve(self, query, role, history, *, rewrite=None) -> Retrieval:
-        self.last = await self.inner.retrieve(query, role, history, rewrite=rewrite)
-        return self.last
-
-
 class InProcessDriver(_Api):
     """The app built in this process on the given pipeline, retriever and generator."""
 
@@ -134,7 +122,7 @@ class InProcessDriver(_Api):
             "documents": self.documents,
             "document_probe": Ready(self.documents),
             "provider_probe": Ready(),
-            "retrieval": _Captured(retriever),
+            "retrieval": retriever,
             "language_detector": RealLanguageDetector(),
             "generator": generator,
             "rate_limiter": SlidingWindowRateLimiter(100_000, 60),
@@ -148,15 +136,6 @@ class InProcessDriver(_Api):
 
     async def close(self) -> None:
         await super().close()
-
-    async def chat(self, case: Case, message: str | None = None) -> Observation:
-        captured = self.state.retrieval
-        if isinstance(captured, _Captured):
-            captured.last = None  # a cache hit or a blank message retrieves nothing
-        observation = await super().chat(case, message)
-        if isinstance(captured, _Captured):
-            observation.retrieval = captured.last
-        return observation
 
     async def setup(self, sources: Sequence[Source]) -> dict[str, str]:
         """Ingest each source with its manifest title and topic; doc_id -> topic."""
@@ -178,21 +157,10 @@ class InProcessDriver(_Api):
             store.save(conversation.conversation_id, Turn(**turn.model_dump()), [])
         return conversation.conversation_id
 
-    async def rewrite(self, question: str, history: Sequence[Turn]):
-        """The app's query rewrite (None when the run has no ``--rewrite``)."""
-        rewriter = self.state.rewriter
-        if rewriter is None:
-            return None
-        previous = history[-1].user_message if history else None
-        return (await rewriter.rewrite(self.state.generator, question, previous)).rewrite
-
     async def retrieve(self, case: Case) -> tuple[Retrieval, float]:
         history = [Turn(**t.model_dump()) for t in case.history]
         start = time.perf_counter()
-        rewrite = await self.rewrite(case.question, history)
-        retrieval = await self.retriever.retrieve(
-            case.question, case.role, history, rewrite=rewrite
-        )
+        retrieval = await self.retriever.retrieve(case.question, case.role, history)
         return retrieval, _ms(start)
 
 

@@ -323,14 +323,14 @@ def test_reranker_keys_resolve_to_one_spec_per_model():
     assert r["Alibaba-NLP/gte-multilingual-reranker-base"] is registry.GTE_RERANKER
     assert r["onnx-community/gte-multilingual-reranker-base"] is registry.GTE_RERANKER
     assert r["BAAI/bge-reranker-v2-m3"] is r["onnx-community/bge-reranker-v2-m3-ONNX"]
-    assert registry.RERANKERS[registry.DEFAULT_RERANKER] is registry.MMARCO_RERANKER
+    assert registry.RERANKERS[registry.DEFAULT_RERANKER] is registry.BGE_RERANKER
     assert registry.GTE_RERANKER.slug == "gte-multilingual-reranker-base"
 
 
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [
-        ([], "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"),
+        ([], "onnx-community/bge-reranker-v2-m3-ONNX"),
         (
             ["--model", "Alibaba-NLP/gte-multilingual-reranker-base"],
             "onnx-community/gte-multilingual-reranker-base",

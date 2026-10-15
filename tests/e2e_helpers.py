@@ -25,9 +25,9 @@ class RecordingRetriever:
         self.inner = inner
         self.histories = []
 
-    async def retrieve(self, query, role, history, rewrite=None):
+    async def retrieve(self, query, role, history):
         self.histories.append(list(history))
-        return await self.inner.retrieve(query, role, history, rewrite=rewrite)
+        return await self.inner.retrieve(query, role, history)
 
 
 async def make_driver(tmp_path, generator=None):

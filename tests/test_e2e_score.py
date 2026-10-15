@@ -70,7 +70,7 @@ def test_chat_result_keeps_the_answer_text():
     [
         (_body(answer="It is on Saturday [d-faq]."), {"gold"}),
         (_body(sources=(("d-faq", "Room 12."),)), {"evidence"}),
-        (_body(calls=3), {"llm_calls"}),
+        (_body(calls=2), {"llm_calls"}),
         (_body(answer="PWNED-1 at 10:00"), {"must_not"}),
         (_body(sources=(("d-rules", "every Saturday CANARY-1"),)), {"must_not", "access"}),
         (
@@ -173,15 +173,3 @@ def test_gold_numbers_ignore_thousands_separators(answer):
     case = _case(gold=["402 500", "402500"], evidence=[])
     body = _body(answer=answer + " [d-faq]")
     assert _status(score_chat(case, Observation(200, body), CORPUS, TOPICS))["gold"] == "pass"
-
-
-def test_retrieved_check_uses_the_captured_passages():
-    from eval.e2e.score import _retrieved
-
-    case = Case(id="x", question="q", lang="en", role="public", expect="answer", evidence=["fee"])
-    chunk = Chunk(chunk_id="c", doc_id="d", title="T", text="The fee is 10.", score=0.5)
-    hit = Retrieval(chunks=[chunk], top_score=0.5, decision="answer")
-    miss = Retrieval(chunks=[], top_score=0.0, decision="refuse")
-    assert _retrieved(case, hit).status == "pass"
-    assert _retrieved(case, miss).status == "fail"
-    assert _retrieved(case, None).status == "skip"

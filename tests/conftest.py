@@ -99,7 +99,7 @@ def onnx_path() -> Path:
 
 @pytest.fixture(scope="session")
 def reranker_dir() -> Path:
-    """Pinned default reranker (mmarco int8 + tokenizer). Fails (never skips) when missing."""
+    """Pinned default reranker (gte int8 + tokenizer). Fails (never skips) when missing."""
     from mcclub_rag.retrieval.registry import DEFAULT_RERANKER, RERANKERS
 
     spec = RERANKERS[DEFAULT_RERANKER]

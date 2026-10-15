@@ -142,19 +142,3 @@ def test_load_markdown_shows_stage_times():
     stats["stages"] = {"ms_rerank": {"n": 8, "p50": 4000, "p95": 5000}}
     text = load_markdown(stats)
     assert "| ms_rerank | 8 | 4000 | 5000 |" in text and "0.7 req/s" in text
-
-
-def test_answer_rates_use_the_chat_layer_only():
-    gate_open = CaseResult("r", "retrieval", "answer", [Check("behaviour", "fail", "gate")])
-    results = [_result("a"), _result("r"), gate_open]
-    m = summarize(results, CASES)["metrics"]
-    assert m["false_answer_rate"] == 0.0  # the open gate's "answer" is not a chat answer
-    only_retrieval = summarize([gate_open], CASES)["metrics"]
-    assert only_retrieval["false_answer_rate"] == 1.0  # a --layer retrieval run still reports
-
-
-def test_markdown_has_language_quality_and_causes():
-    results = [_result("a"), _result("b", "behaviour", answered=False), _result("r")]
-    text = markdown(summarize(results, CASES), [], "t")
-    assert "## Quality by language" in text and "## Why cases failed" in text
-    assert "| refused | 1 |" in text and "<details>" in text

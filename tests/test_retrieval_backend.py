@@ -242,7 +242,7 @@ async def test_cross_language_arm_gets_the_question_language(pipe, rules, monkey
     retriever = make_retriever(pipe, cross_lang_prefetch=5)
     original = retriever.search.search
 
-    async def spy(dense, sparse, role, *, query_language=None, extra_dense=()):
+    async def spy(dense, sparse, role, *, query_language=None):
         seen.append(query_language)
         return await original(dense, sparse, role, query_language=query_language)
 
@@ -285,65 +285,3 @@ async def test_rerank_top_k_scores_only_the_first_candidates(pipe, rules, tmp_pa
     reranker = FakeReranker()
     await make_retriever(pipe, reranker, rerank_top_k=2).retrieve("cotisation", "public", [])
     assert len(reranker.calls[0][1]) == 2
-
-
-def _rewrite(**translations):
-    from mcclub_rag.llm.rewrite import QueryRewrite
-
-    return QueryRewrite("élections du bureau", "fr", translations)
-
-
-async def test_rewrite_adds_arms_and_reranks_with_the_chunk_language(pipe, rules, monkeypatch):
-    reranker = FakeReranker()
-    retriever = make_retriever(pipe, reranker, cross_lang_prefetch=5)
-    seen = []
-    original = retriever.search.search
-
-    async def spy(dense, sparse, role, *, query_language=None, extra_dense=()):
-        seen.append((query_language, [lang for _, lang in extra_dense]))
-        return await original(
-            dense, sparse, role, query_language=query_language, extra_dense=extra_dense
-        )
-
-    monkeypatch.setattr(retriever.search, "search", spy)
-    rewrite = _rewrite(fr="Quand ont lieu les élections ?", en="When are the elections?")
-    with capture_logs() as logs:
-        result = await retriever.retrieve("elections?", "public", [], rewrite=rewrite)
-    # query (all chunks) + fr + en arms; no cross-language arm with a rewrite
-    assert seen == [(None, [None, "fr", "en"])]
-    assert result.chunks[0].text.startswith("Les élections")
-    # the chunks are French ("und" in the fake pipeline -> the standalone query)
-    queries = {query for query, _ in reranker.calls}
-    assert queries <= {"Quand ont lieu les élections ?", "élections du bureau"}
-    done = next(e for e in logs if e["event"] == "retrieval_done")
-    assert done["rewritten"] is True and done["arms"] == 5
-
-
-async def test_rewrite_texts_equal_to_the_query_add_no_arm(pipe, rules):
-    retriever = make_retriever(pipe)
-    rewrite = _rewrite(fr="Élections du bureau", en="élections  du bureau")
-    assert retriever.rewrite_arms("élections du bureau", rewrite) == []
-    off = make_retriever(pipe, rewrite_lang_filter=False)
-    assert off.rewrite_arms("x", _rewrite(en="When?")) == [
-        ("élections du bureau", None),
-        ("When?", None),
-    ]
-
-
-async def test_rerank_query_modes(pipe, rules):
-    rewrite = _rewrite(fr="Quand ?", en="When?")
-    pick = {
-        mode: make_retriever(pipe, rewrite_rerank=mode).rerank_query("typed", rewrite)
-        for mode in ("chunk_lang", "query", "original", "en")
-    }
-
-    class C:
-        language = "en"
-
-    class U:
-        language = "und"
-
-    assert pick["chunk_lang"](C) == "When?" and pick["chunk_lang"](U) == "élections du bureau"
-    assert pick["query"](C) == "élections du bureau"
-    assert pick["original"](C) == "typed"
-    assert pick["en"](U) == "When?"
