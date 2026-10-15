@@ -78,6 +78,8 @@ class OpenRouterClient:
             timeout=self.settings.llm_timeout_s,
             max_retries=0,
         )
+        # Reasoning models (nemotron) spend 500-1000 hidden tokens and ~20 s per call otherwise.
+        extra = {"extra_body": {"reasoning": {"enabled": False}}}
         try:
             completion = client.chat.completions.create(
                 model=self.settings.openrouter_model,
@@ -86,6 +88,7 @@ class OpenRouterClient:
                     {"role": "user", "content": user},
                 ],
                 timeout=self.settings.llm_timeout_s,
+                **(extra if self.settings.llm_disable_reasoning else {}),
             )
         except Exception as exc:  # Provider/SDK failures must not reach the API layer.
             return GenerationResult(None, GenerationUsage(llm_calls=1), self._error_kind(exc))
