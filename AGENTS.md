@@ -370,10 +370,10 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 
 ## Configuration
 
-Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
-token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD` unset with bge (0.31 for gte; relevance floor, `eval.calibrate_gate`),
-`LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
-in `.env.example`. Never commit `.env` or real keys.
+Env vars via pydantic-settings. [.env.example](.env.example) is kept short (3 secrets + a few overrides);
+every setting has its default in code. Document each new variable with a comment line in
+[docs/configuration.md](docs/configuration.md) (default, why, the measurement), and add it to
+`.env.example` only if a deployer must set it. Never commit `.env` or real keys.
 
 ## Repo docs
 

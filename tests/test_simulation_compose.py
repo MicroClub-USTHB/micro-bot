@@ -104,11 +104,11 @@ def test_capacity_overlay_only_raises_the_chat_rate_limit() -> None:
 
 def test_simulation_only_env_stays_out_of_the_shared_env_files() -> None:
     # The dev stack reads .env, so a simulation-only value there would change it silently. The
-    # example documents the dev values, which must stay different from the overlay's.
+    # example only sets what a deployer needs; any value it does set must differ from the overlay's.
     example = _env_values(BASE_ENV)
-    assert example["INGEST_EMBED_THREADS"] == "4"
-    assert example["RETRIEVAL_RERANK_THREADS"] == "4"
-    assert example["QDRANT_COLLECTION"] == "mcclub"
+    for key, value in SIM_ENV.items():
+        if key in example:
+            assert example[key] != value, f"{key} in .env.example would also change the dev stack"
     if (REPO / ".env").exists():  # local and git-ignored: the file the dev stack actually reads
         dev = _env_values(REPO / ".env")
         for key, value in SIM_ENV.items():
@@ -131,3 +131,10 @@ def test_no_tracked_file_carries_an_openrouter_key() -> None:
     marker = b"sk-or-" + b"v1"
     offenders = [p.name for p in _tracked_files() if marker in p.read_bytes()]
     assert offenders == []
+
+
+def test_https_overlay_keeps_the_app_off_public_interfaces() -> None:
+    overlay = yaml.load((REPO / "docker-compose.https.yml").read_text(), Loader=_Loader)
+    assert overlay["services"]["app"]["ports"] == ["127.0.0.1:8000:8000"]
+    assert overlay["services"]["caddy"]["ports"] == ["80:80", "443:443"]
+    assert "reverse_proxy app:8000" in (REPO / "Caddyfile").read_text()
