@@ -85,8 +85,8 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
   Commits: one lowercase imperative line, no prefix, no trailing period — name the change, then
   `, so <effect>` (the effect, not the mechanism); bodies only for a non-obvious why. Stage specific
-  paths (never `git add -A`), commit only on a green suite (ruff + the fast `pytest`), don't push
-  unless told.
+  paths (never `git add -A`), run the CI trio locally before every commit and every push
+  (`uv lock --check`, ruff check + format check, the fast `pytest`), don't push unless told.
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword

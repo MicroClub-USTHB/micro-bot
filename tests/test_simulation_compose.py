@@ -127,5 +127,7 @@ def test_no_second_simulation_env_file() -> None:
 
 
 def test_no_tracked_file_carries_an_openrouter_key() -> None:
-    offenders = [p.name for p in _tracked_files() if b"sk-or-v1" in p.read_bytes()]
+    # Assembled at runtime, so this very file does not trip its own guard.
+    marker = b"sk-or-" + b"v1"
+    offenders = [p.name for p in _tracked_files() if marker in p.read_bytes()]
     assert offenders == []

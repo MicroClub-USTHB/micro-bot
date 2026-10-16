@@ -164,7 +164,7 @@ committed and never reaches a build layer through `COPY . /app`.
 5c.4 The runbook SHALL tell the operator to rotate any key that was pasted into a chat, a ticket or a
 terminal, and SHALL NOT echo the key back in any script output.
 5c.5 The final diff SHALL be inspected for accidental secret exposure before anything is committed, and
-an automated test SHALL scan tracked files for the `sk-or-v1` prefix.
+an automated test SHALL scan tracked files for the OpenRouter key prefix.
 
 
 ### Requirement 6: Configurable request pacing in the eval harness

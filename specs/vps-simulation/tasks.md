@@ -3,7 +3,7 @@
 - [x] 1. Make the secret paths safe before the simulation exists
   - Confirm `.env` is listed in `.gitignore` and in `.dockerignore` (the Dockerfile does `COPY . /app`, so an unignored env file would land in a build layer)
   - Add `pyyaml~=6.0` to the `dev` dependency group in `pyproject.toml` and re-run `uv lock`
-  - Create `tests/test_simulation_compose.py` with a `!override`-aware `yaml.SafeLoader` subclass and the first two tests: both ignore files list `.env`, no `.env.simulation*` file exists in the repo, and no tracked file (`git ls-files`) contains `sk-or-v1`
+  - Create `tests/test_simulation_compose.py` with a `!override`-aware `yaml.SafeLoader` subclass and the first two tests: both ignore files list `.env`, no `.env.simulation*` file exists in the repo, and no tracked file (`git ls-files`) contains an OpenRouter key prefix
   - Run the new test, then make it pass
   - _Requirements: 4.1, 5c.1, 5c.2, 5c.5, 11.5, 11.6_
 

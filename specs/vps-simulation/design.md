@@ -333,7 +333,7 @@ retrieval stack is fully functional in that state; the health route requires the
 - asserts the capacity overlay contains exactly `services.app.environment` with the two rate keys;
 - asserts `.gitignore` and `.dockerignore` both list `.env`, and that no `.env.simulation*` file
   exists in the repository;
-- scans `git ls-files` for `sk-or-v1` (a repo-wide secret guard, given keys get pasted into chats).
+- scans `git ls-files` for the OpenRouter key prefix (a repo-wide secret guard, given keys get pasted into chats).
 
 **Automated, harness changes:** `tests/test_e2e_driver.py` (default interval 3.0 s for 20/60; custom
 rate applied; `--requests-per-minute 0` and `-5` rejected; 8 concurrent `chat()` calls spaced by at
