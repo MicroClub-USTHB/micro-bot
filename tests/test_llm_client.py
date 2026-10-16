@@ -138,11 +138,11 @@ def test_client_without_key_makes_no_request() -> None:
     assert fake.chat.completions.calls == []
 
 
-def test_reasoning_is_turned_off_only_when_asked() -> None:
+def test_reasoning_is_turned_off_unless_allowed() -> None:
     fake = FakeClient([FakeCompletion("a"), FakeCompletion("b")])
     OpenRouterClient(settings(), client=fake).generate("s", "u")
-    off = settings().model_copy(update={"llm_disable_reasoning": True})
-    OpenRouterClient(off, client=fake).generate("s", "u")
+    on = settings().model_copy(update={"llm_disable_reasoning": False})
+    OpenRouterClient(on, client=fake).generate("s", "u")
     first, second = fake.chat.completions.calls
-    assert "extra_body" not in first
-    assert second["extra_body"] == {"reasoning": {"enabled": False}}
+    assert first["extra_body"] == {"reasoning": {"enabled": False}}
+    assert "extra_body" not in second

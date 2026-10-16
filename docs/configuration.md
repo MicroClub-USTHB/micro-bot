@@ -36,8 +36,8 @@ LLM_RESERVE=5
 # LLM request timeout in seconds
 LLM_TIMEOUT_S=25
 # true: ask OpenRouter to turn reasoning off (a reasoning model took ~20 s per rewrite, 2-3 s
-# without); needed when OPENROUTER_MODEL is a reasoning model
-LLM_DISABLE_REASONING=false
+# without; nemotron chat 18.1 s -> 6.5-7.6 s, 2026-10-16); ignored by models that don't reason
+LLM_DISABLE_REASONING=true
 # Rewrite each question with one extra LLM call before retrieval (typos, darija, arabizi,
 # follow-ups, translations); false = retrieve with the question as typed
 REWRITE_ENABLED=true
