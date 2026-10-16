@@ -7,6 +7,8 @@
 - `.env.example` is 3 secrets + a few overrides (every other value already equalled its code default); the full list moved to `docs/configuration.md`.
 - `docker-compose.https.yml` + `Caddyfile`: Caddy terminates TLS for `DOMAIN`, app bound to loopback, `FORWARDED_ALLOW_IPS` so the per-IP rate limit sees real clients. Base compose and the simulation are untouched.
 
+- `PUT /api/v1/documents` (`file`, `replaces`, optional `visibility`/`expires_at`): replaces a document by its exact name under any new file name, 404 for an unknown name. Verified live over HTTPS; 3 tests. `POST` is unchanged.
+
 ### Next
 
 - Deploy on a host with a domain and put the URL in the readme; slides.

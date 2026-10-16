@@ -281,6 +281,7 @@ Full method, all seven runs and the caveat: [eval/results/simulation/README.md](
 | `POST /api/v1/chat` | none or member | Ask a question |
 | `GET /api/v1/health` | none | `{"status": "ok" \| "degraded", "documents": n}` |
 | `POST /api/v1/documents` | admin | Upload a file or URL with `visibility` (`public` / `members`), optional `topic`, `expires_at` |
+| `PUT /api/v1/documents` | admin | Replace an existing document: `file`, `replaces` (its exact topic or file name, as listed), optional `visibility`, `expires_at`. Works whatever the new file is called; unknown name = 404, nothing ingested |
 | `GET /api/v1/documents` | admin | List documents with status and visibility |
 | `DELETE /api/v1/documents/{doc_id}` | admin | Delete a document and its points |
 | `POST /api/v1/feedback` | none or member | `{conversation_id, rating: "up" \| "down", comment?}` |

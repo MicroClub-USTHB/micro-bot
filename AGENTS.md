@@ -331,7 +331,8 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 
 ## API contract
 
-- Endpoints: `POST /api/v1/chat`, `GET /api/v1/health`, `POST/GET /api/v1/documents`,
+- Endpoints: `POST /api/v1/chat`, `GET /api/v1/health`, `POST/PUT/GET /api/v1/documents` (PUT = replace
+  by `replaces`=existing topic or file name, 404 if unknown; added 2026-10-16),
   `DELETE /api/v1/documents/{doc_id}`, `POST /api/v1/feedback`.
 - Auth: members `Authorization: Bearer <MEMBER_TOKEN>`; admins `X-Admin-Key: <ADMIN_API_KEY>`.
 - Chat response: `answer`, `conversation_id`, `grounded`, `sources[{doc_id, title, snippet}]`,
