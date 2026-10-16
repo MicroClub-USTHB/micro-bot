@@ -23,7 +23,9 @@ class Settings(BaseSettings):
     llm_daily_limit: int = Field(default=50, gt=0)
     llm_reserve: int = Field(default=5, ge=0)
     llm_timeout_s: int = Field(default=25, gt=0)
-    llm_disable_reasoning: bool = True  # ask OpenRouter to skip a reasoning model's thinking
+    # Ask OpenRouter to skip a reasoning model's thinking (nemotron chat 18.1 s -> 3-8 s,
+    # 2026-10-16); models that don't reason ignore it
+    llm_disable_reasoning: bool = True
     # Query rewrite, the optional first LLM call of a question (specs/query-rewrite)
     rewrite_enabled: bool = True
     rewrite_timeout_s: float = Field(default=6.0, gt=0)

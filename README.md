@@ -297,7 +297,7 @@ Full method, all seven runs and the caveat: [eval/results/simulation/README.md](
 
 ## Configuration
 
-`.env.example` holds only the three secrets and a few overrides; every variable, with its default, is listed in [docs/configuration.md](docs/configuration.md). The ones that matter:
+`.env.example` holds only the three secrets and a few overrides; every other variable has its default, and the reason for it, in the settings classes (`config.py`, `ingest/settings.py`, `retrieval/settings.py`). The ones that matter:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -309,7 +309,7 @@ Full method, all seven runs and the caveat: [eval/results/simulation/README.md](
 | `GATE_THRESHOLD` | unset | Relevance floor; unset = open, the LLM refuses unknowns |
 | `QDRANT_URL`, `QDRANT_COLLECTION` | `http://qdrant:6333`, `mcclub` | Vector store and collection alias |
 | `EMBED_MODEL`, `EMBED_DIM`, `RERANK_MODEL` | bge-m3, 1024, mmarco | Models, all sha256-pinned in `retrieval/registry.py` |
-| `INGEST_*` | see `docs/configuration.md` | Parsing, OCR, size limits, web fetch, chunking |
+| `INGEST_*` | see `ingest/settings.py` | Parsing, OCR, size limits, web fetch, chunking |
 
 ---
 

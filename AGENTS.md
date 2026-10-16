@@ -372,9 +372,8 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 ## Configuration
 
 Env vars via pydantic-settings. [.env.example](.env.example) is kept short (3 secrets + a few overrides);
-every setting has its default in code. Document each new variable with a comment line in
-[docs/configuration.md](docs/configuration.md) (default, why, the measurement), and add it to
-`.env.example` only if a deployer must set it. Never commit `.env` or real keys.
+every setting has its default in code. Give each new variable a comment beside its default in the
+settings class (why, the measurement), and add it to `.env.example` only if a deployer must set it. Never commit `.env` or real keys.
 
 ## Repo docs
 
