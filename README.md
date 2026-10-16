@@ -49,6 +49,20 @@ curl -s localhost:8000/api/v1/documents -H "X-Admin-Key: $ADMIN_API_KEY" \
 - **Nothing else.** No paid API, no cloud vector store, no outbound traffic at runtime except the
   LLM call and an explicit URL fetch (`HF_HUB_OFFLINE=1`).
 
+### Public HTTPS
+
+Caddy in front of the app gets and renews the Let's Encrypt certificate; no route or app code
+changes. Point a domain at the host (ports 80 and 443 open), set `DOMAIN` in `.env`, then:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+curl -s https://$DOMAIN/api/v1/health
+```
+
+Port 8000 then listens on loopback only, and the app trusts `X-Forwarded-For` from Caddy so the
+per-IP chat rate limit sees the real client. Without `DOMAIN` it serves `https://localhost` with
+Caddy's local certificate. No VPS: a Cloudflare Tunnel to `localhost:8000` also gives an HTTPS URL.
+
 ---
 
 ## See it work
@@ -282,7 +296,7 @@ Full method, all seven runs and the caveat: [eval/results/simulation/README.md](
 
 ## Configuration
 
-Every variable is documented in [.env.example](.env.example). The ones that matter:
+`.env.example` holds only the three secrets and a few overrides; every variable, with its default, is listed in [docs/configuration.md](docs/configuration.md). The ones that matter:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -294,7 +308,7 @@ Every variable is documented in [.env.example](.env.example). The ones that matt
 | `GATE_THRESHOLD` | unset | Relevance floor; unset = open, the LLM refuses unknowns |
 | `QDRANT_URL`, `QDRANT_COLLECTION` | `http://qdrant:6333`, `mcclub` | Vector store and collection alias |
 | `EMBED_MODEL`, `EMBED_DIM`, `RERANK_MODEL` | bge-m3, 1024, mmarco | Models, all sha256-pinned in `retrieval/registry.py` |
-| `INGEST_*` | see `.env.example` | Parsing, OCR, size limits, web fetch, chunking |
+| `INGEST_*` | see `docs/configuration.md` | Parsing, OCR, size limits, web fetch, chunking |
 
 ---
 

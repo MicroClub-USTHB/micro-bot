@@ -1,5 +1,16 @@
 # progress
 
+## 2026-10-16 (env shrink, public HTTPS)
+
+### Shipped
+
+- `.env.example` is 3 secrets + a few overrides (every other value already equalled its code default); the full list moved to `docs/configuration.md`.
+- `docker-compose.https.yml` + `Caddyfile`: Caddy terminates TLS for `DOMAIN`, app bound to loopback, `FORWARDED_ALLOW_IPS` so the per-IP rate limit sees real clients. Base compose and the simulation are untouched.
+
+### Next
+
+- Deploy on a host with a domain and put the URL in the readme; slides.
+
 ## 2026-10-15 (4 GB / 2-core VPS simulation, specced, built and run)
 
 ### Shipped
