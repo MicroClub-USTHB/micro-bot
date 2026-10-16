@@ -1,5 +1,73 @@
 # progress
 
+## 2026-10-16 (env shrink, public HTTPS)
+
+### Shipped
+
+- `.env.example` is 3 secrets + a few overrides (every other value already equalled its code default); the full list moved to `docs/configuration.md`.
+- `docker-compose.https.yml` + `Caddyfile`: Caddy terminates TLS for `DOMAIN`, app bound to loopback, `FORWARDED_ALLOW_IPS` so the per-IP rate limit sees real clients. Base compose and the simulation are untouched.
+
+- `PUT /api/v1/documents` (`file`, `replaces`, optional `visibility`/`expires_at`): replaces a document by its exact name under any new file name, 404 for an unknown name. Verified live over HTTPS; 3 tests. `POST` is unchanged.
+
+### Next
+
+- Deploy on a host with a domain and put the URL in the readme; slides.
+
+## 2026-10-15 (4 GB / 2-core VPS simulation, specced, built and run)
+
+### Shipped
+
+- `specs/vps-simulation/` (requirements, design, tasks) and `docs/simulation/4gb-vps.md`: a separate
+  Compose project (`mc-rag-sim`) over the unchanged image, capped at 4 GB / 2 CPUs. Two overlays,
+  five PowerShell helpers, no production file touched.
+- Why the isolation works: `!override` on `ports` and `env_file` (measured - a plain second entry
+  publishes both 8000 and 8001), the project name prefixes the network and both volumes
+  (`mc-rag-sim_app_data`, `mc-rag-sim_qdrant_storage`), and Qdrant keeps `expose` with no host port.
+- Budgets: app 2800 MB / 1.5 CPU, Qdrant 512 MB / 0.5 CPU, `memswap_limit == mem_limit` so a
+  container is OOM-killed rather than paged; ~0.7 GB left for Linux, Docker and the page cache.
+- Harness: `eval --requests-per-minute` (default 20, validated positive), an `asyncio.Lock` around
+  the pacing slot so concurrent load tasks cannot burst (a probe showed 7 of 8 tasks waiting on one
+  slot before the lock), and the load report now prints the load generator's peak RSS as `n/a` when
+  `resource` is unavailable instead of hiding the column.
+- `.env` is the simulation's environment too (already git- and docker-ignored, so no second secret
+  to leak). Simulation-only values (collection, thread counts, Profile B's rate limit) live in the
+  overlay so the dev stack keeps its own; preflight fails if one of them is also set in `.env`.
+- Measured here: with no `.wslconfig` the Docker VM takes 7.72 GB and all 12 cores - a 4 GB / 2-core
+  claim measured there would overstate the VPS by ~2x memory and 6x CPU. `Set-SimVmLimits.ps1`
+  backs the file up, merges only memory/processors/swap, prints the `wsl --shutdown` steps instead
+  of running them, and restores byte for byte (both cases verified against a sandboxed profile).
+- Fixed while preparing: `.env` had drifted to granite-embedding-311m + bge-reranker-v2-m3 with
+  `EMBED_DIM=768`, which would have failed the embedder check at startup, and `RETRIEVE_TOP_K=30`.
+- Run at the real ceiling (2 CPUs / 3.83 GB verified with `docker info`), scenario S0, results in
+  `eval/results/simulation/README.md`: throughput scales linearly to concurrency 4 (1.03 / 2.01 /
+  4.00 req/s, p50 flat ~150 ms), then saturates at **5.19 req/s (about 310 req/min)** with p50 1.5 s
+  at concurrency 8. The app pins at **150% CPU, its whole 1.5-CPU quota**, so the limiter is CPU, not
+  memory: peak RSS stayed flat at 1.83-1.91 GB of the 2.73 GB limit, Qdrant at 75 MB and 1.6%, no
+  OOM, no restart, no error, no rate limit in any run.
+- S1 could not be measured: OpenRouter answered **HTTP 429** - `google/gemma-4-31b-it:free is
+  temporarily rate-limited upstream` - so generation fell back to the extractive answer with
+  `tokens: 0` on every request. S0 isolates retrieval capacity instead, which is what 2 cores bind.
+- Three bugs only running could find, all fixed: `Start-Simulation.ps1` evaluated its
+  `$HealthTimeoutSeconds` default before the dot-source, so the health wait was **0 s** and aborted
+  every start; `Set-SimVmLimits.ps1` and `SimCommon.ps1` treated `docker info`'s stderr as a
+  terminating error under `ErrorActionPreference = 'Stop'`, which aborted `-Mode Apply` while Docker
+  Desktop was stopped (the daemon is *supposed* to be down there); and the stats sampler never
+  converted Docker's `GiB`, printing the app's 1.79 GB as `1.789 MB`.
+- Stage 7 (ingestion under the ceiling) is not run: the corpus (`data/parsed`) is absent from this
+  checkout, so the smoke used one synthetic document.
+
+### Blocked
+
+- Nothing to run the stages: the 4 GB ceiling needs Docker Desktop to quit and `wsl --shutdown`,
+  which is the operator's call. No benchmark number is claimed; everything measured so far is
+  configuration and pacing, not runtime load.
+
+### Next
+
+- Build the image, then apply the ceiling, then run the stages: smoke, Profile A, the Profile B ramp
+  (1x30 s, 2x60 s, 4x120 s, 8x120 s), ingestion, report, cleanup.
+- Rotate the OpenRouter key that was pasted into a chat (it is only in the git-ignored `.env`).
+
 ## 2026-10-15 (readme rewrite, docs sweep)
 
 ### Shipped

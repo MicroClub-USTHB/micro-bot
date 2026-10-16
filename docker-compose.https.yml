@@ -1,0 +1,33 @@
+# Public HTTPS in front of the app (Caddy gets and renews the Let's Encrypt certificate).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+#
+# Set DOMAIN in .env to a name that points at this host (A/AAAA record, ports 80 and 443 open).
+# Without DOMAIN it serves https://localhost with Caddy's local certificate, to try it out.
+services:
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  app:
+    # !override: the app is no longer public, only Caddy (and this machine) can reach it.
+    ports: !override ["127.0.0.1:8000:8000"]
+    environment:
+      # Trust X-Forwarded-For from Caddy so the per-IP chat rate limit sees the real client.
+      # Safe because port 8000 is bound to loopback above.
+      FORWARDED_ALLOW_IPS: "*"
+
+volumes:
+  caddy_data:
+  caddy_config:

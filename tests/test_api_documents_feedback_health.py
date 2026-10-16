@@ -234,3 +234,64 @@ def test_failed_ingest_result_never_returns_200(
     assert response.status_code == 422
     assert response.json()["error"]["code"] == (error or "invalid_input")
     get_settings.cache_clear()
+
+
+def _put(client: TestClient, name: str, replaces: str, content: bytes, **form: str):
+    return client.put(
+        "/api/v1/documents",
+        headers={"X-Admin-Key": "admin-secret"},
+        files={"file": (name, content, "text/plain")},
+        data={"replaces": replaces, **form},
+    )
+
+
+def test_put_replaces_the_named_document_under_a_new_file_name(tmp_path: Path) -> None:
+    with build_client(tmp_path) as client:
+        headers = {"X-Admin-Key": "admin-secret"}
+        first = client.post(
+            "/api/v1/documents",
+            headers=headers,
+            files={"file": ("bylaws.txt", b"fee 500", "text/plain")},
+            data={"visibility": "members"},
+        )
+
+        replaced = _put(client, "bylaws_2027.txt", "bylaws.txt", b"fee 700")
+
+        assert replaced.status_code == 200
+        assert replaced.json() == first.json()
+        listing = client.get("/api/v1/documents", headers=headers).json()
+        assert [(d["doc_id"], d["title"], d["visibility"]) for d in listing] == [
+            (first.json()["doc_id"], "bylaws_2027.txt", "members")
+        ]
+
+
+def test_put_with_an_unknown_name_is_a_404_and_ingests_nothing(tmp_path: Path) -> None:
+    with build_client(tmp_path) as client:
+        response = _put(client, "new.txt", "bylaw", b"content")
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "not_found"
+        listing = client.get("/api/v1/documents", headers={"X-Admin-Key": "admin-secret"})
+        assert listing.json() == []
+
+
+def test_put_can_change_visibility_and_needs_the_admin_key(tmp_path: Path) -> None:
+    with build_client(tmp_path) as client:
+        client.post(
+            "/api/v1/documents",
+            headers={"X-Admin-Key": "admin-secret"},
+            files={"file": ("guide.txt", b"v1", "text/plain")},
+            data={"visibility": "members"},
+        )
+
+        denied = client.put(
+            "/api/v1/documents",
+            files={"file": ("guide.txt", b"v2", "text/plain")},
+            data={"replaces": "guide"},
+        )
+        changed = _put(client, "guide.txt", "guide", b"v2", visibility="public")
+
+        assert denied.status_code == 403
+        assert changed.status_code == 200
+        listing = client.get("/api/v1/documents", headers={"X-Admin-Key": "admin-secret"})
+        assert listing.json()[0]["visibility"] == "public"

@@ -49,6 +49,20 @@ curl -s localhost:8000/api/v1/documents -H "X-Admin-Key: $ADMIN_API_KEY" \
 - **Nothing else.** No paid API, no cloud vector store, no outbound traffic at runtime except the
   LLM call and an explicit URL fetch (`HF_HUB_OFFLINE=1`).
 
+### Public HTTPS
+
+Caddy in front of the app gets and renews the Let's Encrypt certificate; no route or app code
+changes. Point a domain at the host (ports 80 and 443 open), set `DOMAIN` in `.env`, then:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.https.yml up -d --build
+curl -s https://$DOMAIN/api/v1/health
+```
+
+Port 8000 then listens on loopback only, and the app trusts `X-Forwarded-For` from Caddy so the
+per-IP chat rate limit sees the real client. Without `DOMAIN` it serves `https://localhost` with
+Caddy's local certificate. No VPS: a Cloudflare Tunnel to `localhost:8000` also gives an HTTPS URL.
+
 ---
 
 ## See it work
@@ -237,6 +251,27 @@ verbatim evidence, not by the (unreliable) local judge. `eval/e2e/thresholds.jso
 into a pass/fail scorecard, and `python -m eval.e2e.compare a.json b.json` shows metric deltas
 between two runs.
 
+### Deployment — the whole stack on a 4 GB / 2-core VPS, 2026-10-15
+
+The jury's target box, simulated for real: a separate Compose project over the unchanged image with
+the WSL 2 VM capped at 2 CPUs / 3.83 GB (`specs/vps-simulation/`, runbook
+[docs/simulation/4gb-vps.md](docs/simulation/4gb-vps.md)).
+
+| Load (retrieval only) | 1 user | 2 users | 4 users | 8 users |
+|---|---|---|---|---|
+| Throughput | 1.03 req/s | 2.01 req/s | 4.00 req/s | **5.19 req/s** |
+| p50 / p95 | 152 / 188 ms | 150 / 242 ms | 147 / 391 ms | **1520 / 1957 ms** |
+| App peak RSS | 1895 MB | 1895 MB | 1904 MB | 1913 MB |
+
+Throughput scales linearly to 4 concurrent users with p50 flat at ~150 ms, then saturates at
+**5.2 req/s (≈310 requests/minute)**, where p50 rises 10x. The limiter is the **app's CPU quota**
+(pinned at its entire 1.5 CPU from 4 users on), not memory: peak RSS stayed flat at 1.9 GB of the
+2.73 GB limit, Qdrant at 75 MB and 1.6% CPU, and no run produced an OOM kill, a restart, an error or
+a rate limit. Generation (S1) is not in that table because OpenRouter's free pool returned HTTP 429
+throughout the window.
+
+Full method, all seven runs and the caveat: [eval/results/simulation/README.md](eval/results/simulation/README.md).
+
 ---
 
 ## API
@@ -246,6 +281,7 @@ between two runs.
 | `POST /api/v1/chat` | none or member | Ask a question |
 | `GET /api/v1/health` | none | `{"status": "ok" \| "degraded", "documents": n}` |
 | `POST /api/v1/documents` | admin | Upload a file or URL with `visibility` (`public` / `members`), optional `topic`, `expires_at` |
+| `PUT /api/v1/documents` | admin | Replace an existing document: `file`, `replaces` (its exact topic or file name, as listed), optional `visibility`, `expires_at`. Works whatever the new file is called; unknown name = 404, nothing ingested |
 | `GET /api/v1/documents` | admin | List documents with status and visibility |
 | `DELETE /api/v1/documents/{doc_id}` | admin | Delete a document and its points |
 | `POST /api/v1/feedback` | none or member | `{conversation_id, rating: "up" \| "down", comment?}` |
@@ -261,7 +297,7 @@ between two runs.
 
 ## Configuration
 
-Every variable is documented in [.env.example](.env.example). The ones that matter:
+`.env.example` holds only the three secrets and a few overrides; every variable, with its default, is listed in [docs/configuration.md](docs/configuration.md). The ones that matter:
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -273,7 +309,7 @@ Every variable is documented in [.env.example](.env.example). The ones that matt
 | `GATE_THRESHOLD` | unset | Relevance floor; unset = open, the LLM refuses unknowns |
 | `QDRANT_URL`, `QDRANT_COLLECTION` | `http://qdrant:6333`, `mcclub` | Vector store and collection alias |
 | `EMBED_MODEL`, `EMBED_DIM`, `RERANK_MODEL` | bge-m3, 1024, mmarco | Models, all sha256-pinned in `retrieval/registry.py` |
-| `INGEST_*` | see `.env.example` | Parsing, OCR, size limits, web fetch, chunking |
+| `INGEST_*` | see `docs/configuration.md` | Parsing, OCR, size limits, web fetch, chunking |
 
 ---
 
@@ -345,6 +381,8 @@ tests/          one module per source module, plus contract, access and wiring t
 |---|---|
 | [eval/README.md](eval/README.md) | The evaluation guide: sets, metrics, suites, latest results |
 | [eval/results/README.md](eval/results/README.md) | Every measurement, with the run that produced it |
+| [eval/results/simulation/README.md](eval/results/simulation/README.md) | The 4 GB / 2-core VPS run: ramp numbers, verdict, caveat |
+| [docs/simulation/4gb-vps.md](docs/simulation/4gb-vps.md) | Runbook for reproducing the 4 GB / 2-core simulation |
 | [EDGE_CASES.md](EDGE_CASES.md) | 68 non-obvious edge cases, each with proof and a decision |
 | [PROGRESS.md](PROGRESS.md) | Dated log: what shipped, what is blocked, what is next |
 | [AGENTS.md](AGENTS.md) | Fixed decisions and the rules for contributors and coding agents |

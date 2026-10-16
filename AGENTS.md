@@ -85,8 +85,8 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
   Commits: one lowercase imperative line, no prefix, no trailing period — name the change, then
   `, so <effect>` (the effect, not the mechanism); bodies only for a non-obvious why. Stage specific
-  paths (never `git add -A`), commit only on a green suite (ruff + the fast `pytest`), don't push
-  unless told.
+  paths (never `git add -A`), run the CI trio locally before every commit and every push
+  (`uv lock --check`, ruff check + format check, the fast `pytest`), don't push unless told.
 - CI (GitHub Actions) must stay green: `uv lock --check`, ruff check + format check,
   `pytest -m "not ocr and not tokenizer and not embedder and not reranker"`, and a models job
   that downloads sha256-verified tessdata, the embedder (tokenizer + int8 ONNX), the BM25 stopword
@@ -157,6 +157,28 @@ cp .env.example .env && docker compose up -d --build
 
 OCR tests **fail with an instruction** (not skip) when traineddata is missing. Tests that need real
 Arabic scans (`tests/fixtures/arabic_scan.pdf`, `arabic_photo.jpg`) skip until the files are added.
+
+## 4 GB / 2-core VPS simulation (`specs/vps-simulation/`, `docs/simulation/4gb-vps.md`)
+
+A separate Compose **project** (`mc-rag-sim`) over the unchanged image and services, with the WSL 2 VM
+capped at 4 GB / 2 CPUs. Production files stay untouched (`Dockerfile`, `docker-compose.yml`,
+`.env.example`, app code); the eval harness gained only `--requests-per-minute` and the load report
+now prints the load generator's peak RSS. S0 = no provider key (health is `degraded`, retrieval
+works, 0 LLM calls), S1 = the free OpenRouter model. Profile A keeps the shipped 20/60 s rate limit,
+Profile B raises it to 1000/60 s in a simulation-only overlay.
+
+```powershell
+powershell -File scripts/simulation/Set-SimVmLimits.ps1 -Mode Show      # then -Mode Apply, -Mode Restore
+powershell -File scripts/simulation/Test-SimPreflight.ps1               # stage 1: proves the setup parses
+powershell -File scripts/simulation/Start-Simulation.ps1 -Build        # stage 3: build, up, wait for health
+powershell -File scripts/simulation/Invoke-SimBenchmark.ps1 -Scenario S0 -Profile B -Concurrency 4 -Duration 120 -RequestsPerMinute 240 -Label simB-c4
+powershell -File scripts/simulation/Stop-Simulation.ps1                # stage 8: this project only (-v deletes its data)
+uv run python -m eval.e2e.run --target http --base-url http://127.0.0.1:8001 --suite load --requests-per-minute 240 --label manual
+```
+
+Build **before** applying the VM ceiling (deps + ~700 MB of models). Nothing prints a secret: the
+scripts redact it, because `docker compose config` does not. Results land in
+`eval/results/simulation/*.csv` (git-ignored).
 
 ## Data preprocessing (implemented on `origin/dev`)
 
@@ -309,7 +331,8 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 
 ## API contract
 
-- Endpoints: `POST /api/v1/chat`, `GET /api/v1/health`, `POST/GET /api/v1/documents`,
+- Endpoints: `POST /api/v1/chat`, `GET /api/v1/health`, `POST/PUT/GET /api/v1/documents` (PUT = replace
+  by `replaces`=existing topic or file name, 404 if unknown; added 2026-10-16),
   `DELETE /api/v1/documents/{doc_id}`, `POST /api/v1/feedback`.
 - Auth: members `Authorization: Bearer <MEMBER_TOKEN>`; admins `X-Admin-Key: <ADMIN_API_KEY>`.
 - Chat response: `answer`, `conversation_id`, `grounded`, `sources[{doc_id, title, snippet}]`,
@@ -348,10 +371,10 @@ Retrieval is built too (`retrieval/{settings,query,search,rerank,gate,backend}.p
 
 ## Configuration
 
-Env vars via pydantic-settings; see [.env.example](.env.example) (model ids, Qdrant URL/collection,
-token/keys, LLM limits/timeout, retrieval top-k/top-n, `GATE_THRESHOLD` unset with bge (0.31 for gte; relevance floor, `eval.calibrate_gate`),
-`LOG_LEVEL`, plus `INGEST_*`). Document each new variable with a comment line
-in `.env.example`. Never commit `.env` or real keys.
+Env vars via pydantic-settings. [.env.example](.env.example) is kept short (3 secrets + a few overrides);
+every setting has its default in code. Document each new variable with a comment line in
+[docs/configuration.md](docs/configuration.md) (default, why, the measurement), and add it to
+`.env.example` only if a deployer must set it. Never commit `.env` or real keys.
 
 ## Repo docs
 

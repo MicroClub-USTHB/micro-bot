@@ -1,0 +1,43 @@
+# 4 GB / 2-core VPS simulation for MC-RAG (specs/vps-simulation, docs/simulation/4gb-vps.md).
+#
+# Layer this on top of docker-compose.yml; it changes nothing about the image, the code or the
+# services, only where they listen, what they may use and which project owns them:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.simulation.yml up -d
+#
+# The project name prefixes the network and the named volumes (mc-rag-sim_app_data,
+# mc-rag-sim_qdrant_storage), so the simulation can never touch the default deployment's data.
+name: mc-rag-sim
+
+services:
+  app:
+    # !override replaces the inherited "8000:8000"; appending would publish both, and the loopback
+    # binding keeps the simulated VPS off every network interface.
+    ports: !override ["127.0.0.1:8001:8000"]
+    env_file: !override [.env]
+    # Simulation-only values: 2 vCPUs (one ONNX thread per core instead of the dev 4), a separate
+    # collection name, and one document at a time so OCR never competes with serving. They live
+    # here, not in .env, because .env also drives the normal dev stack.
+    environment:
+      QDRANT_COLLECTION: mcclub_sim
+      INGEST_EMBED_THREADS: "2"
+      RETRIEVAL_RERANK_THREADS: "2"
+      RETRIEVAL_RERANK_WORKERS: "1"
+      INGEST_MAX_CONCURRENCY: "1"
+    # 2800 MB + Qdrant's 512 MB = ~3.3 GB of the VM's 4 GB; the rest is Linux, Docker and the
+    # page cache. memswap_limit == mem_limit: no swap allowance, so a container is OOM-killed by the
+    # runtime instead of silently paging (Req 3.3).
+    mem_limit: 2800m
+    mem_reservation: 1024m
+    memswap_limit: 2800m
+    cpus: "1.5"
+    pids_limit: 512
+
+  qdrant:
+    # 512 MB is enough for the ~1000-chunk eval corpus; raise it only with a measured reason.
+    mem_limit: 512m
+    mem_reservation: 256m
+    memswap_limit: 512m
+    cpus: "0.5"
+    pids_limit: 256
+    # No ports here on purpose: Qdrant stays reachable only on the internal Compose network.
