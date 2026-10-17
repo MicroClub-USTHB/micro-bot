@@ -1,6 +1,6 @@
 # Evaluation
 
-How the MC Club RAG chatbot is measured: what is tested, on which data, with which metrics, the
+How Micro Bot is measured: what is tested, on which data, with which metrics, the
 latest results, and what to know before trusting a number. Dated history of every measurement:
 [results/README.md](results/README.md) (retrieval, models) and
 [results/e2e/README.md](results/e2e/README.md) (end-to-end runs). Run files (`.json`, `.md`) and

@@ -24,7 +24,7 @@ TRANSLATIONS = ("fr", "en", "ar")  # also the chunk ``language`` values they are
 MAX_CHARS = 500
 _OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 
-SYSTEM = """You rewrite a user's question into search queries for the MC Club document search \
+SYSTEM = """You rewrite a user's question into search queries for the Micro Club document search \
 (MicroClub, a student club of USTHB university in Algiers; the documents are in French, \
 English and Arabic).
 Reply with one JSON object and nothing else:

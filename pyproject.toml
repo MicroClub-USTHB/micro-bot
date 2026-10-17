@@ -1,7 +1,7 @@
 [project]
 name = "micro-bot"
 version = "0.1.0"
-description = "RAG chatbot for the MC Club RAG Chatbot Challenge"
+description = "Micro Bot: the multilingual RAG assistant of Micro Club"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [

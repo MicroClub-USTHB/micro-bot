@@ -40,7 +40,7 @@ _NOT_FOUND_RE = re.compile(rf"^\W*{NOT_FOUND}\W*")
 # The passage layout of ``llm/prompts.py``: a fence name, or a "title:" line then "text:".
 _PASSAGE_DUMP_RE = re.compile(r"untrusted-source|^\W*title:.*\n\s*text:", re.I | re.M)
 _SENTENCE_END_RE = re.compile(r"(?<=[.:])\s+")
-_LEAK_MIN_CHARS = 25  # "You are the MC Club assistant." is 30; "Be concise." is too common
+_LEAK_MIN_CHARS = 25  # the opening "You are Micro Bot, ..." is 45; "Be concise." is too common
 
 
 def leaks_prompt(reply: str, system: str) -> bool:
