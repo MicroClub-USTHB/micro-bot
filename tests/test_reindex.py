@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from qdrant_client import AsyncQdrantClient
 
-from mcclub_rag.ingest.errors import IndexStale
+from micro_bot.ingest.errors import IndexStale
 from tests.pipeline_helpers import FakePreprocess, make_pipeline
 
 RULES = "# Règlement\n\nLe club se réunit le mardi.\n\n# Adhésion\n\nLa cotisation est de 500 DA."

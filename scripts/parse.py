@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-from mcclub_rag.ingest.preprocess import preprocess_file, preprocess_url
+from micro_bot.ingest.preprocess import preprocess_file, preprocess_url
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCAL_TESSDATA = ROOT / "models" / "tessdata"

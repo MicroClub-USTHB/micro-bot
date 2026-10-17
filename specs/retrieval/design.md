@@ -264,7 +264,7 @@ from this spec reproducible.
 | Duplicate versions in candidates | `dedupe` (Req 3). |
 
 **Seam gap (needs eequaled):** `api/chat.py` lets exceptions propagate, and the app's handler
-catches `mcclub_rag.errors.IngestError`, a different class from our `ingest.errors.IngestError`;
+catches `micro_bot.errors.IngestError`, a different class from our `ingest.errors.IngestError`;
 its status map has no `index_unavailable` / `embedding_error` / `rerank_error`. As is, a Qdrant
 outage during chat becomes the generic 500 handler. Proposal for the wiring task: the app handler
 also catches `ingest.errors.IngestError` (same `code`/`message` attributes) and maps

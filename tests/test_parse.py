@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from mcclub_rag.ingest.errors import FileTooLarge, ParseError, ParseTimeout
-from mcclub_rag.ingest.parse import decode_text, extract_file, map_xberg_error
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.ingest.sniff import detect_type
+from micro_bot.ingest.errors import FileTooLarge, ParseError, ParseTimeout
+from micro_bot.ingest.parse import decode_text, extract_file, map_xberg_error
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.ingest.sniff import detect_type
 
 # --- decode_text -----------------------------------------------------------------
 

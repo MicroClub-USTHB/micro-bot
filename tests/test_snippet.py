@@ -1,6 +1,6 @@
 """Snippet around the best-matching sentence (eval-fixes Req 6)."""
 
-from mcclub_rag.text.snippet import best_snippet
+from micro_bot.text.snippet import best_snippet
 
 FILLER = "Le club organise des activités variées tout au long de l'année universitaire. " * 12
 EVIDENCE = "La cotisation annuelle est de 500 DA, payable avant le 15 octobre. "

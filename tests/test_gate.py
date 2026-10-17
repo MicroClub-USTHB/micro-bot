@@ -1,6 +1,6 @@
 import pytest
 
-from mcclub_rag.retrieval.gate import decide
+from micro_bot.retrieval.gate import decide
 
 
 def test_no_scores_refuse():

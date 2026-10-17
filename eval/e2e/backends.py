@@ -10,9 +10,9 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.main import parse_expiry  # same form-field parsing as the app adapter
-from mcclub_rag.schemas import DocInfo, IngestResult
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.main import parse_expiry  # same form-field parsing as the app adapter
+from micro_bot.schemas import DocInfo, IngestResult
 
 _STATUS = {"created": "indexed", "replaced": "indexed", "updated": "indexed"}
 

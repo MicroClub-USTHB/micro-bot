@@ -28,14 +28,14 @@ def sources(corpus: dict, work: Path) -> list[Source]:
 async def inprocess(args, work: Path):
     from qdrant_client import AsyncQdrantClient
 
-    from mcclub_rag.config import get_settings
-    from mcclub_rag.ingest.docstore import DocStore
-    from mcclub_rag.ingest.pipeline import IngestPipeline
-    from mcclub_rag.ingest.settings import IngestSettings
-    from mcclub_rag.llm.client import OpenRouterClient
-    from mcclub_rag.retrieval.backend import HybridRetriever
-    from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-    from mcclub_rag.retrieval.settings import RetrievalSettings
+    from micro_bot.config import get_settings
+    from micro_bot.ingest.docstore import DocStore
+    from micro_bot.ingest.pipeline import IngestPipeline
+    from micro_bot.ingest.settings import IngestSettings
+    from micro_bot.llm.client import OpenRouterClient
+    from micro_bot.retrieval.backend import HybridRetriever
+    from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+    from micro_bot.retrieval.settings import RetrievalSettings
 
     settings = IngestSettings(data_dir=work / "data")
     client = AsyncQdrantClient(url=args.qdrant_url) if args.qdrant_url else None
@@ -61,7 +61,7 @@ async def inprocess(args, work: Path):
     generator = RecordingGenerator(inner, E2E / "recordings", args.mode, budget, model)
     driver = InProcessDriver(pipeline, retriever, generator, work / "app")
     if args.rewrite:  # the same recorder serves the rewrite and the answer calls
-        from mcclub_rag.llm.rewrite import QueryRewriter
+        from micro_bot.llm.rewrite import QueryRewriter
 
         driver.state.rewriter = QueryRewriter(timeout_s=args.rewrite_timeout)
     info = {

@@ -1,8 +1,8 @@
 import pytest
 
-from mcclub_rag.ingest.errors import OcrConfigError
-from mcclub_rag.ingest.ocr import build_xberg_config, timeout_budget, verify_tessdata
-from mcclub_rag.ingest.settings import IngestSettings
+from micro_bot.ingest.errors import OcrConfigError
+from micro_bot.ingest.ocr import build_xberg_config, timeout_budget, verify_tessdata
+from micro_bot.ingest.settings import IngestSettings
 
 
 def _tessdir(tmp_path, langs):

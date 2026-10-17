@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo. Humans: see [README.md](READ
 
 ## Project
 
-`mcclub-rag` (package `mcclub_rag`): RAG chatbot for the MC Club RAG Chatbot Challenge.
+`micro-bot` (package `micro_bot`): RAG chatbot for the MC Club RAG Chatbot Challenge.
 Plain Python, no RAG or agent framework (no LlamaIndex, LangChain, Haystack, CrewAI).
 Corpus is multilingual (Arabic, French, English, often mixed), runs offline on CPU in a container.
 
@@ -188,7 +188,7 @@ Entry points (async): `preprocess_file(data, filename, *, visibility, title=None
 `parser`, `page_count`, `warnings`, `created_at`). Flow: sniff type (magic bytes) -> extract (xberg /
 text decode / trafilatura) -> sections -> normalize -> language -> assemble.
 
-Modules in `src/mcclub_rag/`: `ingest/{models,errors,settings,sniff,ocr,parse,sections,url_guard,web,preprocess}.py`,
+Modules in `src/micro_bot/`: `ingest/{models,errors,settings,sniff,ocr,parse,sections,url_guard,web,preprocess}.py`,
 `text/{normalize,lang}.py`. Rules that bite:
 
 - **Own magic-byte sniffing before xberg** (xberg trusts extensions). Extension only picks md vs txt.
@@ -343,7 +343,7 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 ## Layout
 
 ```
-src/mcclub_rag/
+src/micro_bot/
 ├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py
 ├── answer.py, conversation.py
 ├── api/        chat.py, documents.py, feedback.py, health.py

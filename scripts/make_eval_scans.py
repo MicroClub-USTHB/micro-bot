@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from mcclub_rag.ingest.preprocess import preprocess_url
+from micro_bot.ingest.preprocess import preprocess_url
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "data" / "sources"

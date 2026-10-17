@@ -15,7 +15,7 @@ pushed task must keep the GitHub Actions CI workflow green.
   - Add `pillow`, `openpyxl`, `python-docx`, `pypdf` to the `dev` group (fixture generation only).
   - Run `uv lock` and `uv sync`, then confirm `uv run python -c "import xberg, trafilatura, py3langid"` succeeds.
   - _Requirements: 2.4, 7.2_
-- [x] 1.2 Create `src/mcclub_rag/ingest/settings.py`
+- [x] 1.2 Create `src/micro_bot/ingest/settings.py`
   - `IngestSettings(BaseSettings)` with every field and default from design "Data Models", env prefix
     `INGEST_`, `tessdata_prefix` read from `TESSDATA_PREFIX`. Add a cached `get_ingest_settings()`.
   - Append the new variables, with one comment line each, to `.env.example`.
@@ -35,18 +35,18 @@ pushed task must keep the GitHub Actions CI workflow green.
   - Register the `ocr` marker in `[tool.pytest.ini_options]` (`markers = ["ocr: needs tessdata"]`), so the
     marker from task 7 is declared up front. Add `--strict-markers`.
   - `concurrency: ci-${{ github.ref }}` with `cancel-in-progress: true`, so a new push supersedes the running job.
-  - Add a placeholder `tests/test_smoke.py` (`import mcclub_rag`), so the first run collects at least one test.
+  - Add a placeholder `tests/test_smoke.py` (`import micro_bot`), so the first run collects at least one test.
   - Also covers eequaled's tests as they land; the workflow is not specific to preprocessing.
   - _Requirements: 8.2_
 
 - [x] 2. Output contract and errors
-- [x] 2.1 Create `src/mcclub_rag/ingest/models.py`
+- [x] 2.1 Create `src/micro_bot/ingest/models.py`
   - `Visibility`, `SourceType`, frozen `Section` and `ParsedDocument` exactly as in the design.
   - Internal dataclasses `RawPage(number, content, sheet_name, tables)` and `RawExtraction(...)`.
   - `tests/test_models.py`: `visibility="admin"` raises a validation error; models are frozen;
     a `ParsedDocument` JSON round-trip works.
   - _Requirements: 1.1, 1.3_
-- [x] 2.2 Create `src/mcclub_rag/ingest/errors.py`
+- [x] 2.2 Create `src/micro_bot/ingest/errors.py`
   - `IngestError(code, message)` plus the subclasses and codes from the design's error table
     (`InvalidInput`, `FileTooLarge`, `UnsupportedFileType`, `ParseError`, `ParseTimeout`, `EmptyDocument`,
     `FetchError`, `UrlNotAllowed`, `OcrConfigError`). Add an `ALL_ERRORS` tuple for the coverage check in 12.3.
@@ -54,7 +54,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     `UrlNotAllowed` → `FetchError`).
   - _Requirements: 2.5, 2.6, 2.7, 3.4, 3.6, 4.4, 4.5, 4.6, 8.3_
 
-- [x] 3. Text normalization (`src/mcclub_rag/text/normalize.py`)
+- [x] 3. Text normalization (`src/micro_bot/text/normalize.py`)
 - [x] 3.1 `normalize_text` and `rejoin_hyphens`
   - `tests/test_normalize.py`, table-driven:
     - CRLF; C0/C1 controls removed
@@ -81,7 +81,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - output is stable when applied twice
   - _Requirements: 5.3_
 
-- [x] 4. Language detection (`src/mcclub_rag/text/lang.py`)
+- [x] 4. Language detection (`src/micro_bot/text/lang.py`)
 - [x] 4.1 `detect` and `assign_languages`
   - Lazy singleton `LanguageIdentifier.from_model_file(MODEL_FILE, norm_probs=True)` with
     `set_languages(settings.lang_codes)`. `detect(text) -> LangResult(code, prob)` applying the
@@ -102,7 +102,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - the return value is always in {ar, fr, en}, checked over a small parametrized list incl. "ok"
   - _Requirements: 6.4_
 
-- [x] 5. File type sniffing (`src/mcclub_rag/ingest/sniff.py`)
+- [x] 5. File type sniffing (`src/micro_bot/ingest/sniff.py`)
   - `detect_type(data, filename) -> DetectedType(mime, kind)` per the design's signature table. ZIP
     inspection reads the central directory only (`zipfile.ZipFile(io.BytesIO(data)).namelist()`).
   - `tests/test_sniff.py` (synthetic bytes, no fixtures), one case per table row:
@@ -148,7 +148,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     an existing good file isn't re-downloaded.
   - _Requirements: 3.3, 3.4, 7.1_
 
-- [x] 7. OCR configuration (`src/mcclub_rag/ingest/ocr.py`)
+- [x] 7. OCR configuration (`src/micro_bot/ingest/ocr.py`)
   - `verify_tessdata(settings) -> Path`: every `{lang}.traineddata` in `settings.ocr_languages` exists and
     is non-empty, else `OcrConfigError` naming the missing languages and the download command.
   - `timeout_budget(kind, page_count, settings) -> int` and `build_xberg_config(settings, timeout_s)`
@@ -162,7 +162,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - budget = 60 + 10×pages for PDFs, 70 for images, 60 otherwise
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 7.1, 7.3_
 
-- [x] 8. File parsing (`src/mcclub_rag/ingest/parse.py`)
+- [x] 8. File parsing (`src/micro_bot/ingest/parse.py`)
 - [x] 8.1 `decode_text(data)`
   - Tests: UTF-8 with BOM; `latin1.txt`; `arabic_cp1256.txt` round-trips to the expected Arabic string;
     undecodable random bytes → `ParseError`.
@@ -193,7 +193,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - no writes under `~/.cache/xberg/ocr` (assert via `HOME`/`XDG_CACHE_HOME` pointed at `tmp_path`)
   - _Requirements: 2.1, 2.2, 2.3, 2.6, 2.7, 3.1, 3.2, 3.3, 7.1, 7.3_
 
-- [x] 9. Sectioning (`src/mcclub_rag/ingest/sections.py`)
+- [x] 9. Sectioning (`src/micro_bot/ingest/sections.py`)
   - `split_markdown(text, page=None, inherited_heading=None)` and `build_sections(raw: RawExtraction)`
     with the per-format rules from the design, including XLSX rows as `Header: value · Header: value` lines
     built from `RawPage.tables` cells.
@@ -206,7 +206,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - whitespace-only sections dropped
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 3.6_
 
-- [x] 10. SSRF guard (`src/mcclub_rag/ingest/url_guard.py`)
+- [x] 10. SSRF guard (`src/micro_bot/ingest/url_guard.py`)
   - `async check_url(url, resolve=default_resolver)`.
   - `tests/test_url_guard.py` with a fake resolver:
     - each of 127.0.0.1, 10.0.0.5, 172.16.0.1, 192.168.1.1, 169.254.169.254, 100.64.0.1, ::1, fc00::1,
@@ -216,7 +216,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - a public IP → passes
   - _Requirements: 4.5_
 
-- [x] 11. Web fetching and extraction (`src/mcclub_rag/ingest/web.py`)
+- [x] 11. Web fetching and extraction (`src/micro_bot/ingest/web.py`)
 - [x] 11.1 `fetch(url, settings, client=None, resolve=...) -> FetchedResource`
   - Manual redirect loop with `check_url` on every hop, streamed size cap, UA header, error mapping per the design.
   - `tests/test_web_fetch.py` (`httpx.MockTransport` + fake resolver):
@@ -237,7 +237,7 @@ pushed task must keep the GitHub Actions CI workflow green.
     - a page with only nav/footer → `EmptyDocument`
   - _Requirements: 4.2, 4.6_
 
-- [x] 12. Orchestration (`src/mcclub_rag/ingest/preprocess.py`)
+- [x] 12. Orchestration (`src/micro_bot/ingest/preprocess.py`)
 - [x] 12.1 `preprocess_file(data, filename, *, visibility, title=None) -> ParsedDocument`
   - Steps:
     - validate inputs (`InvalidInput`); size check (`FileTooLarge`)

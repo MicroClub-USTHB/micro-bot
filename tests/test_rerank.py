@@ -6,12 +6,12 @@ import pytest
 from onnxruntime.capi import onnxruntime_pybind11_state as ort_state
 from tokenizers import Tokenizer, models, pre_tokenizers, processors
 
-from mcclub_rag.ingest.chunk import chunk_document
-from mcclub_rag.ingest.errors import RerankerConfigError, RerankError
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.registry import RerankerSpec
-from mcclub_rag.retrieval.rerank import OnnxReranker, get_reranker, passage
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.ingest.chunk import chunk_document
+from micro_bot.ingest.errors import RerankerConfigError, RerankError
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.registry import RerankerSpec
+from micro_bot.retrieval.rerank import OnnxReranker, get_reranker, passage
+from micro_bot.retrieval.settings import RetrievalSettings
 from tests.chunk_helpers import FakeCounter, doc, md, words
 
 SETTINGS = IngestSettings(

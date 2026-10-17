@@ -361,7 +361,7 @@ prefixes. CI runs `uv lock --check`, ruff, the fast tests, and a models job that
 sha256-pinned models and runs the model-backed tests. Full rules in [AGENTS.md](AGENTS.md).
 
 ```
-src/mcclub_rag/
+src/micro_bot/
 ├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py, rate_limit.py, messages.py
 ├── answer.py, conversation.py
 ├── api/        chat.py, documents.py, feedback.py, health.py

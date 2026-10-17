@@ -3,13 +3,13 @@
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
 
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
-from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
+from micro_bot.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
+from micro_bot.retrieval.settings import RetrievalSettings
 from tests.conftest import FIXTURES
 
 SPEC = EMBEDDERS[DEFAULT_EMBEDDER]

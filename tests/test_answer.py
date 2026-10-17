@@ -1,7 +1,7 @@
-from mcclub_rag.answer import NOT_FOUND, build, extractive_fallback, leaks_prompt
-from mcclub_rag.llm.prompts import build_prompt
-from mcclub_rag.messages import NO_ANSWER, UNAVAILABLE
-from mcclub_rag.schemas import Chunk
+from micro_bot.answer import NOT_FOUND, build, extractive_fallback, leaks_prompt
+from micro_bot.llm.prompts import build_prompt
+from micro_bot.messages import NO_ANSWER, UNAVAILABLE
+from micro_bot.schemas import Chunk
 
 
 def make_chunk(

@@ -7,7 +7,7 @@ rechunking, diacritics, tatweel and case.
 
 from collections.abc import Iterable, Sequence
 
-from mcclub_rag.text.normalize import fold_for_search
+from micro_bot.text.normalize import fold_for_search
 
 
 def fold(text: str) -> str:

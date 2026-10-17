@@ -2,8 +2,8 @@
 
 import pytest
 
-from mcclub_rag.ingest.models import Section
-from mcclub_rag.ingest.preprocess import is_generic_title, page_one_title
+from micro_bot.ingest.models import Section
+from micro_bot.ingest.preprocess import is_generic_title, page_one_title
 
 
 def _sections(*rows):

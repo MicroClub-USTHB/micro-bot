@@ -22,9 +22,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
-from mcclub_rag.ingest.errors import IngestError
-from mcclub_rag.ingest.models import ParsedDocument
-from mcclub_rag.ingest.preprocess import preprocess_file, preprocess_url
+from micro_bot.ingest.errors import IngestError
+from micro_bot.ingest.models import ParsedDocument
+from micro_bot.ingest.preprocess import preprocess_file, preprocess_url
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "eval" / "corpus_sources.txt"

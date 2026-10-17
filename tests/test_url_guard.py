@@ -2,8 +2,8 @@ import socket
 
 import pytest
 
-from mcclub_rag.ingest.errors import FetchError, UrlNotAllowed
-from mcclub_rag.ingest.url_guard import check_url
+from micro_bot.ingest.errors import FetchError, UrlNotAllowed
+from micro_bot.ingest.url_guard import check_url
 
 
 def resolver(*addresses):

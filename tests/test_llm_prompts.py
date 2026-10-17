@@ -1,8 +1,8 @@
 from datetime import date
 
-from mcclub_rag.conversation import Turn
-from mcclub_rag.llm.prompts import build_prompt
-from mcclub_rag.schemas import Chunk
+from micro_bot.conversation import Turn
+from micro_bot.llm.prompts import build_prompt
+from micro_bot.schemas import Chunk
 
 
 def test_prompt_includes_date_language_history_and_fenced_untrusted_sources() -> None:
@@ -54,7 +54,7 @@ def test_prompt_escapes_fence_delimiters_in_untrusted_content() -> None:
 
 
 def test_prompt_asks_to_answer_from_passages_in_another_language():
-    from mcclub_rag.llm.prompts import build_prompt
+    from micro_bot.llm.prompts import build_prompt
 
     system, _ = build_prompt("Quand ?", "fr", [])
     assert "even in another language" in system

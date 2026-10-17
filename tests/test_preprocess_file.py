@@ -1,16 +1,16 @@
 import pytest
 from structlog.testing import capture_logs
 
-from mcclub_rag.ingest import parse, preprocess
-from mcclub_rag.ingest.errors import (
+from micro_bot.ingest import parse, preprocess
+from micro_bot.ingest.errors import (
     EmptyDocument,
     FileTooLarge,
     InvalidInput,
     OcrConfigError,
     UnsupportedFileType,
 )
-from mcclub_rag.ingest.preprocess import preprocess_file
-from mcclub_rag.ingest.settings import IngestSettings
+from micro_bot.ingest.preprocess import preprocess_file
+from micro_bot.ingest.settings import IngestSettings
 
 
 async def test_same_bytes_same_content_hash(ocr_settings, fixture_bytes):

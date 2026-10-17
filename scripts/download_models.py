@@ -3,7 +3,7 @@
 Currently: Tesseract traineddata for ara/fra/eng (pinned to tag 4.1.0), the chunking tokenizer
 (granite's ``tokenizer.json``), the embedder (``tokenizer.json`` plus the int8 ONNX model,
 ``EMBED_MODEL``, default bge-m3), the BM25 stopword lists and the reranker (``RERANK_MODEL``,
-default bge), all verified by SHA-256. The pins live in ``mcclub_rag.retrieval.registry``.
+default bge), all verified by SHA-256. The pins live in ``micro_bot.retrieval.registry``.
 
     uv run python scripts/download_models.py --only tessdata --dest models/tessdata
     uv run python scripts/download_models.py --only tokenizer --dest models/chunk-tokenizer
@@ -24,7 +24,7 @@ from typing import Literal
 
 import httpx
 
-from mcclub_rag.retrieval.registry import (
+from micro_bot.retrieval.registry import (
     BM25_FILES,
     BM25_REVISION,
     CHUNK_TOKENIZER,

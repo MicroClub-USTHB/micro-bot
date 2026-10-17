@@ -21,13 +21,13 @@ import httpx
 from eval.e2e.backends import PipelineDocuments, Ready
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.score import Observation
-from mcclub_rag.config import Settings
-from mcclub_rag.conversation import Turn
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.main import ApplicationState, RealLanguageDetector, create_app
-from mcclub_rag.rate_limit import SlidingWindowRateLimiter
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.schemas import Retrieval
+from micro_bot.config import Settings
+from micro_bot.conversation import Turn
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.main import ApplicationState, RealLanguageDetector, create_app
+from micro_bot.rate_limit import SlidingWindowRateLimiter
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.schemas import Retrieval
 
 
 @dataclass(frozen=True)

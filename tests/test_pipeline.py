@@ -5,8 +5,8 @@ from qdrant_client import models as qm
 from qdrant_client.http.exceptions import ResponseHandlingException
 from structlog.testing import capture_logs
 
-from mcclub_rag.ingest import pipeline as pl
-from mcclub_rag.ingest.errors import EmbeddingError, IndexUnavailable
+from micro_bot.ingest import pipeline as pl
+from micro_bot.ingest.errors import EmbeddingError, IndexUnavailable
 from tests.pipeline_helpers import FakeDenseEncoder, FakePreprocess, make_pipeline
 
 

@@ -4,12 +4,12 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from mcclub_rag.errors import install_error_handlers
-from mcclub_rag.logging import RequestLoggingMiddleware, configure_logging, set_request_log_context
+from micro_bot.errors import install_error_handlers
+from micro_bot.logging import RequestLoggingMiddleware, configure_logging, set_request_log_context
 
 
 def request_events(caplog: object) -> list[dict[str, object]]:
-    records = [record for record in caplog.records if record.name == "mcclub_rag.request"]
+    records = [record for record in caplog.records if record.name == "micro_bot.request"]
     return [json.loads(record.getMessage()) for record in records]
 
 
@@ -33,7 +33,7 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
         )
         return {"ok": True}
 
-    with caplog.at_level(logging.INFO, logger="mcclub_rag.request"):
+    with caplog.at_level(logging.INFO, logger="micro_bot.request"):
         with TestClient(app) as client:
             assert client.get("/api/v1/chat").json() == {"ok": True}
 
@@ -62,7 +62,7 @@ def test_request_logging_emits_one_line_for_a_handled_exception(caplog: object) 
     async def crash() -> None:
         raise RuntimeError("private failure")
 
-    with caplog.at_level(logging.INFO, logger="mcclub_rag.request"):
+    with caplog.at_level(logging.INFO, logger="micro_bot.request"):
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get("/api/v1/crash")
 
@@ -87,7 +87,7 @@ def test_request_logging_uses_standard_defaults(caplog: object) -> None:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    with caplog.at_level(logging.INFO, logger="mcclub_rag.request"):
+    with caplog.at_level(logging.INFO, logger="micro_bot.request"):
         with TestClient(app) as client:
             assert client.get("/api/v1/health").json() == {"status": "ok"}
 

@@ -1,5 +1,5 @@
 [project]
-name = "mcclub-rag"
+name = "micro-bot"
 version = "0.1.0"
 description = "RAG chatbot for the MC Club RAG Chatbot Challenge"
 readme = "README.md"

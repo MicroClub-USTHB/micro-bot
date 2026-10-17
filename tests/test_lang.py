@@ -1,8 +1,8 @@
 import pytest
 
-from mcclub_rag.ingest.models import Section
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.text.lang import assign_languages, detect, detect_language
+from micro_bot.ingest.models import Section
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.text.lang import assign_languages, detect, detect_language
 
 AR = (
     "يعقد النادي اجتماعه الشهري يوم الاثنين على الساعة السادسة مساء في القاعة الكبرى. "
@@ -96,7 +96,7 @@ def test_detect_language(text, code):
 @pytest.mark.parametrize("text", ["123 ?", "", "   ", "!!!"])
 def test_detect_language_without_letters_uses_default(text, monkeypatch):
     monkeypatch.setenv("INGEST_LANG_DEFAULT", "en")
-    from mcclub_rag.ingest.settings import get_ingest_settings
+    from micro_bot.ingest.settings import get_ingest_settings
 
     get_ingest_settings.cache_clear()
     try:

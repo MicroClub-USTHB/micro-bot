@@ -2,9 +2,9 @@ import hashlib
 
 import pytest
 
-from mcclub_rag.ingest.errors import TokenizerConfigError
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.ingest.tokens import HFTokenCounter, get_token_counter, verify_tokenizer
+from micro_bot.ingest.errors import TokenizerConfigError
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.ingest.tokens import HFTokenCounter, get_token_counter, verify_tokenizer
 
 SAMPLES = {
     "ar": "أعلن النادي عن موعد الهاكاثون؟ التسجيل مفتوح حتى يوم الجمعة؛ لا تتأخروا. " * 20,

@@ -11,7 +11,7 @@ from eval.e2e.generator import (
     ThreadedClient,
     prompt_key,
 )
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
+from micro_bot.llm.client import GenerationResult, GenerationUsage
 
 
 class SyncClient:
@@ -122,8 +122,8 @@ def test_ollama_client_failures_are_results():
 
 async def test_citing_stub_cites_the_first_passage_label():
     from eval.e2e.generator import CitingStub
-    from mcclub_rag.llm.prompts import build_prompt
-    from mcclub_rag.schemas import Chunk
+    from micro_bot.llm.prompts import build_prompt
+    from micro_bot.schemas import Chunk
 
     chunk = Chunk(chunk_id="c", doc_id="d", title="t", text="x", score=1.0)
     system, user = build_prompt("q", "en", [chunk])

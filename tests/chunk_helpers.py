@@ -6,11 +6,11 @@ from pathlib import Path
 
 import httpx
 
-from mcclub_rag.ingest.chunk import chunk_document
-from mcclub_rag.ingest.models import ParsedDocument, Section
-from mcclub_rag.ingest.preprocess import preprocess_url
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.text.sentences import split_words
+from micro_bot.ingest.chunk import chunk_document
+from micro_bot.ingest.models import ParsedDocument, Section
+from micro_bot.ingest.preprocess import preprocess_url
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.text.sentences import split_words
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 

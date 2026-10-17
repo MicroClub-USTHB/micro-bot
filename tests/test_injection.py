@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcclub_rag.ingest.injection import looks_like_instruction
+from micro_bot.ingest.injection import looks_like_instruction
 
 CORPUS = Path(__file__).parents[1] / "eval" / "e2e" / "corpus"
 

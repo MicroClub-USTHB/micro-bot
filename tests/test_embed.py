@@ -6,11 +6,11 @@ import pytest
 from fastembed.sparse.bm25 import Bm25
 from tokenizers import Tokenizer, models, pre_tokenizers
 
-from mcclub_rag.ingest.errors import EmbedderConfigError, EmbeddingError
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder, get_dense_encoder
-from mcclub_rag.retrieval.registry import EmbedderSpec
-from mcclub_rag.text.normalize import fold_for_search
+from micro_bot.ingest.errors import EmbedderConfigError, EmbeddingError
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder, get_dense_encoder
+from micro_bot.retrieval.registry import EmbedderSpec
+from micro_bot.text.normalize import fold_for_search
 
 STOPWORDS = {"arabic.txt": "إلى\nفي\n", "french.txt": "le\nla\ndu\n", "english.txt": "the\nof\n"}
 

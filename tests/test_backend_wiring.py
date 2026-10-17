@@ -14,12 +14,12 @@ import pytest
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.errors import IngestError
-from mcclub_rag.ingest import errors as ingest_errors
-from mcclub_rag.ingest import pipeline as ingest_pipeline
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
-from mcclub_rag.main import (
+from micro_bot.config import Settings, get_settings
+from micro_bot.errors import IngestError
+from micro_bot.ingest import errors as ingest_errors
+from micro_bot.ingest import pipeline as ingest_pipeline
+from micro_bot.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
+from micro_bot.main import (
     FakeGenerationService,
     OpenRouterGenerationService,
     PipelineProbe,
@@ -28,7 +28,7 @@ from mcclub_rag.main import (
     create_app,
     default_state,
 )
-from mcclub_rag.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.backend import HybridRetriever
 from tests.pipeline_helpers import make_pipeline
 
 GUIDE = "# Guide du club\n\nLes inscriptions ferment vendredi. Le club propose des ateliers."
@@ -212,14 +212,12 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
     monkeypatch.setenv("MEMBER_TOKEN", "member-secret")
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        "mcclub_rag.retrieval.backend.get_reranker", lambda settings: FakeReranker()
-    )
+    monkeypatch.setattr("micro_bot.retrieval.backend.get_reranker", lambda settings: FakeReranker())
     await ingest_pipeline.init_pipeline(pipeline=make_pipeline(tmp_path))
     try:
         settings = Settings(data_dir=tmp_path, openrouter_api_key="or-key")
         with TestClient(create_app(settings=settings)) as client:
-            state = client.app.state.mcclub_state
+            state = client.app.state.micro_bot_state
             assert isinstance(state.documents, RealDocumentBackend)
             assert isinstance(state.retrieval, HybridRetriever)  # wired by the lifespan
 

@@ -23,13 +23,13 @@ from qdrant_client import AsyncQdrantClient
 from eval import metrics as m
 from eval.e2e.perturb import diacritics, filler, noise, typo
 from eval.run_eval import REPO, ingest_corpus
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.settings import RetrievalSettings
-from mcclub_rag.text.lang import detect_language
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+from micro_bot.retrieval.settings import RetrievalSettings
+from micro_bot.text.lang import detect_language
 
 _FIELDS = {"fix_case": "query_fix_case", "strip_harakat": "query_strip_harakat"}
 

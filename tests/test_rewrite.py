@@ -3,8 +3,8 @@
 import asyncio
 import json
 
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
-from mcclub_rag.llm.rewrite import QueryRewriter, build_rewrite_prompt, parse_rewrite
+from micro_bot.llm.client import GenerationResult, GenerationUsage
+from micro_bot.llm.rewrite import QueryRewriter, build_rewrite_prompt, parse_rewrite
 
 GOOD = {
     "lang": "arabizi",

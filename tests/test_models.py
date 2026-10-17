@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from mcclub_rag.ingest.models import (
+from micro_bot.ingest.models import (
     Chunk,
     DocumentInfo,
     IngestResult,

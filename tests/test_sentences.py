@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from mcclub_rag.ingest.parse import decode_text
-from mcclub_rag.text.sentences import split_sentences, split_words
+from micro_bot.ingest.parse import decode_text
+from micro_bot.text.sentences import split_sentences, split_words
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
