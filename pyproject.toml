@@ -30,7 +30,6 @@ dev = [
     "pytest~=9.1",
     "pytest-asyncio~=1.4",
     "python-docx~=1.2",
-    "pyyaml~=6.0",  # the simulation compose overlays use !override, which SafeLoader rejects
     "ruff~=0.16",
 ]
 

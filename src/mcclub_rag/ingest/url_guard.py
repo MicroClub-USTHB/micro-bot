@@ -4,7 +4,7 @@ Only http(s), no credentials, and every address the host resolves to must be pub
 Called for the initial URL and again for every redirect hop.
 
 Known residual risk: DNS rebinding between this check and httpx's own resolution (TOCTOU).
-Closing it needs a transport that connects to the vetted IP; recorded in EDGE_CASES.md.
+Closing it needs a transport that connects to the vetted IP.
 """
 
 import asyncio

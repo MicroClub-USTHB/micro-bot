@@ -13,7 +13,7 @@ no sources, whatever its wording or language. Matching refusal phrases missed mo
 
 A reply that repeats the system prompt or the passage block (``title:`` / ``text:``) is
 withheld (I26): the caller answers with the not-found notice. A string check on the reply, no
-second call; a paraphrased or translated prompt is not caught (EDGE_CASES.md).
+second call; a paraphrased or translated prompt is not caught.
 
 The fallback (no LLM: no key, budget spent, provider error) never pastes chunks as the answer:
 it says so in the user's language and lists the passages as sources (I2, I3, I4).

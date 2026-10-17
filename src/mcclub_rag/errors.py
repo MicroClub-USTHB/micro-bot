@@ -80,8 +80,8 @@ def install_error_handlers(app: FastAPI) -> None:
         status_code = _INGEST_STATUS_CODES.get(exc.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
         return error_response(status_code, exc.code, exc.message)
 
-    # The pipeline raises its own IngestError class (EDGE_CASES "Retrieval errors reach the app
-    # as plain 500s"); retrieval failures surface through this handler, not through the adapter.
+    # The pipeline raises its own IngestError class, so retrieval failures surface through this
+    # handler (not as plain 500s), not through the adapter.
     @app.exception_handler(pipeline_errors.IngestError)
     async def pipeline_error_handler(_: Request, exc: pipeline_errors.IngestError) -> JSONResponse:
         status_code = _INGEST_STATUS_CODES.get(exc.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
