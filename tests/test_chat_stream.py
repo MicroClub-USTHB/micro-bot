@@ -289,3 +289,51 @@ async def test_client_without_key_makes_no_call() -> None:
     items = await _collect(OpenRouterClient(Settings(openrouter_api_key=None)))
 
     assert items == [GenerationResult(None, GenerationUsage(llm_calls=0), "not_configured")]
+
+
+def test_stream_answers_in_each_message_language_not_the_first(tmp_path: Path) -> None:
+    @dataclass
+    class ByWord:
+        def detect(self, text: str) -> str:
+            return "fr" if "quand" in text.lower() else "en"
+
+    prompts: list[str] = []
+
+    @dataclass
+    class Recording(StreamingGenerator):
+        async def stream(self, system: str, user: str):
+            prompts.append(system)
+            async for item in super().stream(system, user):
+                yield item
+
+    settings = Settings(data_dir=tmp_path, api_key="api-secret")
+    state = ApplicationState(
+        settings=settings,
+        documents=FakeDocumentBackend(),
+        document_probe=FakeHealthProbe(),
+        provider_probe=FakeHealthProbe(),
+        retrieval=FakeRetrieval(),
+        generator=Recording(["Friday. [S1]"]),
+        language_detector=ByWord(),
+    )
+    client = TestClient(create_app(settings=settings, state=state))
+    first = events(
+        client.post(
+            "/api/v1/chat",
+            json={"message": "Quand ferment les inscriptions au club ?", "stream": True},
+            headers=KEY,
+        )
+    )
+    cid = first[0][1]["conversation_id"]
+    client.post(
+        "/api/v1/chat",
+        json={
+            "message": "And when does the robotics workshop start this year?",
+            "conversation_id": cid,
+            "stream": True,
+        },
+        headers=KEY,
+    )
+
+    assert "Answer in French" in prompts[0]
+    assert "Answer in English" in prompts[1]
