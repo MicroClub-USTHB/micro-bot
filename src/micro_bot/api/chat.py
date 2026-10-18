@@ -347,6 +347,9 @@ def _finish(
             log.warning("answer_withheld", reason="prompt_leak")
             text = ""
         answer, sources, grounded = build(text, retrieval.chunks, query=message)
+        if grounded and not strip_references(answer).strip():  # citations and nothing else
+            log.warning("answer_withheld", reason="citations_only")
+            answer, sources, grounded = extractive_fallback(retrieval.chunks, message, language)
         answer = answer or NO_ANSWER[language]  # a bare NOT_FOUND or a withheld reply
     else:
         state.breaker.record_failure()

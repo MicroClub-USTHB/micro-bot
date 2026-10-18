@@ -137,3 +137,14 @@ def test_size_zero_disables_the_cache() -> None:
     cache.put(cache_key("a", "en", "1"), "A", [])
 
     assert cache.get(cache_key("a", "en", "1")) is None
+
+
+def test_a_citation_only_reply_is_a_fallback_and_never_cached(tmp_path: Path) -> None:
+    generator = Generator(text="[S1]")
+    client, _ = build(tmp_path, generator)
+
+    first = ask(client, "What is it?")
+    ask(client, "What is it?")
+
+    assert first["grounded"] is False and first["answer"].strip() != "[Guide]"
+    assert generator.calls == 2
