@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/micro-bot.png" alt="Micro Bot mascot" width="120">
+</p>
+
 <h1 align="center">Micro Bot</h1>
 
 <p align="center">
@@ -69,8 +73,8 @@ The API listens on `http://localhost:8000`.
 | `make test` / `make test-models` | Fast tests / tests that need the model files |
 | `make lint` / `make format` / `make check` | Lint, auto-fix, or run what CI runs |
 | `make eval` | Retrieval evaluation with the real models |
-| `make clean` | Remove caches |
-| `make reset` | Stop the stack and delete its data, models and `.venv` (asks first) |
+| `make clean` | Stop the stack, delete its volumes (index and stored documents) and caches |
+| `make reset` | `clean`, plus delete the local image, models and `.venv` (asks first) |
 
 Run `make` alone to list them.
 
