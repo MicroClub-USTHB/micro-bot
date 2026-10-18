@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 import structlog
 from fastapi import FastAPI, UploadFile
 
+from micro_bot.answer_cache import AnswerCache
 from micro_bot.api.chat import router as chat_router
 from micro_bot.api.documents import router as documents_router
 from micro_bot.api.feedback import router as feedback_router
@@ -319,6 +320,7 @@ class ApplicationState:
     language_detector: LanguageDetector = field(default_factory=FakeLanguageDetector)
     generator: GenerationService = field(default_factory=FakeGenerationService)
     rewriter: QueryRewriter | None = None  # the optional first LLM call (query-rewrite)
+    answer_cache: AnswerCache | None = None
     conversations: ConversationStore = field(default_factory=ConversationStore)
     rate_limiter: SlidingWindowRateLimiter | None = None
     quota: DailyQuota | None = None
@@ -326,6 +328,8 @@ class ApplicationState:
     corpus_version: str = "0"
 
     def __post_init__(self) -> None:
+        if self.answer_cache is None:
+            self.answer_cache = AnswerCache(self.settings.answer_cache_size)
         if self.rate_limiter is None:
             self.rate_limiter = SlidingWindowRateLimiter(
                 self.settings.chat_rate_limit_requests,

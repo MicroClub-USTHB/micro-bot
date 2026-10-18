@@ -267,12 +267,11 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
             # the rewrite call got the same stub (not JSON: searched as typed), then the answer
             assert body["usage"]["llm_calls"] == 2
 
-            # Same question without a conversation_id: answered again (no answer cache);
-            # only the rewrite call is de-duplicated by the rewriter's LRU.
+            # Same first question on the same corpus: served by the answer cache.
             second = client.post("/api/v1/chat", json=message, headers=member)
             assert second.status_code == 200
             assert second.json()["answer"] == body["answer"]
-            assert second.json()["usage"]["llm_calls"] == 1
+            assert second.json()["usage"]["llm_calls"] == 0
     finally:
         await ingest_pipeline.close_pipeline()
         get_settings.cache_clear()

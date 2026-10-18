@@ -24,6 +24,7 @@ from micro_bot.answer import (
     leaks_prompt,
     strip_references,
 )
+from micro_bot.answer_cache import cache_key
 from micro_bot.conversation import Conversation, Turn
 from micro_bot.deps import require_api_key
 from micro_bot.llm.client import GenerationResult, GenerationUsage
@@ -97,6 +98,10 @@ async def chat(
         _save_and_log(request, payload.message, response, state.corpus_version, conversation, [])
         return response
 
+    cached = _cached(state, payload.message, history, language, conversation, started_at)
+    if cached is not None:
+        _save_and_log(request, payload.message, cached, state.corpus_version, conversation, [])
+        return cached
     rewrite = await _rewrite(state, payload.message, history)
     retrieval = await state.retrieval.retrieve(payload.message, history, rewrite=rewrite.rewrite)
     response = await _answer(
@@ -109,6 +114,7 @@ async def chat(
         history=history,
     )
     response = _add_usage(response, rewrite.usage)
+    _remember(state, payload.message, history, language, response)
     _save_and_log(
         request,
         payload.message,
@@ -144,6 +150,8 @@ async def _events(
                 Usage(llm_calls=0, prompt_tokens=0, completion_tokens=0),
                 started_at,
             )
+        elif cached := _cached(state, message, history, language, conversation, started_at):
+            response = cached
         else:
             rewrite = await _rewrite(state, message, history)
             retrieval = await state.retrieval.retrieve(message, history, rewrite=rewrite.rewrite)
@@ -157,6 +165,7 @@ async def _events(
                 else:
                     response = item
             response = _add_usage(response, rewrite.usage)
+            _remember(state, message, history, language, response)
         if not streamed:  # a notice, a fallback or a refusal: shown as one delta
             yield _sse("delta", {"text": response.answer})
         _save_and_log(request, message, response, state.corpus_version, conversation, chunks)
@@ -177,6 +186,36 @@ async def _events(
         else:
             text = getattr(exc, "message", str(exc))
         yield _sse("error", {"error": {"code": code, "message": text}})
+
+
+def _cached(
+    state: object,
+    message: str,
+    history: list[Turn],
+    language: QueryLang,
+    conversation: Conversation,
+    started_at: float,
+) -> ChatResponse | None:
+    """A cached answer to this first question on this corpus: 0 LLM calls."""
+    cache = getattr(state, "answer_cache", None)
+    if cache is None or history:
+        return None
+    hit = cache.get(cache_key(message, language, state.corpus_version))
+    if hit is None:
+        return None
+    answer, sources = hit
+    usage = Usage(llm_calls=0, prompt_tokens=0, completion_tokens=0)
+    return _response(answer, conversation.conversation_id, True, sources, usage, started_at)
+
+
+def _remember(
+    state: object, message: str, history: list[Turn], language: QueryLang, response: ChatResponse
+) -> None:
+    """Keep a grounded LLM answer to a first question (never a notice, refusal or fallback)."""
+    cache = getattr(state, "answer_cache", None)
+    if cache is None or history or not response.grounded or not response.usage.llm_calls:
+        return
+    cache.put(cache_key(message, language, state.corpus_version), response.answer, response.sources)
 
 
 def _sse(event: str, data: object) -> bytes:
