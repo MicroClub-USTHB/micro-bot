@@ -99,8 +99,8 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
 - **LLM:** free tiers that need no credit card, via the `openai` SDK, in `LLM_PROVIDERS` order
-  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-2.5-flash`, rewrite `gemini-2.5-flash-lite`,
-  `reasoning_effort: none`; Algeria is on Google's available-regions list), Cloudflare Workers
+  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-3.8-flash`, rewrite `gemini-3.5-flash-lite`,
+  `reasoning_effort` `none` / `minimal`; Algeria is on Google's available-regions list), Cloudflare Workers
   AI (`@cf/openai/gpt-oss-120b`), OpenRouter (`google/gemma-4-31b-it:free`). Each provider has
   its own daily quota (`DATA_DIR/llm_providers/`) and a cool-down after a 429/5xx/timeout; the
   provider is picked before the call, never retried. Grounded answers to a first question are

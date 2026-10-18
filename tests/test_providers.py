@@ -74,7 +74,7 @@ def test_providers_follow_the_configured_order_and_skip_missing_keys(tmp_path: P
     assert [p.name for p in providers] == ["openrouter", "gemini"]
     gemini = providers[1]
     assert gemini.base_url == GEMINI_BASE_URL
-    assert gemini.model == "gemini-2.5-flash"
+    assert gemini.model == "gemini-3.8-flash"
     assert gemini.extra == {"reasoning_effort": "none"}
 
 
@@ -83,7 +83,8 @@ def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path)
 
     gemini = rewrite_providers(s)[0]
 
-    assert gemini.model == "gemini-2.5-flash-lite" and gemini.daily_limit == 7
+    assert gemini.model == "gemini-3.5-flash-lite" and gemini.daily_limit == 7
+    assert gemini.extra == {"reasoning_effort": "minimal"}
 
 
 def test_cloudflare_url_carries_the_account_id(tmp_path: Path) -> None:
@@ -98,7 +99,7 @@ async def test_first_provider_answers_and_is_named(tmp_path: Path) -> None:
 
     result = await c.generate("s", "u")
 
-    assert result.ok and result.text == "from gemini-2.5-flash"
+    assert result.ok and result.text == "from gemini-3.8-flash"
     assert result.provider == "gemini"
     assert sum(client.calls for client in clients.values()) == 1
 
@@ -159,4 +160,4 @@ async def test_rewrite_chain_is_reused_and_uses_the_rewrite_model(tmp_path: Path
     rewrite = c.for_rewrite()
 
     assert c.for_rewrite() is rewrite
-    assert (await rewrite.generate("s", "u")).text == "from gemini-2.5-flash-lite"
+    assert (await rewrite.generate("s", "u")).text == "from gemini-3.5-flash-lite"

@@ -17,8 +17,13 @@ class Settings(BaseSettings):
     # (ai.google.dev/gemini-api/docs/available-regions, 2026-10-18); free content may be used
     # to improve Google's products, so only public documents belong here.
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"  # thinking can be off on 2.5 Flash, not on Pro / 3.x
-    gemini_rewrite_model: str = "gemini-2.5-flash-lite"  # the cheap quota pays for the rewrite
+    # 2.5 models are closed to new users (HTTP 404, 2026-10-18). Each model accepts different
+    # reasoning_effort values, measured: 3.8-flash takes "none" (not "minimal"), 3.5-flash-lite
+    # takes "minimal" (not "none"); "" sends none and keeps the model's default thinking.
+    gemini_model: str = "gemini-3.8-flash"
+    gemini_reasoning_effort: str = "none"
+    gemini_rewrite_model: str = "gemini-3.5-flash-lite"  # the cheap quota pays for the rewrite
+    gemini_rewrite_reasoning_effort: str = "minimal"
     # Google shows free quotas only in AI Studio: set these to your project's RPD
     gemini_daily_limit: int = Field(default=250, ge=0)
     gemini_rewrite_daily_limit: int = Field(default=1000, ge=0)

@@ -67,8 +67,8 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 daily_limit=(
                     settings.gemini_rewrite_daily_limit if rewrite else settings.gemini_daily_limit
                 ),
-                # 2.5 Flash / Flash-Lite think by default: off, like OpenRouter's reasoning
-                extra=_gemini_extra(settings),
+                # Gemini models think by default: as little as each model allows
+                extra=_gemini_extra(settings, rewrite=rewrite),
             )
         )
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
@@ -96,8 +96,11 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
     return providers
 
 
-def _gemini_extra(settings: Settings) -> dict:
-    return {"reasoning_effort": "none"} if settings.llm_disable_reasoning else {}
+def _gemini_extra(settings: Settings, *, rewrite: bool) -> dict:
+    effort = (
+        settings.gemini_rewrite_reasoning_effort if rewrite else settings.gemini_reasoning_effort
+    )
+    return {"reasoning_effort": effort} if effort and settings.llm_disable_reasoning else {}
 
 
 @dataclass
