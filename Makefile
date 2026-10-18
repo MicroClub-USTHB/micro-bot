@@ -86,11 +86,13 @@ eval: models ## Retrieval eval with real models (in-memory Qdrant)
 
 ## --- Clean ------------------------------------------------------------------
 
-clean: ## Remove caches and build leftovers
+clean: ## Stop the stack, DELETE its volumes (index, stored docs), remove caches
+	docker compose down -v
 	find . -type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \) -not -path './.venv/*' -prune -exec rm -rf {} +
 	rm -rf build dist *.egg-info
 
-reset: clean ## Stop the stack and DELETE its data (index, docs), models and .venv
-	@read -p "Delete the Qdrant index, stored documents, ./models and .venv? [y/N] " a && [[ $$a == y ]]
-	docker compose down -v --rmi local
+reset: ## Like clean, plus DELETE the local image, ./models and .venv (asks first)
+	@read -p "Delete the Qdrant index, stored documents, image, ./models and .venv? [y/N] " a && [[ $$a == y ]]
+	$(MAKE) --no-print-directory clean
+	docker compose down --rmi local
 	rm -rf models .venv
