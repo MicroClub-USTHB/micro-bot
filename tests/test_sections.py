@@ -1,5 +1,5 @@
-from mcclub_rag.ingest.models import RawExtraction, RawPage
-from mcclub_rag.ingest.sections import build_sections, split_markdown
+from micro_bot.ingest.models import RawExtraction, RawPage
+from micro_bot.ingest.sections import build_sections, split_markdown
 
 
 def _raw(kind, markdown="", pages=()):

@@ -6,12 +6,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
-from mcclub_rag.llm.quota import DailyQuota
-from mcclub_rag.llm.rewrite import QueryRewriter
-from mcclub_rag.main import ApplicationState, FakeDocumentBackend, FakeHealthProbe, create_app
-from mcclub_rag.schemas import Chunk, Retrieval
+from micro_bot.config import Settings
+from micro_bot.llm.client import GenerationResult, GenerationUsage
+from micro_bot.llm.quota import DailyQuota
+from micro_bot.llm.rewrite import QueryRewriter
+from micro_bot.main import ApplicationState, FakeDocumentBackend, FakeHealthProbe, create_app
+from micro_bot.schemas import Chunk, Retrieval
 
 REWRITE = {"lang": "arabizi", "query": "wach kayen parking?", "en": "Is there parking?"}
 CHUNK = Chunk(chunk_id="c1", doc_id="d1", title="Guide", text="Parking: yes.", score=0.9)
@@ -21,7 +21,7 @@ CHUNK = Chunk(chunk_id="c1", doc_id="d1", title="Guide", text="Parking: yes.", s
 class Retriever:
     rewrites: list = field(default_factory=list)
 
-    async def retrieve(self, query, role, history, *, rewrite=None) -> Retrieval:
+    async def retrieve(self, query, history, *, rewrite=None) -> Retrieval:
         self.rewrites.append(rewrite)
         return Retrieval(chunks=[CHUNK], top_score=0.9, decision="answer")
 
@@ -44,7 +44,7 @@ def client(tmp_path: Path, reply: GenerationResult, quota: DailyQuota | None = N
     retriever = Retriever()
     generator = Generator(reply)
     state = ApplicationState(
-        settings=Settings(data_dir=tmp_path),
+        settings=Settings(data_dir=tmp_path, api_key="api-secret"),
         documents=FakeDocumentBackend(),
         document_probe=FakeHealthProbe(),
         provider_probe=FakeHealthProbe(),
@@ -53,7 +53,11 @@ def client(tmp_path: Path, reply: GenerationResult, quota: DailyQuota | None = N
         rewriter=QueryRewriter(timeout_s=5),
         quota=quota,
     )
-    return TestClient(create_app(settings=state.settings, state=state)), retriever, generator
+    api = TestClient(
+        create_app(settings=state.settings, state=state),
+        headers={"Authorization": "Bearer api-secret"},
+    )
+    return api, retriever, generator
 
 
 def test_rewrite_reaches_retrieval_and_usage_counts_both_calls(tmp_path):

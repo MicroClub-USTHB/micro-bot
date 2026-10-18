@@ -28,12 +28,12 @@ from qdrant_client import AsyncQdrantClient
 
 from eval import metrics as m
 from eval.run_eval import REPO, ingest_corpus
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+from micro_bot.retrieval.settings import RetrievalSettings
 
 
 def _pick(values: list[float], q: float) -> float:
@@ -47,7 +47,7 @@ async def quality(retriever, questions, doc_ids, cuts) -> dict[int, dict[str, fl
         if not q["answerable"]:
             continue
         query, _ = retriever.search_query(q["question"], [])
-        candidates = await retriever.candidates(query, q["role"])
+        candidates = await retriever.candidates(query)
         scored = dict(
             (c.point_id, s) for c, s in await retriever.rerank(query, candidates[: max(cuts)])
         )
@@ -70,7 +70,7 @@ async def load(retriever, questions, users: int, seconds: float) -> dict[str, fl
         while time.monotonic() < stop:
             q = questions[i % len(questions)]
             start = time.perf_counter()
-            await retriever.retrieve(q["question"], q["role"], [])
+            await retriever.retrieve(q["question"], [])
             latencies.append((time.perf_counter() - start) * 1000)
             i += users
 

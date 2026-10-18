@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from mcclub_rag.ingest.preprocess import preprocess_url
+from micro_bot.ingest.preprocess import preprocess_url
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ROOT / "data" / "sources"
@@ -145,7 +145,7 @@ async def main() -> None:
         save(images, OUT / name)
         print(f"wrote {name} ({len(images)} page(s) of {pdf})")
     for name, url, lang, angle in NOTICES:
-        doc = await preprocess_url(build.quote_url(url), visibility="public")
+        doc = await preprocess_url(build.quote_url(url))
         text = notice_text(doc.text)
         (OUT / name).with_suffix(".txt").write_text(text + "\n", encoding="utf-8")
         save([degrade(render_notice(text, lang), angle, name)], OUT / name)

@@ -1,5 +1,5 @@
-import mcclub_rag
+import micro_bot
 
 
 def test_package_imports():
-    assert mcclub_rag.__name__ == "mcclub_rag"
+    assert micro_bot.__name__ == "micro_bot"

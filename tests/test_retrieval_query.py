@@ -1,7 +1,7 @@
 import pytest
 
-from mcclub_rag.conversation import Turn
-from mcclub_rag.retrieval.query import build_search_query, has_followup_cue, normalize_query
+from micro_bot.conversation import Turn
+from micro_bot.retrieval.query import build_search_query, has_followup_cue, normalize_query
 
 
 def turn(user: str, assistant: str = "answer") -> Turn:

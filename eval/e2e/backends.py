@@ -10,9 +10,9 @@ from pathlib import Path
 
 from fastapi import UploadFile
 
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.main import parse_expiry  # same form-field parsing as the app adapter
-from mcclub_rag.schemas import DocInfo, IngestResult
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.main import parse_expiry  # same form-field parsing as the app adapter
+from micro_bot.schemas import DocInfo, IngestResult
 
 _STATUS = {"created": "indexed", "replaced": "indexed", "updated": "indexed"}
 
@@ -23,19 +23,20 @@ class PipelineDocuments:
     def __init__(self, pipeline: IngestPipeline) -> None:
         self.pipeline = pipeline
 
-    async def ingest_file(
-        self, file: UploadFile, *, visibility, topic, expires_at=None
-    ) -> IngestResult:
+    async def ingest_file(self, file: UploadFile, *, topic, expires_at=None) -> IngestResult:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / (file.filename or "document")
             path.write_bytes(await file.read())
             result = await self.pipeline.ingest_file(
-                path, path.name, visibility, topic=topic, expires_at=parse_expiry(expires_at)
+                path, path.name, topic=topic, expires_at=parse_expiry(expires_at)
             )
         status = _STATUS.get(result.status, result.status)
         return IngestResult(
             doc_id=result.doc_id, title=result.title, status=status, chunk_count=result.chunk_count
         )
+
+    async def get_document(self, doc_id: str) -> DocInfo | None:
+        return next((d for d in await self.list_documents() if d.doc_id == doc_id), None)
 
     async def list_documents(self) -> list[DocInfo]:
         stored, _ = await self.pipeline.docstore.load_all()
@@ -44,7 +45,6 @@ class PipelineDocuments:
             DocInfo(
                 doc_id=d.doc_id,
                 title=d.title,
-                visibility=d.visibility,
                 status="indexed",
                 chunk_count=d.chunk_count,
                 created_at=d.ingested_at.isoformat(),

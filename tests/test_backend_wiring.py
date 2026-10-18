@@ -14,12 +14,12 @@ import pytest
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.errors import IngestError
-from mcclub_rag.ingest import errors as ingest_errors
-from mcclub_rag.ingest import pipeline as ingest_pipeline
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
-from mcclub_rag.main import (
+from micro_bot.config import Settings, get_settings
+from micro_bot.errors import IngestError
+from micro_bot.ingest import errors as ingest_errors
+from micro_bot.ingest import pipeline as ingest_pipeline
+from micro_bot.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
+from micro_bot.main import (
     FakeGenerationService,
     OpenRouterGenerationService,
     PipelineProbe,
@@ -28,7 +28,7 @@ from mcclub_rag.main import (
     create_app,
     default_state,
 )
-from mcclub_rag.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.backend import HybridRetriever
 from tests.pipeline_helpers import make_pipeline
 
 GUIDE = "# Guide du club\n\nLes inscriptions ferment vendredi. Le club propose des ateliers."
@@ -38,10 +38,8 @@ def upload(name: str, text: str) -> UploadFile:
     return UploadFile(file=io.BytesIO(text.encode()), filename=name)
 
 
-async def ingest(backend: RealDocumentBackend, name: str, text: str, visibility: str = "public"):
-    return await backend.ingest_file(
-        upload(name, text), visibility=visibility, topic=None, expires_at=None
-    )
+async def ingest(backend: RealDocumentBackend, name: str, text: str):
+    return await backend.ingest_file(upload(name, text), topic=None, expires_at=None)
 
 
 @pytest.fixture
@@ -145,10 +143,10 @@ async def test_upload_bytes_go_through_a_temp_file_that_is_removed(
     seen: dict[str, object] = {}
     real = ingest_pipeline.ingest_file
 
-    async def spy(path, filename, visibility, **kwargs):
+    async def spy(path, filename, **kwargs):
         seen["path"] = Path(path)
         seen["exists_during_call"] = Path(path).is_file()
-        return await real(path, filename, visibility, **kwargs)
+        return await real(path, filename, **kwargs)
 
     monkeypatch.setattr(ingest_pipeline, "ingest_file", spy)
 
@@ -162,7 +160,7 @@ async def test_upload_bytes_go_through_a_temp_file_that_is_removed(
 async def test_list_documents_maps_info_fields_and_topic_from_the_docstore(
     backend: RealDocumentBackend,
 ) -> None:
-    await ingest(backend, "guide.md", GUIDE, visibility="members")
+    await ingest(backend, "guide.md", GUIDE)
 
     docs = await backend.list_documents()
 
@@ -170,7 +168,6 @@ async def test_list_documents_maps_info_fields_and_topic_from_the_docstore(
     doc = docs[0]
     assert doc.topic == "guide"  # default topic: the uploaded filename's stem
     assert doc.status == "indexed"
-    assert doc.visibility == "members"
     assert doc.chunk_count >= 1
     assert datetime.fromisoformat(doc.created_at)  # ISO string, not a datetime object
 
@@ -209,17 +206,15 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("ADMIN_API_KEY", "admin-secret")
-    monkeypatch.setenv("MEMBER_TOKEN", "member-secret")
+    monkeypatch.setenv("API_KEY", "api-secret")
     monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
     get_settings.cache_clear()
-    monkeypatch.setattr(
-        "mcclub_rag.retrieval.backend.get_reranker", lambda settings: FakeReranker()
-    )
+    monkeypatch.setattr("micro_bot.retrieval.backend.get_reranker", lambda settings: FakeReranker())
     await ingest_pipeline.init_pipeline(pipeline=make_pipeline(tmp_path))
     try:
-        settings = Settings(data_dir=tmp_path, openrouter_api_key="or-key")
+        settings = Settings(data_dir=tmp_path, openrouter_api_key="or-key", api_key="api-secret")
         with TestClient(create_app(settings=settings)) as client:
-            state = client.app.state.mcclub_state
+            state = client.app.state.micro_bot_state
             assert isinstance(state.documents, RealDocumentBackend)
             assert isinstance(state.retrieval, HybridRetriever)  # wired by the lifespan
 
@@ -227,7 +222,6 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
             created = client.post(
                 "/api/v1/documents",
                 files={"file": ("events.md", events.encode(), "text/markdown")},
-                data={"visibility": "public"},
                 headers={"X-Admin-Key": "admin-secret"},
             )
             assert created.status_code == 200
@@ -239,7 +233,6 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
                 {
                     "doc_id": doc_id,
                     "title": "Événements",
-                    "visibility": "public",
                     "status": "indexed",
                     "chunk_count": listed.json()[0]["chunk_count"],
                     "created_at": listed.json()[0]["created_at"],
@@ -256,7 +249,7 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
             state.generator = FakeGenerationService(
                 GenerationResult(f"Samedi au local du club [{doc_id}].", GenerationUsage(1))
             )
-            member = {"Authorization": "Bearer member-secret"}
+            member = {"Authorization": "Bearer api-secret"}
             message = {"message": "Quand a lieu le prochain atelier ?"}
             first = client.post("/api/v1/chat", json=message, headers=member)
             assert first.status_code == 200
@@ -279,7 +272,7 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
 
 async def test_expires_at_is_kept_and_listed(backend: RealDocumentBackend) -> None:
     result = await backend.ingest_file(
-        upload("guide.md", GUIDE), visibility="public", topic=None, expires_at="2027-06-30"
+        upload("guide.md", GUIDE), topic=None, expires_at="2027-06-30"
     )
     assert result.status == "indexed"
     (info,) = await backend.list_documents()
@@ -288,7 +281,5 @@ async def test_expires_at_is_kept_and_listed(backend: RealDocumentBackend) -> No
 
 async def test_invalid_expires_at_is_invalid_input(backend: RealDocumentBackend) -> None:
     with pytest.raises(IngestError) as caught:
-        await backend.ingest_file(
-            upload("guide.md", GUIDE), visibility="public", topic=None, expires_at="next week"
-        )
+        await backend.ingest_file(upload("guide.md", GUIDE), topic=None, expires_at="next week")
     assert caught.value.code == "invalid_input"

@@ -4,7 +4,7 @@
     RETRIEVE_TOP_K=20 RETRIEVAL_RRF_K=2 uv run python -m eval.run_eval --label k20-rrf2
     RERANK_MODEL=BAAI/bge-reranker-v2-m3 uv run python -m eval.run_eval --label bge
 
-Ingests the corpus (``eval/corpus.json``: files in ``--corpus``, topic, title, visibility;
+Ingests the corpus (``eval/corpus.json``: files in ``--corpus``, topic, title;
 only the document text of ``scripts/parse.py`` dumps) into an in-memory Qdrant with
 the real encoders and reranker, runs every question of ``eval/questions.jsonl`` through the
 retriever's stages, prints a summary and writes ``eval/results/<UTC>-<label>.json``. Settings
@@ -24,14 +24,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from eval import metrics as m
-from mcclub_rag.conversation import Turn
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.rerank import get_reranker
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.conversation import Turn
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+from micro_bot.retrieval.rerank import get_reranker
+from micro_bot.retrieval.settings import RetrievalSettings
 
 REPO = Path(__file__).resolve().parents[1]
 STAGES = ("ms_encode", "ms_search", "ms_rerank", "ms_total")
@@ -60,7 +60,7 @@ async def ingest_corpus(
         raw = (corpus_dir / doc["file"]).read_text(encoding="utf-8")
         path.write_text(document_text(raw), encoding="utf-8")
         result = await pipeline.ingest_file(
-            path, path.name, doc["visibility"], title=doc.get("title"), topic=doc["topic"]
+            path, path.name, title=doc.get("title"), topic=doc["topic"]
         )
         doc_ids[doc["topic"]] = result.doc_id
     return doc_ids
@@ -83,7 +83,7 @@ async def evaluate(
         ms_encode = _ms(start)
         step = time.perf_counter()
         candidates = await retriever.search.search(
-            dense, sparse, q["role"], query_language=retriever.query_language(q["question"])
+            dense, sparse, query_language=retriever.query_language(q["question"])
         )
         ms_search = _ms(step)
         step = time.perf_counter()
@@ -92,12 +92,10 @@ async def evaluate(
         row = {
             "id": q["id"],
             "tags": q["tags"],
-            "role": q["role"],
             "answerable": q["answerable"],
             "history_used": used,
             "candidates": len(candidates),
             "top_score": round(ranked[0][1], 4) if ranked else 0.0,
-            "visibilities": sorted({c.visibility for c in candidates}),
             "ms_encode": ms_encode,
             "ms_search": ms_search,
             "ms_rerank": ms_rerank,
@@ -144,7 +142,6 @@ def summarize(
     return {
         "overall": _quality(answerable, k, depth),
         "by_tag": {t: _quality([r for r in answerable if t in r["tags"]], k, depth) for t in tags},
-        "access_violations": m.access_violations(rows),
         "suggested_gate_threshold": m.suggest_threshold(sweep, max_false_refusal),
         "max_false_refusal": max_false_refusal,
         "latency_ms": _latency(rows),
@@ -172,7 +169,6 @@ def print_summary(summary: dict, label: str) -> None:
         print(f"{name:>14}: {cells}")
     lat = summary["latency_ms"]
     print("latency ms   : " + "  ".join(f"{s} {v['median']}/{v['p95']}" for s, v in lat.items()))
-    print(f"access violations: {summary['access_violations']}")
     if "instruction_like_chunks" in summary:
         print(f"chunks flagged instruction_like: {summary['instruction_like_chunks']}")
     print(

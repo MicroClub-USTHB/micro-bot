@@ -19,7 +19,7 @@ import numpy as np
 import onnxruntime as ort
 from tokenizers import Tokenizer
 
-from mcclub_rag.retrieval.registry import DEFAULT_RERANKER, RERANKERS
+from micro_bot.retrieval.registry import DEFAULT_RERANKER, RERANKERS
 
 QUERIES = {
     "ar": "ما هي شروط الترشح لمنصب نائب الرئيس في النادي؟",

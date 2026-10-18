@@ -5,23 +5,23 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.deps import get_role, require_admin
-from mcclub_rag.errors import IngestError, install_error_handlers
+from micro_bot.config import Settings, get_settings
+from micro_bot.deps import require_admin, require_api_key
+from micro_bot.errors import IngestError, install_error_handlers
 
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> Generator[TestClient]:
-    monkeypatch.setenv("MEMBER_TOKEN", "member-secret")
+    monkeypatch.setenv("API_KEY", "api-secret")
     monkeypatch.setenv("ADMIN_API_KEY", "admin-secret")
     get_settings.cache_clear()
 
     app = FastAPI()
     install_error_handlers(app)
 
-    @app.get("/role")
-    async def role(role: str = Depends(get_role)) -> dict[str, str]:
-        return {"role": role}
+    @app.get("/chat")
+    async def chat(_: None = Depends(require_api_key)) -> dict[str, bool]:
+        return {"ok": True}
 
     @app.get("/admin")
     async def admin(_: None = Depends(require_admin)) -> dict[str, bool]:
@@ -70,43 +70,43 @@ def test_settings_rejects_invalid_rate_limit(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_missing_tokens_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("MEMBER_TOKEN", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
     monkeypatch.delenv("ADMIN_API_KEY", raising=False)
     get_settings.cache_clear()
 
     app = FastAPI()
     install_error_handlers(app)
 
-    @app.get("/role")
-    async def role(role: str = Depends(get_role)) -> dict[str, str]:
-        return {"role": role}
+    @app.get("/chat")
+    async def chat(_: None = Depends(require_api_key)) -> dict[str, bool]:
+        return {"ok": True}
 
     @app.get("/admin")
     async def admin(_: None = Depends(require_admin)) -> dict[str, bool]:
         return {"ok": True}
 
     with TestClient(app) as test_client:
-        assert test_client.get("/role").json() == {"role": "public"}
+        assert_error(test_client.get("/chat"), 401, "unauthorized")
         assert_error(
-            test_client.get("/role", headers={"Authorization": "Bearer any"}),
+            test_client.get("/chat", headers={"Authorization": "Bearer any"}),
             401,
             "unauthorized",
         )
         assert_error(test_client.get("/admin"), 403, "forbidden")
 
 
-def test_role_mapping_and_admin_auth(client: TestClient) -> None:
-    assert client.get("/role").json() == {"role": "public"}
-    assert client.get("/role", headers={"Authorization": "Bearer member-secret"}).json() == {
-        "role": "member"
+def test_api_key_and_admin_auth(client: TestClient) -> None:
+    assert_error(client.get("/chat"), 401, "unauthorized")
+    assert client.get("/chat", headers={"Authorization": "Bearer api-secret"}).json() == {
+        "ok": True
     }
     assert_error(
-        client.get("/role", headers={"Authorization": "Bearer wrong"}),
+        client.get("/chat", headers={"Authorization": "Bearer wrong"}),
         401,
         "unauthorized",
     )
     assert_error(
-        client.get("/role", headers={"Authorization": "Basic member-secret"}),
+        client.get("/chat", headers={"Authorization": "Basic api-secret"}),
         401,
         "unauthorized",
     )
@@ -136,13 +136,13 @@ def test_ingest_errors_have_stable_json_mapping(
 
 def test_every_standard_error_is_json(client: TestClient) -> None:
     assert_error(client.get("/missing"), 404, "not_found")
-    assert_error(client.post("/role"), 405, "method_not_allowed")
+    assert_error(client.post("/chat"), 405, "method_not_allowed")
     assert_error(client.get("/http-error"), 418, "http_error")
     assert_error(client.get("/crash"), 500, "internal")
 
 
 def test_app_defaults_match_the_retrieval_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcclub_rag.retrieval.settings import RetrievalSettings
+    from micro_bot.retrieval.settings import RetrievalSettings
 
     for name in ("RERANK_MODEL", "RETRIEVE_TOP_K", "RERANK_TOP_N", "GATE_THRESHOLD"):
         monkeypatch.delenv(name, raising=False)

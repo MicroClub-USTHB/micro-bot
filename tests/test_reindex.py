@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from qdrant_client import AsyncQdrantClient
 
-from mcclub_rag.ingest.errors import IndexStale
+from micro_bot.ingest.errors import IndexStale
 from tests.pipeline_helpers import FakePreprocess, make_pipeline
 
 RULES = "# Règlement\n\nLe club se réunit le mardi.\n\n# Adhésion\n\nLa cotisation est de 500 DA."
@@ -26,9 +26,8 @@ def _write(tmp_path, name, text):
 async def _seed(tmp_path, client):
     p = make_pipeline(tmp_path, client=client)
     await p.start()
-    rules = await p.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
-    await p.ingest_file(_write(tmp_path, "page.md", PAGE), "page.md", "public")
-    await p.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "members")  # updated
+    rules = await p.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md")
+    await p.ingest_file(_write(tmp_path, "page.md", PAGE), "page.md")
     return p, rules
 
 
@@ -45,7 +44,7 @@ async def test_settings_change_rebuilds_from_the_docstore(tmp_path):
     assert await new.store.ensure(new.signature) == "ok"
     docs = {d.doc_id: d for d in await new.list_documents()}
     assert set(docs) == old_ids and len(docs) == 2
-    assert docs[rules.doc_id].visibility == "members"
+    assert docs[rules.doc_id].source == "rules.md"
     assert await new.corpus_version() != before
     hits = await client.query_points(new.store.alias, query=[0.3] * 8, using="dense", limit=10)
     assert hits.points
@@ -98,9 +97,7 @@ async def test_ingest_waits_while_a_reindex_runs(tmp_path):
     p = make_pipeline(tmp_path)
     await p.start()
     async with p._exclusive():
-        task = asyncio.create_task(
-            p.ingest_file(_write(tmp_path, "page.md", PAGE), "page.md", "public")
-        )
+        task = asyncio.create_task(p.ingest_file(_write(tmp_path, "page.md", PAGE), "page.md"))
         await asyncio.sleep(0.05)
         assert not task.done()
     assert (await task).status == "created"

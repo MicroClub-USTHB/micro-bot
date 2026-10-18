@@ -17,7 +17,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
-from mcclub_rag.ingest.preprocess import preprocess_file, preprocess_url
+from micro_bot.ingest.preprocess import preprocess_file, preprocess_url
 
 ROOT = Path(__file__).resolve().parent.parent
 LOCAL_TESSDATA = ROOT / "models" / "tessdata"
@@ -34,24 +34,23 @@ def default_out_path(target: str) -> Path:
     return DEFAULT_OUT_DIR / f"{slug}.md"
 
 
-async def run(target: str, visibility: str):
+async def run(target: str):
     if target.startswith(("http://", "https://")):
-        return await preprocess_url(target, visibility=visibility)
+        return await preprocess_url(target)
     path = Path(target).expanduser()
-    return await preprocess_file(path.read_bytes(), path.name, visibility=visibility)
+    return await preprocess_file(path.read_bytes(), path.name)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("target", help="path to a file, or an http(s) URL")
-    parser.add_argument("--visibility", choices=("public", "members"), default="members")
     parser.add_argument("--out", type=Path, help="output file (default: data/parsed/<name>.md)")
     args = parser.parse_args()
 
     if LOCAL_TESSDATA.is_dir():
         os.environ.setdefault("TESSDATA_PREFIX", str(LOCAL_TESSDATA))
 
-    doc = asyncio.run(run(args.target, args.visibility))
+    doc = asyncio.run(run(args.target))
     out = args.out or default_out_path(args.target)
     out.parent.mkdir(parents=True, exist_ok=True)
 

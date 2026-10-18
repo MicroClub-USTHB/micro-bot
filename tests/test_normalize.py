@@ -2,7 +2,7 @@ import unicodedata
 
 import pytest
 
-from mcclub_rag.text.normalize import (
+from micro_bot.text.normalize import (
     fold_for_search,
     normalize_text,
     rejoin_hyphens,
@@ -184,7 +184,7 @@ def test_fold_is_idempotent(raw):
 
 
 def test_strip_arabic_marks_removes_harakat_and_tatweel_only():
-    from mcclub_rag.text.normalize import strip_arabic_marks
+    from micro_bot.text.normalize import strip_arabic_marks
 
     assert strip_arabic_marks("مَكْتَبَةُ الكُلِّيَّةِ") == "مكتبة الكلية"
     assert strip_arabic_marks("جامعـــة") == "جامعة"
@@ -211,6 +211,6 @@ def test_strip_arabic_marks_removes_harakat_and_tatweel_only():
     ],
 )
 def test_drop_link_targets(raw, expected):
-    from mcclub_rag.text.normalize import drop_link_targets
+    from micro_bot.text.normalize import drop_link_targets
 
     assert drop_link_targets(raw) == expected

@@ -20,7 +20,6 @@ _LANG_TAGS = {"arabic", "english", "french"}
 _TAG_SLICES = {
     "cross_lingual": "cross_lingual",
     "follow_up": "followup",
-    "access": "access",
     "darija": "darija",
     "arabizi": "arabizi",
 }
@@ -54,7 +53,6 @@ def convert_row(row: dict) -> dict:
         "id": row["id"],
         "question": row["question"],
         "lang": row["lang"],
-        "role": row["role"],
         "expect": "answer" if row["answerable"] else "refuse",
     }
     if row.get("doc"):

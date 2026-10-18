@@ -310,7 +310,7 @@ def write_web() -> None:
 
 def write_chunk_golden() -> None:
     sys.path.insert(0, str(OUT.parents[1]))
-    from mcclub_rag.ingest.settings import IngestSettings
+    from micro_bot.ingest.settings import IngestSettings
     from tests.chunk_helpers import MCOLI_GOLDEN, mcoli_chunk_summary
 
     repo = OUT.parents[1]

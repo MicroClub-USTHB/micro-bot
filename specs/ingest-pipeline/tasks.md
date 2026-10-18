@@ -7,7 +7,7 @@ the real `Bm25SparseEncoder` on tiny stopword files in `tmp_path`, `AsyncQdrantC
 and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
 
 - [x] 1. Settings, errors, result models and the model registry
-- [x] 1.1 Pipeline settings in `src/mcclub_rag/ingest/settings.py`
+- [x] 1.1 Pipeline settings in `src/micro_bot/ingest/settings.py`
   - Add the fields from design "Data Models": `qdrant_url`, `qdrant_collection`, `embed_model`,
     `embed_dim`, `models_dir`, `data_dir` (read through `validation_alias` of the shared names), and
     `qdrant_timeout_s=10`, `embed_threads=4`, `embed_max_length=512`, `bm25_k=1.2`, `bm25_b=0.75`,
@@ -17,18 +17,18 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
   - Extend `tests/test_settings.py`: defaults; `QDRANT_URL` and `DATA_DIR` are picked up without the
     prefix; `INGEST_EMBED_MAX_LENGTH=300` with the default chunk cap raises `ValidationError`.
   - _Requirements: 4.3, 5.1, 8.4, 9.3_
-- [x] 1.2 New errors in `src/mcclub_rag/ingest/errors.py`
+- [x] 1.2 New errors in `src/micro_bot/ingest/errors.py`
   - `IndexUnavailable` (`index_unavailable`), `EmbeddingError` (`embedding_error`),
     `EmbedderConfigError` (`embedder_config_error`), `IndexStale` (`index_stale`); add them to
     `ALL_ERRORS`.
   - Extend `tests/test_errors.py`: codes are stable and unique.
   - _Requirements: 1.3, 9.1_
-- [x] 1.3 Result models in `src/mcclub_rag/ingest/models.py`
+- [x] 1.3 Result models in `src/micro_bot/ingest/models.py`
   - `IngestStatus`, `IngestResult`, `DocumentInfo`, `StoredDocument` as in design "Data Models".
   - Extend `tests/test_models.py`: frozen; `StoredDocument` JSON round trip keeps a
     `ParsedDocument` with sections and `created_at` intact.
   - _Requirements: 1.2, 7.1, 7.3_
-- [x] 1.4 `src/mcclub_rag/retrieval/registry.py` and download targets
+- [x] 1.4 `src/micro_bot/retrieval/registry.py` and download targets
   - `EmbedderSpec` and `EMBEDDERS` with the granite entry (revision `44399559…`,
     `onnx/model_quint8_avx2.onnx`, sha256 `f1fdd44e7e1ac51f12ab7957c7bd092e064d596c288513bf9d326842f669edee`,
     tokenizer sha256 `0087c868…`, dim 768, `cls`); `BM25_REPO = "Qdrant/bm25"`,
@@ -43,7 +43,7 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
     leave no file on mismatch, skip valid existing files; CLI routing.
   - _Requirements: 4.1, 4.5, 5.3_
 
-- [x] 2. Document identity in `src/mcclub_rag/ingest/identity.py`
+- [x] 2. Document identity in `src/micro_bot/ingest/identity.py`
   - Commit a fixed `NAMESPACE` UUID; `file_topic`, `url_topic`, `clean_topic`, `doc_id_for`,
     `point_id` as in the design.
   - `tests/test_identity.py`: golden `doc_id` for two topics; `report.v2.pdf` → `report.v2`;
@@ -52,7 +52,7 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
     stable.
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [x] 3. Parsed-document store in `src/mcclub_rag/ingest/docstore.py`
+- [x] 3. Parsed-document store in `src/micro_bot/ingest/docstore.py`
   - `DocStore(root)` with `save` (tmp + fsync + `os.replace`), `load`, `delete`, `iter_all`,
     `set_visibility`; async wrappers via `asyncio.to_thread`.
   - `tests/test_docstore.py`: round trip; overwrite; delete of a missing id is fine; `*.tmp` files
@@ -60,7 +60,7 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
     `set_visibility` rewrites only that field.
   - _Requirements: 7.2, 7.3_
 
-- [x] 4. Encoders in `src/mcclub_rag/retrieval/embed.py`
+- [x] 4. Encoders in `src/micro_bot/retrieval/embed.py`
 - [x] 4.1 `SparseEncoder` protocol and `Bm25SparseEncoder`
   - Check files against `expected`, fold the stopword union, build fastembed `Bm25` with
     `specific_model_path=cache_dir=model_dir`, `disable_stemmer=True`; `embed_documents` and
@@ -87,11 +87,11 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
   - _Requirements: 4.1, 4.2, 4.3, 4.6, 9.5_
 - [x] 4.4 CI in `.github/workflows/ci.yml`
   - Fast job: `-m "not ocr and not tokenizer and not embedder"`. Models job: cache `models/embedder`
-    and `models/bm25` keyed on `src/mcclub_rag/retrieval/registry.py`, download
+    and `models/bm25` keyed on `src/micro_bot/retrieval/registry.py`, download
     `--only embedder` and `--only bm25`, set `MODELS_DIR`, run `-m "ocr or tokenizer or embedder"`.
   - _Requirements: 4.5, 5.3_
 
-- [x] 5. Qdrant store in `src/mcclub_rag/retrieval/store.py`
+- [x] 5. Qdrant store in `src/micro_bot/retrieval/store.py`
 - [x] 5.1 Collection, schema and alias
   - `VectorStore.ensure`, `create_physical`, `switch_alias`, payload indexes, error wrapping into
     `IndexUnavailable`.
@@ -108,7 +108,7 @@ and a `tmp_path` docstore. Only task 4.3 needs the real ONNX model.
     a visibility-filtered query sees only matching points; payload has no `embed_text`.
   - _Requirements: 3.2, 6.2, 6.4, 7.1_
 
-- [x] 6. Pipeline in `src/mcclub_rag/ingest/pipeline.py`
+- [x] 6. Pipeline in `src/micro_bot/ingest/pipeline.py`
 - [x] 6.1 `IngestPipeline`, `init_pipeline`, `close_pipeline`, `index_signature`
   - Construct from settings with injectable encoders, client and docstore; lazy module singleton;
     `SCHEMA_VERSION = 1`. Test helpers in `tests/pipeline_helpers.py` (`FakeDenseEncoder`, a

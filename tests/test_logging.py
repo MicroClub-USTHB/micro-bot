@@ -4,12 +4,12 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-from mcclub_rag.errors import install_error_handlers
-from mcclub_rag.logging import RequestLoggingMiddleware, configure_logging, set_request_log_context
+from micro_bot.errors import install_error_handlers
+from micro_bot.logging import RequestLoggingMiddleware, configure_logging, set_request_log_context
 
 
 def request_events(caplog: object) -> list[dict[str, object]]:
-    records = [record for record in caplog.records if record.name == "mcclub_rag.request"]
+    records = [record for record in caplog.records if record.name == "micro_bot.request"]
     return [json.loads(record.getMessage()) for record in records]
 
 
@@ -22,7 +22,6 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
     async def chat(request: Request) -> dict[str, bool]:
         set_request_log_context(
             request,
-            role="member",
             llm_calls=1,
             prompt_tokens=13,
             completion_tokens=8,
@@ -33,7 +32,7 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
         )
         return {"ok": True}
 
-    with caplog.at_level(logging.INFO, logger="mcclub_rag.request"):
+    with caplog.at_level(logging.INFO, logger="micro_bot.request"):
         with TestClient(app) as client:
             assert client.get("/api/v1/chat").json() == {"ok": True}
 
@@ -42,7 +41,7 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
     event = events[0]
     assert event["event"] == "request_completed"
     assert event["route"] == "/api/v1/chat"
-    assert event["role"] == "member"
+    assert "role" not in event
     assert isinstance(event["latency_ms"], int)
     assert event["llm_calls"] == 1
     assert event["prompt_tokens"] == 13
@@ -62,7 +61,7 @@ def test_request_logging_emits_one_line_for_a_handled_exception(caplog: object) 
     async def crash() -> None:
         raise RuntimeError("private failure")
 
-    with caplog.at_level(logging.INFO, logger="mcclub_rag.request"):
+    with caplog.at_level(logging.INFO, logger="micro_bot.request"):
         with TestClient(app, raise_server_exceptions=False) as client:
             response = client.get("/api/v1/crash")
 
@@ -70,7 +69,7 @@ def test_request_logging_emits_one_line_for_a_handled_exception(caplog: object) 
     events = request_events(caplog)
     assert len(events) == 1
     assert events[0]["route"] == "/api/v1/crash"
-    assert events[0]["role"] == "public"
+    assert "role" not in events[0]
     assert isinstance(events[0]["latency_ms"], int)
     assert events[0]["llm_calls"] == 0
     assert events[0]["prompt_tokens"] == 0
@@ -87,7 +86,7 @@ def test_request_logging_uses_standard_defaults(caplog: object) -> None:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    with caplog.at_level(logging.INFO, logger="mcclub_rag.request"):
+    with caplog.at_level(logging.INFO, logger="micro_bot.request"):
         with TestClient(app) as client:
             assert client.get("/api/v1/health").json() == {"status": "ok"}
 
@@ -95,7 +94,7 @@ def test_request_logging_uses_standard_defaults(caplog: object) -> None:
     assert len(events) == 1
     event = events[0]
     assert event["route"] == "/api/v1/health"
-    assert event["role"] == "public"
+    assert "role" not in event
     assert event["llm_calls"] == 0
     assert event["prompt_tokens"] == 0
     assert event["completion_tokens"] == 0

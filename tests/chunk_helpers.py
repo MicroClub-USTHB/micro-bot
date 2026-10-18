@@ -6,11 +6,11 @@ from pathlib import Path
 
 import httpx
 
-from mcclub_rag.ingest.chunk import chunk_document
-from mcclub_rag.ingest.models import ParsedDocument, Section
-from mcclub_rag.ingest.preprocess import preprocess_url
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.text.sentences import split_words
+from micro_bot.ingest.chunk import chunk_document
+from micro_bot.ingest.models import ParsedDocument, Section
+from micro_bot.ingest.preprocess import preprocess_url
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.text.sentences import split_words
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -50,7 +50,6 @@ def doc(*sections: Section, title: str = "Doc", language: str = "fr") -> ParsedD
         source="doc.md",
         source_type="file",
         mime_type="text/markdown",
-        visibility="public",
         language=language,
         text="\n\n".join(s.text for s in sections),
         sections=sections,
@@ -87,7 +86,6 @@ async def mcoli_chunk_summary(settings: IngestSettings) -> list[list]:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         document = await preprocess_url(
             "https://mcoli-ui.microclub.info/docs/introduction",
-            visibility="public",
             settings=settings,
             client=client,
             resolve=resolve,

@@ -6,15 +6,15 @@ import pytest
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.errors import IngestError
-from mcclub_rag.main import (
+from micro_bot.config import Settings, get_settings
+from micro_bot.errors import IngestError
+from micro_bot.main import (
     ApplicationState,
     FakeDocumentBackend,
     FakeHealthProbe,
     create_app,
 )
-from mcclub_rag.schemas import IngestResult, Visibility
+from micro_bot.schemas import IngestResult
 
 
 class ErrorDocumentBackend(FakeDocumentBackend):
@@ -26,7 +26,6 @@ class ErrorDocumentBackend(FakeDocumentBackend):
         self,
         file: UploadFile,
         *,
-        visibility: Visibility,
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
@@ -42,7 +41,6 @@ class FailedDocumentBackend(FakeDocumentBackend):
         self,
         file: UploadFile,
         *,
-        visibility: Visibility,
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
@@ -62,7 +60,7 @@ def build_client(
     document_healthy: bool = True,
     provider_healthy: bool = True,
 ) -> TestClient:
-    settings = Settings(data_dir=tmp_path, admin_api_key="admin-secret")
+    settings = Settings(data_dir=tmp_path, api_key="api-secret", admin_api_key="admin-secret")
     state = ApplicationState(
         settings=settings,
         documents=documents or FakeDocumentBackend(),
@@ -91,7 +89,6 @@ def upload(client: TestClient):
         headers=admin_headers(),
         files={"file": ("guide.txt", b"club guide", "text/plain")},
         data={
-            "visibility": "members",
             "topic": "guide",
             "expires_at": "2026-12-31T00:00:00Z",
         },
@@ -103,7 +100,7 @@ def test_health_reports_document_count_and_degraded_dependencies(client: TestCli
     upload(client)
     assert client.get("/api/v1/health").json() == {"status": "ok", "documents": 1}
 
-    client.app.state.mcclub_state.document_probe.healthy = False
+    client.app.state.micro_bot_state.document_probe.healthy = False
     assert client.get("/api/v1/health").json() == {"status": "degraded", "documents": 1}
 
 
@@ -125,6 +122,7 @@ def test_feedback_appends_jsonl_and_returns_exact_success(
     response = client.post(
         "/api/v1/feedback",
         json={"conversation_id": "c_123", "rating": "up", "comment": "Useful"},
+        headers={"Authorization": "Bearer api-secret"},
     )
 
     assert response.status_code == 200
@@ -137,7 +135,11 @@ def test_feedback_appends_jsonl_and_returns_exact_success(
 
 
 def test_feedback_validation_uses_global_json_errors(client: TestClient) -> None:
-    response = client.post("/api/v1/feedback", json={"conversation_id": "c_123", "rating": "bad"})
+    response = client.post(
+        "/api/v1/feedback",
+        json={"conversation_id": "c_123", "rating": "bad"},
+        headers={"Authorization": "Bearer api-secret"},
+    )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "validation_error"
 
@@ -163,7 +165,6 @@ def test_documents_forward_upload_metadata_list_and_delete(client: TestClient) -
         {
             "doc_id": doc_id,
             "title": "guide.txt",
-            "visibility": "members",
             "status": "indexed",
             "chunk_count": 1,
             "created_at": listed.json()[0]["created_at"],
@@ -252,7 +253,6 @@ def test_put_replaces_the_named_document_under_a_new_file_name(tmp_path: Path) -
             "/api/v1/documents",
             headers=headers,
             files={"file": ("bylaws.txt", b"fee 500", "text/plain")},
-            data={"visibility": "members"},
         )
 
         replaced = _put(client, "bylaws_2027.txt", "bylaws.txt", b"fee 700")
@@ -260,8 +260,8 @@ def test_put_replaces_the_named_document_under_a_new_file_name(tmp_path: Path) -
         assert replaced.status_code == 200
         assert replaced.json() == first.json()
         listing = client.get("/api/v1/documents", headers=headers).json()
-        assert [(d["doc_id"], d["title"], d["visibility"]) for d in listing] == [
-            (first.json()["doc_id"], "bylaws_2027.txt", "members")
+        assert [(d["doc_id"], d["title"]) for d in listing] == [
+            (first.json()["doc_id"], "bylaws_2027.txt")
         ]
 
 
@@ -275,23 +275,56 @@ def test_put_with_an_unknown_name_is_a_404_and_ingests_nothing(tmp_path: Path) -
         assert listing.json() == []
 
 
-def test_put_can_change_visibility_and_needs_the_admin_key(tmp_path: Path) -> None:
+def test_put_needs_the_admin_key(tmp_path: Path) -> None:
     with build_client(tmp_path) as client:
-        client.post(
-            "/api/v1/documents",
-            headers={"X-Admin-Key": "admin-secret"},
-            files={"file": ("guide.txt", b"v1", "text/plain")},
-            data={"visibility": "members"},
-        )
-
         denied = client.put(
             "/api/v1/documents",
             files={"file": ("guide.txt", b"v2", "text/plain")},
             data={"replaces": "guide"},
         )
-        changed = _put(client, "guide.txt", "guide", b"v2", visibility="public")
 
         assert denied.status_code == 403
-        assert changed.status_code == 200
-        listing = client.get("/api/v1/documents", headers={"X-Admin-Key": "admin-secret"})
-        assert listing.json()[0]["visibility"] == "public"
+
+
+def test_get_document_by_id_returns_it_or_a_json_404(client: TestClient) -> None:
+    doc_id = upload(client).json()["doc_id"]
+
+    found = client.get(f"/api/v1/documents/{doc_id}", headers=admin_headers())
+    missing = client.get("/api/v1/documents/unknown", headers=admin_headers())
+    denied = client.get(f"/api/v1/documents/{doc_id}")
+
+    assert found.status_code == 200
+    assert found.json()["doc_id"] == doc_id and found.json()["topic"] == "guide"
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "not_found"
+    assert denied.status_code == 403
+
+
+def test_put_by_id_replaces_the_file_and_keeps_the_topic(client: TestClient) -> None:
+    doc_id = upload(client).json()["doc_id"]
+
+    replaced = client.put(
+        f"/api/v1/documents/{doc_id}",
+        headers=admin_headers(),
+        files={"file": ("guide_v2.txt", b"club guide v2", "text/plain")},
+        data={"expires_at": "2027-01-31T00:00:00Z"},
+    )
+
+    assert replaced.status_code == 200
+    assert replaced.json()["doc_id"] == doc_id
+    document = client.get(f"/api/v1/documents/{doc_id}", headers=admin_headers()).json()
+    assert document["title"] == "guide_v2.txt"
+    assert document["topic"] == "guide"
+    assert document["expires_at"] == "2027-01-31T00:00:00Z"
+
+
+def test_put_by_unknown_id_is_a_404_and_ingests_nothing(client: TestClient) -> None:
+    response = client.put(
+        "/api/v1/documents/unknown",
+        headers=admin_headers(),
+        files={"file": ("new.txt", b"content", "text/plain")},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+    assert client.get("/api/v1/documents", headers=admin_headers()).json() == []

@@ -3,10 +3,10 @@ from pathlib import Path
 import httpx
 import pytest
 
-from mcclub_rag.ingest.errors import EmptyDocument, FetchError, UrlNotAllowed
-from mcclub_rag.ingest.preprocess import preprocess_url
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.ingest.web import extract_html, fetch, prepare_html
+from micro_bot.ingest.errors import EmptyDocument, FetchError, UrlNotAllowed
+from micro_bot.ingest.preprocess import preprocess_url
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.ingest.web import extract_html, fetch, prepare_html
 
 PUBLIC = {
     "club.example": "93.184.216.34",
@@ -270,7 +270,6 @@ async def test_mcoli_docs_page_sections_end_to_end(ocr_settings):
 
     doc = await preprocess_url(
         MCOLI_URL,
-        visibility="public",
         settings=ocr_settings,
         client=_client(handler),
         resolve=resolve,

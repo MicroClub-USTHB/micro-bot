@@ -4,7 +4,7 @@ Prints one line per file (status or error code) and exits non-zero if any file f
 Running it twice is safe: unchanged files come back as ``duplicate``. Topics default to the
 filename stem, as for API uploads, so two files with the same stem replace each other.
 
-    uv run python scripts/ingest_folder.py data/corpus --visibility public
+    uv run python scripts/ingest_folder.py data/corpus
 """
 
 from __future__ import annotations
@@ -15,9 +15,9 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from mcclub_rag.ingest.errors import IngestError
-from mcclub_rag.ingest.pipeline import IngestPipeline, build_pipeline
-from mcclub_rag.ingest.settings import IngestSettings, get_ingest_settings
+from micro_bot.ingest.errors import IngestError
+from micro_bot.ingest.pipeline import IngestPipeline, build_pipeline
+from micro_bot.ingest.settings import IngestSettings, get_ingest_settings
 
 
 def _files(directory: Path, recursive: bool) -> list[Path]:
@@ -27,7 +27,6 @@ def _files(directory: Path, recursive: bool) -> list[Path]:
 
 async def run(
     directory: Path,
-    visibility: str,
     recursive: bool,
     factory: Callable[[IngestSettings], IngestPipeline],
 ) -> int:
@@ -38,7 +37,7 @@ async def run(
         for path in _files(directory, recursive):
             name = path.relative_to(directory)
             try:
-                result = await pipeline.ingest_file(path, path.name, visibility)
+                result = await pipeline.ingest_file(path, path.name)
             except IngestError as exc:
                 failures += 1
                 print(f"{exc.code:<22} {name}: {exc.message}")
@@ -59,12 +58,11 @@ def main(
 ) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("directory", type=Path)
-    parser.add_argument("--visibility", choices=["public", "members"], required=True)
     parser.add_argument("--recursive", action="store_true", help="include subfolders")
     args = parser.parse_args(argv)
     if not args.directory.is_dir():
         parser.error(f"not a directory: {args.directory}")
-    return asyncio.run(run(args.directory, args.visibility, args.recursive, factory))
+    return asyncio.run(run(args.directory, args.recursive, factory))
 
 
 if __name__ == "__main__":

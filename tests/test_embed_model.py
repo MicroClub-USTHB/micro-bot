@@ -6,8 +6,8 @@ import time
 import numpy as np
 import pytest
 
-from mcclub_rag.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
-from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
+from micro_bot.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
+from micro_bot.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
 
 SPEC = EMBEDDERS[DEFAULT_EMBEDDER]
 

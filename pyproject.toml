@@ -1,7 +1,7 @@
 [project]
-name = "mcclub-rag"
+name = "micro-bot"
 version = "0.1.0"
-description = "RAG chatbot for the MC Club RAG Chatbot Challenge"
+description = "Micro Bot: the multilingual RAG assistant of Micro Club"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -30,7 +30,6 @@ dev = [
     "pytest~=9.1",
     "pytest-asyncio~=1.4",
     "python-docx~=1.2",
-    "pyyaml~=6.0",  # the simulation compose overlays use !override, which SafeLoader rejects
     "ruff~=0.16",
 ]
 

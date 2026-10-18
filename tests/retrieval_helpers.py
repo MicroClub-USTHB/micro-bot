@@ -4,8 +4,8 @@ import re
 import threading
 import time
 
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.settings import RetrievalSettings
 
 _WORD = re.compile(r"\w+")
 

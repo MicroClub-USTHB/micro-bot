@@ -21,13 +21,13 @@ import httpx
 from eval.e2e.backends import PipelineDocuments, Ready
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.score import Observation
-from mcclub_rag.config import Settings
-from mcclub_rag.conversation import Turn
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.main import ApplicationState, RealLanguageDetector, create_app
-from mcclub_rag.rate_limit import SlidingWindowRateLimiter
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.schemas import Retrieval
+from micro_bot.config import Settings
+from micro_bot.conversation import Turn
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.main import ApplicationState, RealLanguageDetector, create_app
+from micro_bot.rate_limit import SlidingWindowRateLimiter
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.schemas import Retrieval
 
 
 @dataclass(frozen=True)
@@ -39,19 +39,17 @@ class Source:
 
 
 class _Api:
-    """Requests through the public API with the role's headers."""
+    """Requests through the public API with the API key (and the admin key when asked)."""
 
     supports_history = False
 
-    def __init__(self, client: httpx.AsyncClient, member_token: str, admin_key: str) -> None:
+    def __init__(self, client: httpx.AsyncClient, api_key: str, admin_key: str) -> None:
         self.client = client
-        self.member_token = member_token
+        self.api_key = api_key
         self.admin_key = admin_key
 
-    def headers(self, role: str | None = None, admin: bool = False) -> dict[str, str]:
-        headers = {}
-        if role == "member":
-            headers["Authorization"] = f"Bearer {self.member_token}"
+    def headers(self, admin: bool = False) -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {self.api_key}"}
         if admin:
             headers["X-Admin-Key"] = self.admin_key
         return headers
@@ -73,9 +71,7 @@ class _Api:
         }
         start = time.perf_counter()
         try:
-            response = await self.client.post(
-                "/api/v1/chat", json=payload, headers=self.headers(case.role)
-            )
+            response = await self.client.post("/api/v1/chat", json=payload, headers=self.headers())
         except httpx.HTTPError as exc:
             return Observation(None, None, _ms(start), f"{type(exc).__name__}: {exc}")
         try:
@@ -86,7 +82,7 @@ class _Api:
 
     async def upload(self, source: Source, topic: str) -> dict:
         files = {"file": (source.path.name, source.path.read_bytes())}
-        data = {"visibility": source.doc.visibility, "topic": topic}
+        data = {"topic": topic}
         response = await self.client.post(
             "/api/v1/documents", files=files, data=data, headers=self.headers(admin=True)
         )
@@ -104,8 +100,8 @@ class _Captured:
         self.inner = inner
         self.last: Retrieval | None = None
 
-    async def retrieve(self, query, role, history, *, rewrite=None) -> Retrieval:
-        self.last = await self.inner.retrieve(query, role, history, rewrite=rewrite)
+    async def retrieve(self, query, history, *, rewrite=None) -> Retrieval:
+        self.last = await self.inner.retrieve(query, history, rewrite=rewrite)
         return self.last
 
 
@@ -122,9 +118,9 @@ class InProcessDriver(_Api):
         data_dir: Path,
         state_overrides: dict | None = None,
     ) -> None:
-        member, admin = secrets.token_hex(16), secrets.token_hex(16)
+        api_key, admin = secrets.token_hex(16), secrets.token_hex(16)
         settings = Settings(  # auth reads the app's settings: no environment needed (I20)
-            member_token=member, admin_api_key=admin, data_dir=data_dir, llm_daily_limit=10_000
+            api_key=api_key, admin_api_key=admin, data_dir=data_dir, llm_daily_limit=10_000
         )
         self.pipeline = pipeline
         self.retriever = retriever
@@ -144,7 +140,7 @@ class InProcessDriver(_Api):
         # The app's JSON 500 handler must answer, not re-raise into the test client.
         transport = httpx.ASGITransport(app=self.app, raise_app_exceptions=False)
         client = httpx.AsyncClient(transport=transport, base_url="http://eval", timeout=120)
-        super().__init__(client, member, admin)
+        super().__init__(client, api_key, admin)
 
     async def close(self) -> None:
         await super().close()
@@ -164,7 +160,7 @@ class InProcessDriver(_Api):
         for source in sources:
             doc = source.doc
             result = await self.pipeline.ingest_file(
-                source.path, source.path.name, doc.visibility, title=doc.title, topic=doc.topic
+                source.path, source.path.name, title=doc.title, topic=doc.topic
             )
             topics[result.doc_id] = doc.topic
         return topics
@@ -190,14 +186,12 @@ class InProcessDriver(_Api):
         history = [Turn(**t.model_dump()) for t in case.history]
         start = time.perf_counter()
         rewrite = await self.rewrite(case.question, history)
-        retrieval = await self.retriever.retrieve(
-            case.question, case.role, history, rewrite=rewrite
-        )
+        retrieval = await self.retriever.retrieve(case.question, history, rewrite=rewrite)
         return retrieval, _ms(start)
 
 
 class HttpDriver(_Api):
-    """A running app (compose or uvicorn). Tokens come from MEMBER_TOKEN / ADMIN_API_KEY.
+    """A running app (compose or uvicorn). Keys come from API_KEY / ADMIN_API_KEY.
 
     Chat requests are paced to a **maximum offered rate** of ``requests_per_window`` per
     ``window_s``, shared by every caller of this driver: ``_wait`` reserves the next slot under a
@@ -207,9 +201,9 @@ class HttpDriver(_Api):
 
     def __init__(self, base_url: str, *, requests_per_window: int = 20, window_s: float = 60):
         client = httpx.AsyncClient(base_url=base_url, timeout=120)
-        member = os.environ.get("MEMBER_TOKEN", "")
+        api_key = os.environ.get("API_KEY", "")
         admin = os.environ.get("ADMIN_API_KEY", "")
-        super().__init__(client, member, admin)
+        super().__init__(client, api_key, admin)
         self.interval = window_s / requests_per_window
         self._pace = asyncio.Lock()
         self._next = 0.0

@@ -1,6 +1,6 @@
 import itertools
 
-from mcclub_rag.ingest.chunk import (
+from micro_bot.ingest.chunk import (
     _draft_text,
     _group,
     _outline,
@@ -11,7 +11,7 @@ from mcclub_rag.ingest.chunk import (
     _Unit,
     _units,
 )
-from mcclub_rag.ingest.models import Section
+from micro_bot.ingest.models import Section
 from tests.chunk_helpers import FakeCounter, md, words
 
 COUNTER = FakeCounter()

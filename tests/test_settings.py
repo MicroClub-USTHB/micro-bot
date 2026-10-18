@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from mcclub_rag.ingest.settings import IngestSettings, get_ingest_settings
+from micro_bot.ingest.settings import IngestSettings, get_ingest_settings
 
 _SHARED = {
     "TESSDATA_PREFIX",
@@ -41,7 +41,7 @@ def test_defaults_match_design():
     assert s.web_timeout_s == 15
     assert s.web_max_bytes == 5 * 1024 * 1024
     assert s.web_max_redirects == 5
-    assert s.web_user_agent.startswith("mcclub-rag/")
+    assert s.web_user_agent.startswith("micro-bot/")
     assert s.lang_codes == ["ar", "fr", "en"]
     assert s.lang_min_chars == 20
     assert s.lang_min_prob == 0.5

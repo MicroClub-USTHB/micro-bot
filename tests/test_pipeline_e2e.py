@@ -3,13 +3,13 @@
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
 
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
-from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import Bm25SparseEncoder, OnnxDenseEncoder
+from micro_bot.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
+from micro_bot.retrieval.settings import RetrievalSettings
 from tests.conftest import FIXTURES
 
 SPEC = EMBEDDERS[DEFAULT_EMBEDDER]
@@ -31,7 +31,7 @@ async def test_markdown_file_end_to_end(
         docstore=DocStore(tmp_path / "documents"),
     )
     assert await pipeline.start() == "created"
-    result = await pipeline.ingest_file(FIXTURES / "notes.md", "notes.md", "public")
+    result = await pipeline.ingest_file(FIXTURES / "notes.md", "notes.md")
     assert result.status == "created" and result.chunk_count >= 1
 
     text = (FIXTURES / "notes.md").read_text(encoding="utf-8")
@@ -43,9 +43,6 @@ async def test_markdown_file_end_to_end(
             qm.Prefetch(query=pipeline.sparse.embed_query(query), using="bm25", limit=10),
         ],
         query=qm.FusionQuery(fusion=qm.Fusion.RRF),
-        query_filter=qm.Filter(
-            must=[qm.FieldCondition(key="visibility", match=qm.MatchValue(value="public"))]
-        ),
         limit=3,
     )
     assert hits.points and hits.points[0].payload["doc_id"] == result.doc_id
@@ -53,7 +50,7 @@ async def test_markdown_file_end_to_end(
     await client.close()
 
 
-async def test_retrieve_end_to_end_with_reranker_and_visibility(
+async def test_retrieve_end_to_end_with_reranker(
     tmp_path, tessdata_dir, tokenizer_path, onnx_path, real_bm25_dir, reranker_dir
 ):
     settings = IngestSettings(
@@ -67,23 +64,20 @@ async def test_retrieve_end_to_end_with_reranker_and_visibility(
         docstore=DocStore(tmp_path / "documents"),
     )
     await pipeline.start()
-    public = await pipeline.ingest_file(FIXTURES / "notes.md", "notes.md", "public")
+    public = await pipeline.ingest_file(FIXTURES / "notes.md", "notes.md")
     secret = tmp_path / "board.md"
     secret.write_text(
         "# Board\n\nFor members, the office is open from 8:00 to 20:00 on weekdays.\n",
         encoding="utf-8",
     )
-    members = await pipeline.ingest_file(secret, "board.md", "members")
+    members = await pipeline.ingest_file(secret, "board.md")
     retriever = HybridRetriever.from_pipeline(
         pipeline,
         RetrievalSettings(models_dir=reranker_dir.parents[1]),
     )
 
-    as_public = await retriever.retrieve("When is the office open?", "public", [])
-    assert as_public.decision == "answer"
-    assert {c.doc_id for c in as_public.chunks} == {public.doc_id}
-    assert "9:00" in as_public.chunks[0].text
-    as_member = await retriever.retrieve("When is the office open?", "member", [])
-    assert members.doc_id in {c.doc_id for c in as_member.chunks}
-    assert as_member.chunks[0].score >= as_member.chunks[-1].score
+    found = await retriever.retrieve("When is the office open?", [])
+    assert found.decision == "answer"
+    assert {public.doc_id, members.doc_id} <= {c.doc_id for c in found.chunks}
+    assert found.chunks[0].score >= found.chunks[-1].score
     await pipeline.close()

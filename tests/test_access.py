@@ -1,73 +1,76 @@
-from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
-from mcclub_rag.main import (
+from micro_bot.config import Settings
+from micro_bot.llm.client import GenerationResult, GenerationUsage
+from micro_bot.main import (
     ApplicationState,
     FakeDocumentBackend,
     FakeGenerationService,
     FakeHealthProbe,
     FakeLanguageDetector,
+    FakeRetrievalBackend,
     create_app,
 )
-from mcclub_rag.schemas import Chunk, Retrieval, Role
+from micro_bot.schemas import Chunk, Retrieval
 
 
-@dataclass
-class RoleAwareRetrieval:
-    public_chunks: list[Chunk]
-    member_chunks: list[Chunk]
-    roles: list[Role] = field(default_factory=list)
-
-    async def retrieve(self, query: str, role: Role, history: object, rewrite=None) -> Retrieval:
-        self.roles.append(role)
-        chunks = self.member_chunks if role == "member" else self.public_chunks
-        return Retrieval(chunks=chunks, top_score=0.9, decision="answer")
-
-
-def test_public_role_is_passed_to_the_boundary_and_never_returns_member_chunks(
-    tmp_path: Path,
-) -> None:
-    public_chunk = Chunk(
-        chunk_id="public-chunk",
-        doc_id="public-doc",
-        title="Public guide",
-        text="The public workshop is Saturday.",
+def build_client(tmp_path: Path) -> TestClient:
+    chunk = Chunk(
+        chunk_id="chunk-1",
+        doc_id="doc-1",
+        title="Club guide",
+        text="The workshop is Saturday.",
         score=0.9,
     )
-    member_chunk = Chunk(
-        chunk_id="member-chunk",
-        doc_id="member-doc",
-        title="Members guide",
-        text="Member-only meeting is Sunday.",
-        score=0.9,
-    )
-    retrieval = RoleAwareRetrieval([public_chunk], [member_chunk])
     state = ApplicationState(
-        settings=Settings(data_dir=tmp_path, member_token="member-secret"),
+        settings=Settings(data_dir=tmp_path, api_key="api-secret", admin_api_key="admin-secret"),
         documents=FakeDocumentBackend(),
         document_probe=FakeHealthProbe(),
         provider_probe=FakeHealthProbe(),
-        retrieval=retrieval,
+        retrieval=FakeRetrievalBackend(Retrieval(chunks=[chunk], top_score=0.9, decision="answer")),
         language_detector=FakeLanguageDetector(),
         generator=FakeGenerationService(
-            GenerationResult("The public workshop is Saturday. [public-doc]", GenerationUsage(1))
+            GenerationResult("The workshop is Saturday. [doc-1]", GenerationUsage(1))
         ),
     )
+    return TestClient(create_app(settings=state.settings, state=state))
 
-    with TestClient(create_app(settings=state.settings, state=state)) as client:
-        response = client.post("/api/v1/chat", json={"message": "When is the workshop?"})
+
+@pytest.mark.parametrize(
+    "headers", [{}, {"Authorization": "Bearer wrong"}, {"Authorization": "Basic api-secret"}]
+)
+def test_chat_and_feedback_need_the_api_key(tmp_path: Path, headers: dict[str, str]) -> None:
+    with build_client(tmp_path) as client:
+        chat = client.post("/api/v1/chat", json={"message": "When?"}, headers=headers)
+        feedback = client.post(
+            "/api/v1/feedback", json={"conversation_id": "c_1", "rating": "up"}, headers=headers
+        )
+
+    for response in (chat, feedback):
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "unauthorized"
+
+
+def test_chat_with_the_api_key_answers(tmp_path: Path) -> None:
+    with build_client(tmp_path) as client:
+        response = client.post(
+            "/api/v1/chat",
+            json={"message": "When is the workshop?"},
+            headers={"Authorization": "Bearer api-secret"},
+        )
 
     assert response.status_code == 200
-    assert retrieval.roles == ["public"]
-    assert response.json()["sources"] == [
-        {
-            "doc_id": "public-doc",
-            "title": "Public guide",
-            "snippet": "The public workshop is Saturday.",
-        }
-    ]
-    assert "member-doc" not in response.text
+    assert response.json()["sources"][0]["doc_id"] == "doc-1"
+
+
+def test_documents_need_the_admin_key_not_the_api_key(tmp_path: Path) -> None:
+    with build_client(tmp_path) as client:
+        response = client.get("/api/v1/documents", headers={"Authorization": "Bearer api-secret"})
+        health = client.get("/api/v1/health")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
+    assert health.status_code == 200

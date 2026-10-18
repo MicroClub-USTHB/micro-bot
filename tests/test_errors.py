@@ -1,6 +1,6 @@
 import pytest
 
-from mcclub_rag.ingest import errors as e
+from micro_bot.ingest import errors as e
 
 
 def test_every_error_has_a_unique_code():

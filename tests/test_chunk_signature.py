@@ -1,8 +1,8 @@
 import pytest
 
-from mcclub_rag.ingest import chunk
-from mcclub_rag.ingest.chunk import chunking_signature
-from mcclub_rag.ingest.settings import IngestSettings
+from micro_bot.ingest import chunk
+from micro_bot.ingest.chunk import chunking_signature
+from micro_bot.ingest.settings import IngestSettings
 from tests.chunk_helpers import FakeCounter
 
 BASE = IngestSettings()

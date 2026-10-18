@@ -3,7 +3,7 @@
 ## Introduction
 
 The data-preprocessing phase turns raw club material into clean, attributed text that the
-rest of the `mcclub_rag` pipeline (chunking → embedding → Qdrant) can consume. It covers three
+rest of the `micro_bot` pipeline (chunking → embedding → Qdrant) can consume. It covers three
 entry points: **file parsing** (PDF, DOCX, XLSX, MD, TXT) via xberg, **OCR** of images and
 scanned pages via Tesseract (`ara`, `fra`, `eng`), and **web page ingestion** via httpx +
 trafilatura. Every entry point produces the same output contract — a `ParsedDocument` — so

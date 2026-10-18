@@ -6,7 +6,7 @@ Unit tests use a `FakeCounter` (1 token per whitespace-separated word), so only 
 the golden/perf tests in task 8 need the real `tokenizer.json`.
 
 - [x] 1. Settings, errors and the `Chunk` contract
-- [x] 1.1 Chunking settings in `src/mcclub_rag/ingest/settings.py`
+- [x] 1.1 Chunking settings in `src/micro_bot/ingest/settings.py`
   - Add `chunk_target_tokens=300`, `chunk_max_tokens=400`, `chunk_min_tokens=80`,
     `chunk_max_header_tokens=48`, `chunk_context_header=True`, and `chunk_tokenizer_path` (default
     `$MODELS_DIR/embedder/tokenizer.json`, falling back to `/app/models/embedder/tokenizer.json`).
@@ -16,12 +16,12 @@ the golden/perf tests in task 8 need the real `tokenizer.json`.
   - Tests in `tests/test_settings.py`: the defaults; an env override (`INGEST_CHUNK_MAX_TOKENS=500`);
     `min >= target` and `target > max` both raise `ValidationError`.
   - _Requirements: 6.3, 9.1_
-- [x] 1.2 `TokenizerConfigError` in `src/mcclub_rag/ingest/errors.py`
+- [x] 1.2 `TokenizerConfigError` in `src/micro_bot/ingest/errors.py`
   - Subclass of `IngestError` with code `tokenizer_config_error`, not HTTP-mapped (same as
     `ocr_config_error`).
   - Extend `tests/test_errors.py`: the code is stable and the message carries the instruction.
   - _Requirements: 6.2_
-- [x] 1.3 `Chunk` model in `src/mcclub_rag/ingest/models.py`
+- [x] 1.3 `Chunk` model in `src/micro_bot/ingest/models.py`
   - Frozen pydantic model with the fields from design "Data Models".
   - Extend `tests/test_models.py`: frozen; `heading_path` is a tuple; round-trips `model_dump()`.
   - _Requirements: 1.1, 1.5, 7.1_
@@ -37,7 +37,7 @@ the golden/perf tests in task 8 need the real `tokenizer.json`.
   - Extend `tests/test_download_models.py` (mocked HTTP, as for tessdata): a sha mismatch raises and
     leaves no file; an existing valid file is not re-downloaded; the CLI flag routes correctly.
   - _Requirements: 6.1, 6.2_
-- [x] 2.2 `src/mcclub_rag/ingest/tokens.py`
+- [x] 2.2 `src/micro_bot/ingest/tokens.py`
   - `TokenCounter` protocol (`count`, `count_many`, `cut`, `fingerprint`).
   - `HFTokenCounter(path)`: `Tokenizer.from_file`, then `no_truncation()` and `no_padding()`;
     `add_special_tokens=False`; `cut` splits at `offsets[max_tokens - 1][1]`; `fingerprint` = sha256
@@ -63,7 +63,7 @@ the golden/perf tests in task 8 need the real `tokenizer.json`.
   - Update the commands in `AGENTS.md` and the `README.md` to match.
   - _Requirements: 6.2_
 
-- [x] 3. Lossless sentence and word splitting in `src/mcclub_rag/text/sentences.py`
+- [x] 3. Lossless sentence and word splitting in `src/micro_bot/text/sentences.py`
   - `split_sentences(text)` and `split_words(text)`, using the rules from design `text/sentences.py`.
     Both are pure, and their pieces keep trailing whitespace.
   - `tests/test_sentences.py`:
@@ -75,7 +75,7 @@ the golden/perf tests in task 8 need the real `tokenizer.json`.
     - Lossless join over parametrized samples and every `tests/fixtures/*.md`/`*.txt`.
   - _Requirements: 3.3, 1.3_
 
-- [x] 4. Outline and blocks in `src/mcclub_rag/ingest/chunk.py` (private helpers)
+- [x] 4. Outline and blocks in `src/micro_bot/ingest/chunk.py` (private helpers)
 - [x] 4.1 `_outline(sections) -> list[_OutlineSection]`
   - A heading stack reusing `sections._HEADING`; XLSX sheet reset; PDF continuation inherits; the
     heading line is removed from `body` and kept in `heading_line`.

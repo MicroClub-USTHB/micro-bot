@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mcclub_rag.llm.quota import CircuitBreaker, DailyQuota
+from micro_bot.llm.quota import CircuitBreaker, DailyQuota
 
 
 class FakeClock:

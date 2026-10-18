@@ -4,8 +4,8 @@ import importlib
 
 import pytest
 
-from mcclub_rag.ingest import errors
-from mcclub_rag.ingest.preprocess import preprocess_file
+from micro_bot.ingest import errors
+from micro_bot.ingest.preprocess import preprocess_file
 from tests.conftest import FIXTURES
 
 # name -> (language, ocr_used, minimum sections)
@@ -39,9 +39,7 @@ def test_every_fixture_is_covered():
 @pytest.mark.parametrize("name", sorted(EXPECTED))
 async def test_fixture_end_to_end(ocr_settings, fixture_bytes, name):
     language, ocr_used, min_sections = EXPECTED[name]
-    doc = await preprocess_file(
-        fixture_bytes(name), name, visibility="public", settings=ocr_settings
-    )
+    doc = await preprocess_file(fixture_bytes(name), name, settings=ocr_settings)
     assert doc.language == language
     assert doc.ocr_used is ocr_used
     assert len(doc.sections) >= min_sections
@@ -52,7 +50,7 @@ async def test_fixture_end_to_end(ocr_settings, fixture_bytes, name):
 @pytest.mark.parametrize(("name", "error"), sorted(ERROR_FIXTURES.items()))
 async def test_bad_fixtures_raise(ocr_settings, fixture_bytes, name, error):
     with pytest.raises(error):
-        await preprocess_file(fixture_bytes(name), name, visibility="public", settings=ocr_settings)
+        await preprocess_file(fixture_bytes(name), name, settings=ocr_settings)
 
 
 @pytest.mark.ocr
@@ -61,7 +59,7 @@ async def test_real_arabic_scan(ocr_settings, name):
     path = FIXTURES / name
     if not path.exists():
         pytest.skip(f"real scan {name} not yet provided (see tests/fixtures/README.md)")
-    doc = await preprocess_file(path.read_bytes(), name, visibility="public", settings=ocr_settings)
+    doc = await preprocess_file(path.read_bytes(), name, settings=ocr_settings)
     assert doc.ocr_used is True
     assert doc.language in {"ar", "mixed"}
     assert any("؀" <= ch <= "ۿ" for ch in doc.text)
@@ -69,7 +67,7 @@ async def test_real_arabic_scan(ocr_settings, name):
 
 # Every IngestError subclass must be raised by at least one named test (Req 8.3).
 ERROR_TRIGGERS = {
-    errors.InvalidInput: "tests.test_preprocess_file:test_invalid_visibility",
+    errors.InvalidInput: "tests.test_preprocess_file:test_missing_filename",
     errors.FileTooLarge: "tests.test_preprocess_file:test_oversize_rejected_before_parsing",
     errors.UnsupportedFileType: "tests.test_preprocess_file:test_unsupported_type",
     errors.ParseError: "tests.test_parse:test_corrupt_pdf",

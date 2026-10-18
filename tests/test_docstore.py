@@ -1,19 +1,16 @@
 from datetime import UTC, datetime
 
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.models import ParsedDocument, Section, StoredDocument
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.models import ParsedDocument, Section, StoredDocument
 
 
-def _stored(
-    doc_id: str = "d1", visibility: str = "public", text: str = "Bonjour"
-) -> StoredDocument:
+def _stored(doc_id: str = "d1", text: str = "Bonjour") -> StoredDocument:
     document = ParsedDocument(
         content_hash="ab" * 32,
         title="Règlement",
         source="rules.pdf",
         source_type="file",
         mime_type="application/pdf",
-        visibility=visibility,
         language="fr",
         text=text,
         sections=[
@@ -74,13 +71,3 @@ async def test_load_all_sorted_skips_temp_and_reports_corrupt(tmp_path):
 
 async def test_load_all_on_missing_root(tmp_path):
     assert await DocStore(tmp_path / "absent").load_all() == ([], [])
-
-
-async def test_set_visibility_rewrites_only_that_field(tmp_path):
-    store = DocStore(tmp_path)
-    await store.save(_stored())
-    await store.set_visibility("d1", "members")
-    back = await store.load("d1")
-    assert back.document.visibility == "members"
-    assert back.document.model_copy(update={"visibility": "public"}) == _stored().document
-    await store.set_visibility("unknown", "members")  # no file, no error

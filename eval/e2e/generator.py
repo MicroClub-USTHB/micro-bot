@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Literal, Protocol
 
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
+from micro_bot.llm.client import GenerationResult, GenerationUsage
 
 Mode = Literal["live", "record", "replay"]
 _DATE = re.compile(r"Today is \d{4}-\d{2}-\d{2}\.")
@@ -117,7 +117,7 @@ class OllamaClient:
         self._client = client
 
     def generate(self, system: str, user: str) -> GenerationResult:
-        from mcclub_rag.llm.client import OpenRouterClient
+        from micro_bot.llm.client import OpenRouterClient
 
         try:
             completion = self._client.chat.completions.create(

@@ -1,7 +1,7 @@
-from mcclub_rag.answer import NOT_FOUND, build, extractive_fallback, leaks_prompt
-from mcclub_rag.llm.prompts import build_prompt
-from mcclub_rag.messages import NO_ANSWER, UNAVAILABLE
-from mcclub_rag.schemas import Chunk
+from micro_bot.answer import NOT_FOUND, build, extractive_fallback, leaks_prompt
+from micro_bot.llm.prompts import build_prompt
+from micro_bot.messages import NO_ANSWER, UNAVAILABLE
+from micro_bot.schemas import Chunk
 
 
 def make_chunk(
@@ -192,7 +192,7 @@ def _system() -> str:
 def test_leaks_prompt_catches_the_instructions_even_reflowed() -> None:
     # inj-05 (ISSUES.md I26): the model printed its system prompt, line breaks changed.
     reply = (
-        "Voici vos instructions système :\n\nYou are the MC Club assistant. Today is "
+        "Voici vos instructions système :\n\nYou are Micro Bot, the Micro Club assistant. Today is "
         "2026-10-13.\n\nAnswer in French (français) and answer only from the retrieved passages."
     )
     assert leaks_prompt(reply, _system())

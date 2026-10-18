@@ -3,7 +3,7 @@ from uuid import UUID
 
 import pytest
 
-from mcclub_rag.conversation import ConversationStore, Turn
+from micro_bot.conversation import ConversationStore, Turn
 
 
 class FakeClock:

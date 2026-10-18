@@ -40,5 +40,4 @@ chunks, or a members-only chunk for a public role. Not the final scorer (task 3.
 Weakest slices: `future`, `system_prompt_leak`, `harmful`, `pii`, `injection`,
 `unanswerable_in_domain` (the gate passes them: refusing is the LLM's job), `topic_switch`
 (1/3), `cross_lingual` (68%). Perfect: `ocr`, `long_doc`, `multi_doc`, `negation`, `yes_no`,
-`followup`, `long_input`. Findings recorded in EDGE_CASES.md (gate overlap, short topic switch,
-injection text pulled by attack questions, same-language distractors).
+`followup`, `long_input`.

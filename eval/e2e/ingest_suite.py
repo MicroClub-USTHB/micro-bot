@@ -1,7 +1,7 @@
 """Ingest suite over the documents API (Req 12.3).
 
 One probe document goes through upload, identical re-upload, new content under the same topic,
-a visibility change and deletion; after each step retrieval must see exactly the current
+an expiry date and deletion; after each step retrieval must see exactly the current
 version. Then every kind of bad upload must give its typed JSON error. The corpus version is
 read from the in-process app; over HTTP only the listing is compared.
 """
@@ -23,8 +23,8 @@ def _doc(code: str) -> bytes:
     return f"# Eval ingest probe\n\nThe eval probe room code is {code}.\n".encode()
 
 
-async def _found(driver, role: str, needle: str) -> bool:
-    case = Case(id="probe", question=QUESTION, lang="en", role=role, expect="any")
+async def _found(driver, needle: str) -> bool:
+    case = Case(id="probe", question=QUESTION, lang="en", expect="any")
     if hasattr(driver, "retrieve"):
         retrieval, _ = await driver.retrieve(case)
         return any(needle in c.text for c in retrieval.chunks)
@@ -40,9 +40,9 @@ async def _version(driver) -> str | None:
 async def ingest(driver) -> list[CaseResult]:
     admin = driver.headers(admin=True)
 
-    async def upload(name: str, data: bytes, visibility="public", **form):
+    async def upload(name: str, data: bytes, **form):
         files = {"file": (name, data)}
-        fields = {"visibility": visibility, "topic": TOPIC} | form
+        fields = {"topic": TOPIC} | form
         return await driver.request(
             "POST", "/api/v1/documents", files=files, data=fields, headers=admin
         )
@@ -63,7 +63,7 @@ async def ingest(driver) -> list[CaseResult]:
         first,
         200,
         check("version_changed", v1 != v0 or v1 is None, "corpus_version unchanged"),
-        check("retrieved", await _found(driver, "public", "ZEBRA-4417"), "new text not found"),
+        check("retrieved", await _found(driver, "ZEBRA-4417"), "new text not found"),
     )
 
     again = await upload("probe.md", _doc("ZEBRA-4417"))
@@ -81,22 +81,11 @@ async def ingest(driver) -> list[CaseResult]:
         replaced,
         200,
         check("same_doc_id", (json_body(replaced) or {}).get("doc_id") == doc_id, "new doc_id"),
-        check("new_text", await _found(driver, "public", "ZEBRA-9001"), "new text not found"),
-        check("old_text_gone", not await _found(driver, "public", "ZEBRA-4417"), "old text"),
+        check("new_text", await _found(driver, "ZEBRA-9001"), "new text not found"),
+        check("old_text_gone", not await _found(driver, "ZEBRA-4417"), "old text"),
     )
 
-    hidden = await upload("probe.md", _doc("ZEBRA-9001"), visibility="members")
-    step(
-        "visibility-members",
-        hidden,
-        200,
-        check("public_blind", not await _found(driver, "public", "ZEBRA-9001"), "public sees"),
-        check("member_sees", await _found(driver, "member", "ZEBRA-9001"), "member blind"),
-    )
-
-    expiring = await upload(
-        "probe.md", _doc("ZEBRA-9001"), visibility="members", expires_at="2026-12-31T00:00:00Z"
-    )
+    expiring = await upload("probe.md", _doc("ZEBRA-9001"), expires_at="2099-12-31T00:00:00Z")
     listing = json_body(await driver.request("GET", "/api/v1/documents", headers=admin)) or []
     entry = next((d for d in listing if d.get("doc_id") == doc_id), {})
     step(
@@ -114,7 +103,7 @@ async def ingest(driver) -> list[CaseResult]:
         200,
         check("ok", json_body(deleted) == {"ok": True}, str(json_body(deleted))),
         check("unlisted", all(d.get("doc_id") != doc_id for d in listing), "still listed"),
-        check("not_retrieved", not await _found(driver, "member", "ZEBRA-9001"), "retrieved"),
+        check("not_retrieved", not await _found(driver, "ZEBRA-9001"), "retrieved"),
     )
     again = await driver.request("DELETE", f"/api/v1/documents/{doc_id}", headers=admin)
     step(

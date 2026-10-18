@@ -3,8 +3,8 @@ import zipfile
 
 import pytest
 
-from mcclub_rag.ingest.errors import ParseError, UnsupportedFileType
-from mcclub_rag.ingest.sniff import DOCX_MIME, XLSX_MIME, detect_type
+from micro_bot.ingest.errors import ParseError, UnsupportedFileType
+from micro_bot.ingest.sniff import DOCX_MIME, XLSX_MIME, detect_type
 
 OLE2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 504
 

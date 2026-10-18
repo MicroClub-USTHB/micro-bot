@@ -7,7 +7,7 @@ rechunking, diacritics, tatweel and case.
 
 from collections.abc import Iterable, Sequence
 
-from mcclub_rag.text.normalize import fold_for_search
+from micro_bot.text.normalize import fold_for_search
 
 
 def fold(text: str) -> str:
@@ -88,11 +88,6 @@ def score_overlap(answerable: Sequence[float], refuse: Sequence[float]) -> float
         return None
     q1 = _quantile(sorted(answerable), 0.25)
     return sum(s >= q1 for s in refuse) / len(refuse)
-
-
-def access_violations(rows: Iterable[dict]) -> int:
-    """Public questions that got any members-only chunk, whatever its rank."""
-    return sum(r["role"] == "public" and "members" in r.get("visibilities", ()) for r in rows)
 
 
 def auc(good: Sequence[float], bad: Sequence[float]) -> float | None:

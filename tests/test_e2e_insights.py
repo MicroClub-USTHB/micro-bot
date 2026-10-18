@@ -13,7 +13,6 @@ def _case(id, expect="answer", lang="fr", slices=(), question="q", history=False
         id=id,
         question=question,
         lang=lang,
-        role="public",
         expect=expect,
         slices=list(slices),
         evidence=["e"] if expect == "answer" else [],
