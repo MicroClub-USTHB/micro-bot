@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import deque
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -69,6 +70,7 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 ),
                 # Gemini models think by default: as little as each model allows
                 extra=_gemini_extra(settings, rewrite=rewrite),
+                rpm=settings.gemini_rpm,
             )
         )
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
@@ -79,6 +81,7 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 api_key=settings.cloudflare_api_token,
                 model=settings.cloudflare_model,
                 daily_limit=settings.cloudflare_daily_limit,
+                rpm=settings.cloudflare_rpm,
             )
         )
     if settings.openrouter_api_key:
@@ -90,6 +93,7 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 api_key=settings.openrouter_api_key,
                 model=settings.openrouter_model,
                 daily_limit=settings.openrouter_daily_limit,
+                rpm=settings.openrouter_rpm,
                 extra=extra if settings.llm_disable_reasoning else {},
             )
         )
@@ -122,6 +126,7 @@ class ProviderChain:
         quota_dir: Path | None = None,
         clock: Callable[[], float] = time.monotonic,
         client_factory: Callable[[Provider], OpenRouterClient] | None = None,
+        _shared: tuple[Lock, dict[tuple[str, str], deque[float]]] | None = None,
     ) -> None:
         self.settings = settings
         self.clock = clock
@@ -130,7 +135,9 @@ class ProviderChain:
         # One quota file per provider and model: the rewrite and answer chains share it when
         # they use the same model, and each Gemini model keeps its own.
         self._slots = [_Slot(p, self._make(p), self._quota(p)) for p in providers]
-        self._lock = Lock()
+        # Calls of the last minute per provider and model, shared with the rewrite chain: the
+        # per-minute caps (Gemini per model, OpenRouter per account) count both calls.
+        self._lock, self._recent = _shared or (Lock(), {})
         self._rewrite: ProviderChain | None = None
 
     def _quota(self, provider: Provider) -> DailyQuota:
@@ -150,6 +157,7 @@ class ProviderChain:
                 quota_dir=self._root,
                 clock=self.clock,
                 client_factory=self._make,
+                _shared=(self._lock, self._recent),
             )
         return self._rewrite
 
@@ -159,7 +167,14 @@ class ProviderChain:
             for slot in self._slots:
                 if slot.blocked_until > now:
                     continue
+                p = slot.provider
+                recent = self._recent.setdefault((p.name, p.model), deque())
+                while recent and recent[0] <= now - 60:
+                    recent.popleft()
+                if p.rpm and len(recent) >= p.rpm:
+                    continue  # its per-minute cap would answer 429: the next provider instead
                 if slot.quota.acquire():
+                    recent.append(now)
                     return slot
         return None
 

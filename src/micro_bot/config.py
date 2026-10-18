@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # Free tier without a card: 50 requests/day, 1000 once 10 credits were ever bought
     # (openrouter.ai/docs/api/reference/limits, 2026-10-18)
     openrouter_daily_limit: int = Field(default=50, ge=0)
+    openrouter_rpm: int = Field(default=20, ge=0)  # free models: 20/minute (same docs page)
+    cloudflare_rpm: int = Field(default=0, ge=0)  # 0: no per-minute cap applied by the chain
     # Google Gemini API, OpenAI-compatible. Free tier needs no card and lists Algeria
     # (ai.google.dev/gemini-api/docs/available-regions, 2026-10-18); free content may be used
     # to improve Google's products, so only public documents belong here.
@@ -30,6 +32,9 @@ class Settings(BaseSettings):
     # answer and rewrite models are the same they share one counter, so keep the limits equal.
     gemini_daily_limit: int = Field(default=1000, ge=0)
     gemini_rewrite_daily_limit: int = Field(default=1000, ge=0)
+    # Free tier: 15 requests/minute per project and model (429 quotaId
+    # GenerateRequestsPerMinutePerProjectPerModel-FreeTier, measured 2026-10-18)
+    gemini_rpm: int = Field(default=15, ge=0)
     # Cloudflare Workers AI: 10,000 free neurons/day; gpt-oss-120b is ~74 neurons per answer
     # (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-18), so ~130/day
     cloudflare_account_id: str | None = None
