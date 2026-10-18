@@ -74,8 +74,8 @@ def test_providers_follow_the_configured_order_and_skip_missing_keys(tmp_path: P
     assert [p.name for p in providers] == ["openrouter", "gemini"]
     gemini = providers[1]
     assert gemini.base_url == GEMINI_BASE_URL
-    assert gemini.model == "gemini-3.8-flash"
-    assert gemini.extra == {"reasoning_effort": "none"}
+    assert gemini.model == "gemini-3.5-flash-lite"
+    assert gemini.extra == {"reasoning_effort": "minimal"}
 
 
 def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path) -> None:
@@ -99,7 +99,7 @@ async def test_first_provider_answers_and_is_named(tmp_path: Path) -> None:
 
     result = await c.generate("s", "u")
 
-    assert result.ok and result.text == "from gemini-3.8-flash"
+    assert result.ok and result.text == "from gemini-3.5-flash-lite"
     assert result.provider == "gemini"
     assert sum(client.calls for client in clients.values()) == 1
 

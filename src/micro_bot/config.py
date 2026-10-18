@@ -20,12 +20,15 @@ class Settings(BaseSettings):
     # 2.5 models are closed to new users (HTTP 404, 2026-10-18). Each model accepts different
     # reasoning_effort values, measured: 3.8-flash takes "none" (not "minimal"), 3.5-flash-lite
     # takes "minimal" (not "none"); "" sends none and keeps the model's default thinking.
-    gemini_model: str = "gemini-3.8-flash"
-    gemini_reasoning_effort: str = "none"
+    # Answers on flash-lite too: 1.0-1.2 s against 3-17 s (one 25 s timeout) for 3.8-flash on
+    # the free tier, same answer on the measured questions (2026-10-18)
+    gemini_model: str = "gemini-3.5-flash-lite"
+    gemini_reasoning_effort: str = "minimal"
     gemini_rewrite_model: str = "gemini-3.5-flash-lite"  # the cheap quota pays for the rewrite
     gemini_rewrite_reasoning_effort: str = "minimal"
-    # Google shows free quotas only in AI Studio: set these to your project's RPD
-    gemini_daily_limit: int = Field(default=250, ge=0)
+    # Google shows free quotas only in AI Studio: set these to your project's RPD. When the
+    # answer and rewrite models are the same they share one counter, so keep the limits equal.
+    gemini_daily_limit: int = Field(default=1000, ge=0)
     gemini_rewrite_daily_limit: int = Field(default=1000, ge=0)
     # Cloudflare Workers AI: 10,000 free neurons/day; gpt-oss-120b is ~74 neurons per answer
     # (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-18), so ~130/day

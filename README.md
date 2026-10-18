@@ -197,7 +197,7 @@ curl -s -X DELETE localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMI
 | `OPENROUTER_API_KEY` | none | Last fallback, 50 requests/day free |
 | `LLM_PROVIDERS` | `gemini,cloudflare,openrouter` | Order the providers are tried in |
 | `API_KEY`, `ADMIN_API_KEY` | none | Bearer key for chat, key for document admin |
-| `GEMINI_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-3.8-flash`, `@cf/openai/gpt-oss-120b`, `google/gemma-4-31b-it:free` | Answer model per provider (the rewrite uses `gemini-3.5-flash-lite`) |
+| `GEMINI_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-3.5-flash-lite`, `@cf/openai/gpt-oss-120b`, `google/gemma-4-31b-it:free` | Answer model per provider (Gemini's rewrite uses the same flash-lite) |
 | `LLM_DAILY_LIMIT`, `LLM_RESERVE` | 1500, 5 | Overall daily cap across providers, and the margin held back |
 | `REWRITE_ENABLED` | true | `false` = 1 LLM call per question |
 | `QDRANT_URL` | `http://qdrant:6333` | Vector store |
