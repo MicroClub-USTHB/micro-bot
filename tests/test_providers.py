@@ -85,6 +85,7 @@ def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path)
 
     assert gemini.model == "gemini-3.6-flash" and gemini.daily_limit == 7
     assert gemini.extra == {"reasoning_effort": "none"}
+    assert gemini.rpm == 5
 
 
 def test_cloudflare_url_carries_the_account_id(tmp_path: Path) -> None:

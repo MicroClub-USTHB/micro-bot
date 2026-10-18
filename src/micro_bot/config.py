@@ -35,9 +35,12 @@ class Settings(BaseSettings):
     # answer and rewrite models are the same they share one counter, so keep the limits equal.
     gemini_daily_limit: int = Field(default=1000, ge=0)
     gemini_rewrite_daily_limit: int = Field(default=1000, ge=0)
-    # Free tier: 15 requests/minute per project and model (429 quotaId
-    # GenerateRequestsPerMinutePerProjectPerModel-FreeTier, measured 2026-10-18)
+    # Free tier requests/minute per project and model (429 quotaId
+    # GenerateRequestsPerMinutePerProjectPerModel-FreeTier, measured 2026-10-18): flash-lite 15,
+    # the flash models (3.6, 3.8, 3-preview) 5. Past the rewrite's 5, rewrites go to the next
+    # provider while answers stay on flash-lite.
     gemini_rpm: int = Field(default=15, ge=0)
+    gemini_rewrite_rpm: int = Field(default=5, ge=0)
     # Cloudflare Workers AI: 10,000 free neurons/day; gpt-oss-120b is ~74 neurons per answer
     # (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-18), so ~130/day
     cloudflare_account_id: str | None = None

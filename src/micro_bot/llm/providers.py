@@ -70,7 +70,7 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 ),
                 # Gemini models think by default: as little as each model allows
                 extra=_gemini_extra(settings, rewrite=rewrite),
-                rpm=settings.gemini_rpm,
+                rpm=settings.gemini_rewrite_rpm if rewrite else settings.gemini_rpm,
             )
         )
     if settings.cloudflare_account_id and settings.cloudflare_api_token:
