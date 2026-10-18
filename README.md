@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="./screenshots/chat-response.png" alt="A cited answer with its sources and usage" width="720">
+  <img src="./screenshots/chat-response.png" alt="curl to the Micro Bot API and its cited JSON answer about Micro Club events" width="760">
 </p>
 
 ---
