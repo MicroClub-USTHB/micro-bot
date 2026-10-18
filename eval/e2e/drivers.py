@@ -21,6 +21,7 @@ import httpx
 from eval.e2e.backends import PipelineDocuments, Ready
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.score import Observation
+from micro_bot.answer_cache import AnswerCache
 from micro_bot.config import Settings
 from micro_bot.conversation import Turn
 from micro_bot.ingest.pipeline import IngestPipeline
@@ -134,6 +135,7 @@ class InProcessDriver(_Api):
             "language_detector": RealLanguageDetector(),
             "generator": generator,
             "rate_limiter": SlidingWindowRateLimiter(100_000, 60),
+            "answer_cache": AnswerCache(0),  # every case is answered, never replayed
         }
         self.state = ApplicationState(**(fields | (state_overrides or {})))
         self.app = create_app(settings=settings, state=self.state)

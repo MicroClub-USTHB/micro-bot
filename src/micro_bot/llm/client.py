@@ -1,9 +1,12 @@
-"""OpenRouter-only single-generation client with explicit failure results."""
+"""Single-generation client for one OpenAI-compatible provider, with explicit failure results.
+
+OpenRouter by default; ``Provider`` points it at another endpoint (Gemini, Cloudflare).
+"""
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
@@ -27,6 +30,18 @@ class OpenAIClient(Protocol):
 
 
 @dataclass(frozen=True)
+class Provider:
+    """One OpenAI-compatible endpoint and the model it answers with."""
+
+    name: str
+    base_url: str
+    api_key: str
+    model: str
+    daily_limit: int
+    extra: dict[str, Any] = field(default_factory=dict)  # merged into every request
+
+
+@dataclass(frozen=True)
 class GenerationUsage:
     """Generation outcome with a truthful count of attempted provider requests.
 
@@ -44,6 +59,7 @@ class GenerationResult:
     text: str | None
     usage: GenerationUsage
     error: str | None = None
+    provider: str | None = None  # which provider answered (logged, never sent to clients)
 
     @property
     def ok(self) -> bool:
@@ -54,7 +70,7 @@ ClientFactory = Callable[..., OpenAIClient]
 
 
 class OpenRouterClient:
-    """Make at most one OpenRouter generation per question."""
+    """Make at most one generation per call, on OpenRouter or on ``provider``."""
 
     def __init__(
         self,
@@ -63,8 +79,13 @@ class OpenRouterClient:
         client: OpenAIClient | None = None,
         client_factory: ClientFactory = OpenAI,
         async_client_factory: ClientFactory = AsyncOpenAI,
+        provider: Provider | None = None,
     ) -> None:
         self.settings = settings or get_settings()
+        self.provider = provider
+        self.api_key = provider.api_key if provider else self.settings.openrouter_api_key
+        self.base_url = provider.base_url if provider else OPENROUTER_BASE_URL
+        self.model = provider.model if provider else self.settings.openrouter_model
         self._client = client
         self._client_factory = client_factory
         self._async_client_factory = async_client_factory
@@ -72,12 +93,12 @@ class OpenRouterClient:
 
     def generate(self, system: str, user: str) -> GenerationResult:
         """Generate once, returning a result instead of provider exceptions."""
-        if not self.settings.openrouter_api_key:
+        if not self.api_key:
             return GenerationResult(None, GenerationUsage(llm_calls=0), "not_configured")
 
         client = self._client or self._client_factory(
-            api_key=self.settings.openrouter_api_key,
-            base_url=OPENROUTER_BASE_URL,
+            api_key=self.api_key,
+            base_url=self.base_url,
             timeout=self.settings.llm_timeout_s,
             max_retries=0,
         )
@@ -90,14 +111,16 @@ class OpenRouterClient:
 
     def _request(self, system: str, user: str) -> dict[str, Any]:
         request: dict[str, Any] = {
-            "model": self.settings.openrouter_model,
+            "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
             "timeout": self.settings.llm_timeout_s,
         }
-        if self.settings.llm_disable_reasoning:
+        if self.provider is not None:
+            request.update(self.provider.extra)
+        elif self.settings.llm_disable_reasoning:
             # Reasoning models (nemotron) spend 500-1000 hidden tokens and ~20 s per call otherwise.
             request["extra_body"] = {"reasoning": {"enabled": False}}
         return request
@@ -112,13 +135,13 @@ class OpenRouterClient:
         stream that keeps sending is not cut. Closing the stream early stops the request, but
         the call still counts (Google, which serves the free gemma, can't cancel).
         """
-        if not self.settings.openrouter_api_key:
+        if not self.api_key:
             yield GenerationResult(None, GenerationUsage(llm_calls=0), "not_configured")
             return
         if self._async_client is None:
             self._async_client = self._async_client_factory(
-                api_key=self.settings.openrouter_api_key,
-                base_url=OPENROUTER_BASE_URL,
+                api_key=self.api_key,
+                base_url=self.base_url,
                 timeout=self.settings.llm_timeout_s,
                 max_retries=0,
             )
