@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 
 from micro_bot.deps import require_admin
 from micro_bot.errors import IngestError
-from micro_bot.schemas import DocInfo, DocumentCreateResponse, IngestResult, Visibility
+from micro_bot.schemas import DocInfo, DocumentCreateResponse, IngestResult
 
 router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
@@ -25,14 +25,12 @@ _INGEST_ERROR_CODES = {
 async def create_document(
     request: Request,
     file: Annotated[UploadFile, File()],
-    visibility: Annotated[Visibility, Form()],
     topic: Annotated[str | None, Form()] = None,
     expires_at: Annotated[str | None, Form()] = None,
     _: Annotated[None, Depends(require_admin)] = None,
 ) -> DocumentCreateResponse:
     result = await request.app.state.micro_bot_state.documents.ingest_file(
         file,
-        visibility=visibility,
         topic=topic,
         expires_at=expires_at,
     )
@@ -45,7 +43,6 @@ async def replace_document(
     request: Request,
     file: Annotated[UploadFile, File()],
     replaces: Annotated[str, Form(min_length=1)],
-    visibility: Annotated[Visibility | None, Form()] = None,
     expires_at: Annotated[str | None, Form()] = None,
     _: Annotated[None, Depends(require_admin)] = None,
 ) -> DocumentCreateResponse:
@@ -61,14 +58,23 @@ async def replace_document(
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, f"No document named '{replaces}' to replace."
         )
-    result = await documents.ingest_file(
-        file,
-        visibility=visibility or existing.visibility,
-        topic=existing.topic,
-        expires_at=expires_at,
-    )
-    _raise_for_failed_ingest(result)
-    return DocumentCreateResponse(doc_id=result.doc_id)
+    return await _replace(documents, existing, file, expires_at)
+
+
+@router.put("/{doc_id}", response_model=DocumentCreateResponse)
+async def update_document(
+    doc_id: str,
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    expires_at: Annotated[str | None, Form()] = None,
+    _: Annotated[None, Depends(require_admin)] = None,
+) -> DocumentCreateResponse:
+    """Replace the document ``doc_id`` with a new file; it keeps its topic, so its id."""
+    documents = request.app.state.micro_bot_state.documents
+    existing = await documents.get_document(doc_id)
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No document with id '{doc_id}'.")
+    return await _replace(documents, existing, file, expires_at)
 
 
 @router.get("", response_model=list[DocInfo])
@@ -79,6 +85,18 @@ async def list_documents(
     return await request.app.state.micro_bot_state.documents.list_documents()
 
 
+@router.get("/{doc_id}", response_model=DocInfo)
+async def get_document(
+    doc_id: str,
+    request: Request,
+    _: Annotated[None, Depends(require_admin)] = None,
+) -> DocInfo:
+    document = await request.app.state.micro_bot_state.documents.get_document(doc_id)
+    if document is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No document with id '{doc_id}'.")
+    return document
+
+
 @router.delete("/{doc_id}")
 async def delete_document(
     doc_id: str,
@@ -87,6 +105,14 @@ async def delete_document(
 ) -> dict[str, bool]:
     deleted = await request.app.state.micro_bot_state.documents.delete_document(doc_id)
     return {"ok": deleted}
+
+
+async def _replace(
+    documents: object, existing: DocInfo, file: UploadFile, expires_at: str | None
+) -> DocumentCreateResponse:
+    result = await documents.ingest_file(file, topic=existing.topic, expires_at=expires_at)
+    _raise_for_failed_ingest(result)
+    return DocumentCreateResponse(doc_id=result.doc_id)
 
 
 def _raise_for_failed_ingest(result: IngestResult) -> None:

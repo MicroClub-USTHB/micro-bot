@@ -33,7 +33,6 @@ from micro_bot.text.normalize import fold_for_search, normalize_text
 
 log = structlog.get_logger(__name__)
 
-_VISIBILITIES = ("public", "members")
 _HTML_TYPES = {"text/html", "application/xhtml+xml"}
 _TEXT_TYPE_EXT = {"text/plain": ".txt", "text/markdown": ".md"}
 _MAX_TITLE = 200
@@ -69,9 +68,7 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _validate(visibility: str, title: str | None) -> str | None:
-    if visibility not in _VISIBILITIES:
-        raise InvalidInput(f"visibility must be one of {', '.join(_VISIBILITIES)}")
+def _validate(title: str | None) -> str | None:
     return title.strip() or None if title else None
 
 
@@ -159,7 +156,6 @@ async def _document(
     *,
     source: str,
     source_type: SourceType,
-    visibility: str,
     title: str | None,
     fallback_title: str,
     content_hash: str | None,
@@ -187,7 +183,6 @@ async def _document(
         source=source,
         source_type=source_type,
         mime_type=raw.mime_type,
-        visibility=visibility,
         language=language,
         text=text,
         sections=tuple(sections),
@@ -233,7 +228,6 @@ async def preprocess_file(
     data: bytes,
     filename: str,
     *,
-    visibility: str,
     title: str | None = None,
     settings: IngestSettings | None = None,
 ) -> ParsedDocument:
@@ -241,7 +235,7 @@ async def preprocess_file(
     filename = (filename or "").strip()
 
     async def run() -> ParsedDocument:
-        clean_title = _validate(visibility, title)
+        clean_title = _validate(title)
         if not filename:
             raise InvalidInput("filename is required")
         if len(data) > s.max_file_bytes:
@@ -254,7 +248,6 @@ async def preprocess_file(
                 raw,
                 source=filename,
                 source_type="file",
-                visibility=visibility,
                 title=clean_title,
                 fallback_title=PurePosixPath(filename).stem or filename,
                 content_hash=_sha256(data),
@@ -267,7 +260,6 @@ async def preprocess_file(
 async def preprocess_url(
     url: str,
     *,
-    visibility: str,
     title: str | None = None,
     settings: IngestSettings | None = None,
     client: httpx.AsyncClient | None = None,
@@ -277,7 +269,7 @@ async def preprocess_url(
     url = (url or "").strip()
 
     async def run() -> ParsedDocument:
-        clean_title = _validate(visibility, title)
+        clean_title = _validate(title)
         if not url:
             raise InvalidInput("url is required")
         async with _semaphore(s.max_concurrency):
@@ -300,7 +292,6 @@ async def preprocess_url(
                 raw,
                 source=fetched.final_url,
                 source_type="web",
-                visibility=visibility,
                 title=clean_title,
                 fallback_title=fallback,
                 content_hash=content_hash,

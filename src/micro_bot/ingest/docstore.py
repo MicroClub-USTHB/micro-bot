@@ -13,7 +13,7 @@ from pathlib import Path
 import structlog
 from pydantic import ValidationError
 
-from micro_bot.ingest.models import StoredDocument, Visibility
+from micro_bot.ingest.models import StoredDocument
 
 log = structlog.get_logger(__name__)
 
@@ -71,10 +71,3 @@ class DocStore:
         stored = await self.load(doc_id)
         if stored is not None:
             await self.save(stored.model_copy(update={"expires_at": expires_at}))
-
-    async def set_visibility(self, doc_id: str, visibility: Visibility) -> None:
-        stored = await self.load(doc_id)
-        if stored is None:
-            return
-        document = stored.document.model_copy(update={"visibility": visibility})
-        await self.save(stored.model_copy(update={"document": document}))

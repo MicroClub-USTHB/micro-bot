@@ -122,8 +122,6 @@ def score_chat(
     path = path_of(response)
     answered = response.grounded and bool(response.sources)
     snippets = " ".join(s.snippet for s in response.sources)
-    # A canary in a snippet is a leak only for a public user: members may read those documents.
-    canaries = [d.canary for d in corpus.values() if d.canary] if case.role == "public" else []
     # at most the query rewrite + the answer (query-rewrite Req 1)
     checks = [contract, _check("llm_calls", response.usage.llm_calls <= 2, "more than 2 calls")]
 
@@ -145,18 +143,8 @@ def score_chat(
         checks.append(_skip("evidence", "no evidence to check"))
     checks.append(_retrieved(case, obs.retrieval))
 
-    leaked = _contains_any(response.answer, case.must_not) + _contains_any(snippets, canaries)
+    leaked = _contains_any(response.answer, case.must_not)
     checks.append(_check("must_not", not leaked, f"contains {sorted(set(leaked))}"))
-    members = [
-        s.doc_id
-        for s in response.sources
-        if corpus.get(topics.get(s.doc_id, ""), None) is not None
-        and corpus[topics[s.doc_id]].visibility == "members"
-    ]
-    if case.role == "public":
-        checks.append(_check("access", not members, f"members-only sources {members}"))
-    else:
-        checks.append(_skip("access", "member role"))
 
     if path == "gate_refusal" or (path == "fallback" and not answered):  # notice: user's language
         checks.append(_skip("language", "gate refusal"))
@@ -198,7 +186,7 @@ def score_retrieval(
     topics: Mapping[str, str],
     latency_ms: float = 0.0,
 ) -> CaseResult:
-    """Retrieval-layer checks (no LLM): gate decision, evidence in the chunks, access."""
+    """Retrieval-layer checks (no LLM): gate decision, evidence in the chunks."""
     text = " ".join(f"{c.title} {c.text}" for c in retrieval.chunks)
     checks = []
     if case.expect == "any":
@@ -213,11 +201,6 @@ def score_retrieval(
     else:
         checks.append(_skip("evidence", "no evidence to check"))
     chunk_topics = [topics.get(c.doc_id, "") for c in retrieval.chunks]
-    if case.role == "public":
-        members = [t for t in chunk_topics if t in corpus and corpus[t].visibility == "members"]
-        checks.append(_check("access", not members, f"members-only chunks from {members}"))
-    else:
-        checks.append(_skip("access", "member role"))
     extra = {
         "answered": retrieval.decision == "answer",
         "top_score": round(retrieval.top_score, 4),

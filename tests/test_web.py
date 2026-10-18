@@ -270,7 +270,6 @@ async def test_mcoli_docs_page_sections_end_to_end(ocr_settings):
 
     doc = await preprocess_url(
         MCOLI_URL,
-        visibility="public",
         settings=ocr_settings,
         client=_client(handler),
         resolve=resolve,

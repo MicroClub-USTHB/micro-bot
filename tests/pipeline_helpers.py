@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 from qdrant_client import AsyncQdrantClient
 
 from micro_bot.ingest.docstore import DocStore
-from micro_bot.ingest.errors import EmptyDocument, InvalidInput, UnsupportedFileType
+from micro_bot.ingest.errors import EmptyDocument, UnsupportedFileType
 from micro_bot.ingest.models import ParsedDocument, Section
 from micro_bot.ingest.pipeline import IngestPipeline
 from micro_bot.ingest.settings import IngestSettings
@@ -61,9 +61,7 @@ def _sections(text: str) -> tuple[Section, ...]:
     )
 
 
-def _doc(text: str, *, source, source_type, visibility, title, content_hash) -> ParsedDocument:
-    if visibility not in ("public", "members"):
-        raise InvalidInput("visibility must be one of public, members")
+def _doc(text: str, *, source, source_type, title, content_hash) -> ParsedDocument:
     sections = _sections(text)
     if not sections:
         raise EmptyDocument("no readable text found")
@@ -73,7 +71,6 @@ def _doc(text: str, *, source, source_type, visibility, title, content_hash) -> 
         source=source,
         source_type=source_type,
         mime_type="text/markdown",
-        visibility=visibility,
         language="fr",
         text=text,
         sections=sections,
@@ -92,7 +89,7 @@ class FakePreprocess:
         self.url_calls: list[str] = []
         self.pages: dict[str, tuple[str, str]] = {}  # url -> (final url, markdown)
 
-    async def file(self, data, filename, *, visibility, title=None, settings=None):
+    async def file(self, data, filename, *, title=None, settings=None):
         self.file_calls.append(filename)
         if not filename.endswith((".md", ".txt")):
             raise UnsupportedFileType("unsupported file type: application/octet-stream")
@@ -100,19 +97,17 @@ class FakePreprocess:
             data.decode(),
             source=filename,
             source_type="file",
-            visibility=visibility,
             title=title,
             content_hash=hashlib.sha256(data).hexdigest(),
         )
 
-    async def url(self, url, *, visibility, title=None, settings=None):
+    async def url(self, url, *, title=None, settings=None):
         self.url_calls.append(url)
         final, text = self.pages[urlsplit(url)._replace(query="", fragment="").geturl()]
         return _doc(
             text,
             source=final,
             source_type="web",
-            visibility=visibility,
             title=title,
             content_hash=hashlib.sha256(text.encode()).hexdigest(),
         )

@@ -45,28 +45,50 @@ def factory(tmp_path):
 
 
 def test_second_run_reports_duplicates(corpus, factory, capsys):
-    assert script.main([str(corpus), "--visibility", "public"], factory=factory) == 0
+    assert (
+        script.main(
+            [
+                str(corpus),
+            ],
+            factory=factory,
+        )
+        == 0
+    )
     first = _report(capsys)
     assert [line.split()[0:2] for line in first] == [
         ["created", "page.md"],
         ["created", "rules.md"],
     ]
-    assert script.main([str(corpus), "--visibility", "public"], factory=factory) == 0
+    assert (
+        script.main(
+            [
+                str(corpus),
+            ],
+            factory=factory,
+        )
+        == 0
+    )
     second = _report(capsys)
     assert [line.split()[0] for line in second] == ["duplicate", "duplicate"]
 
 
 def test_recursive_includes_subfolders(corpus, factory, capsys):
-    assert (
-        script.main([str(corpus), "--visibility", "members", "--recursive"], factory=factory) == 0
-    )
+    assert script.main([str(corpus), "--recursive"], factory=factory) == 0
     deep = str(Path("sub") / "deep.md")
     assert any(deep in line for line in _report(capsys))
 
 
 def test_failed_file_gives_exit_code_1(corpus, factory, capsys):
     (corpus / "blob.bin").write_bytes(b"\x00\x01")
-    assert script.main([str(corpus), "--visibility", "public"], factory=factory) == 1
+    assert (
+        script.main(
+            [
+                str(corpus),
+            ],
+            factory=factory,
+        )
+        == 1
+    )
     lines = _report(capsys)
     assert lines[0].startswith("unsupported_file_type") and "blob.bin" in lines[0]
     assert [line.split()[0] for line in lines[1:]] == ["created", "created"]
@@ -74,4 +96,9 @@ def test_failed_file_gives_exit_code_1(corpus, factory, capsys):
 
 def test_missing_directory_is_a_usage_error(tmp_path, factory):
     with pytest.raises(SystemExit):
-        script.main([str(tmp_path / "absent"), "--visibility", "public"], factory=factory)
+        script.main(
+            [
+                str(tmp_path / "absent"),
+            ],
+            factory=factory,
+        )

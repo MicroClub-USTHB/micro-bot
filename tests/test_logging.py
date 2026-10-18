@@ -22,7 +22,6 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
     async def chat(request: Request) -> dict[str, bool]:
         set_request_log_context(
             request,
-            role="member",
             llm_calls=1,
             prompt_tokens=13,
             completion_tokens=8,
@@ -42,7 +41,7 @@ def test_request_logging_emits_one_json_line_with_available_context(caplog: obje
     event = events[0]
     assert event["event"] == "request_completed"
     assert event["route"] == "/api/v1/chat"
-    assert event["role"] == "member"
+    assert "role" not in event
     assert isinstance(event["latency_ms"], int)
     assert event["llm_calls"] == 1
     assert event["prompt_tokens"] == 13
@@ -70,7 +69,7 @@ def test_request_logging_emits_one_line_for_a_handled_exception(caplog: object) 
     events = request_events(caplog)
     assert len(events) == 1
     assert events[0]["route"] == "/api/v1/crash"
-    assert events[0]["role"] == "public"
+    assert "role" not in events[0]
     assert isinstance(events[0]["latency_ms"], int)
     assert events[0]["llm_calls"] == 0
     assert events[0]["prompt_tokens"] == 0
@@ -95,7 +94,7 @@ def test_request_logging_uses_standard_defaults(caplog: object) -> None:
     assert len(events) == 1
     event = events[0]
     assert event["route"] == "/api/v1/health"
-    assert event["role"] == "public"
+    assert "role" not in event
     assert event["llm_calls"] == 0
     assert event["prompt_tokens"] == 0
     assert event["completion_tokens"] == 0

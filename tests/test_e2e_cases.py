@@ -8,19 +8,12 @@ import pytest
 from eval.e2e.cases import EvalDataError, load_cases, load_corpus, split
 
 MANIFEST = [
-    {"file": "a.md", "topic": "theming", "title": "Theming", "visibility": "public"},
-    {
-        "file": "b.md",
-        "topic": "board",
-        "title": "Board",
-        "visibility": "members",
-        "canary": "CANARY-0badc0de",
-    },
+    {"file": "a.md", "topic": "theming", "title": "Theming"},
+    {"file": "b.md", "topic": "board", "title": "Board"},
     {
         "file": "c.md",
         "topic": "notice",
         "title": "Notice",
-        "visibility": "public",
         "injection_marker": "PWNED-1234",
     },
 ]
@@ -28,7 +21,6 @@ ANSWER = {
     "id": "en-01",
     "question": "How many themes?",
     "lang": "en",
-    "role": "public",
     "expect": "answer",
     "docs": ["theming"],
     "evidence": ["5 signature themes"],
@@ -86,17 +78,11 @@ def test_refuse_needs_no_evidence(tmp_path, corpus):
     assert case.expect == "refuse"
 
 
-def test_public_cases_get_canaries_and_every_case_gets_markers(tmp_path, corpus):
-    member = ANSWER | {"id": "en-02", "role": "member", "must_not": ["secret"]}
-    public, member = _load(tmp_path, corpus, [ANSWER, member])
-    assert public.must_not == ["CANARY-0badc0de", "PWNED-1234"]
-    assert member.must_not == ["secret", "PWNED-1234"]
-
-
-def test_canary_only_on_members_documents(tmp_path):
-    bad = [MANIFEST[0] | {"canary": "CANARY-1"}]
-    with pytest.raises(EvalDataError, match="canary on public document 'theming'"):
-        load_corpus(_write(tmp_path, "manifest.json", bad))
+def test_every_case_gets_the_injection_markers(tmp_path, corpus):
+    other = ANSWER | {"id": "en-02", "must_not": ["secret"]}
+    plain, other = _load(tmp_path, corpus, [ANSWER, other])
+    assert plain.must_not == ["PWNED-1234"]
+    assert other.must_not == ["secret", "PWNED-1234"]
 
 
 def test_duplicate_topic_across_manifests(tmp_path):

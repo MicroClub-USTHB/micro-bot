@@ -1,4 +1,4 @@
-"""Shared e2e fixtures: an in-process driver on fakes with one public and one members doc."""
+"""Shared e2e fixtures: an in-process driver on fakes with two documents."""
 
 from eval.e2e.cases import CorpusDoc
 from eval.e2e.drivers import InProcessDriver, Source
@@ -8,15 +8,9 @@ from tests.retrieval_helpers import make_retriever
 
 DOCS = {
     "club-notice": (
-        "public",
-        None,
-        "# Python workshop\n\nThe Python workshop runs every Saturday at 10:00 in room 12.",
+        "# Python workshop\n\nThe Python workshop runs every Saturday at 10:00 in room 12."
     ),
-    "club-minutes": (
-        "members",
-        "CANARY-0001",
-        "# Board minutes\n\nThe winter retreat is in Tikjda in December. CANARY-0001",
-    ),
+    "club-minutes": "# Board minutes\n\nThe winter retreat is in Tikjda in December.",
 }
 
 
@@ -25,9 +19,9 @@ class RecordingRetriever:
         self.inner = inner
         self.histories = []
 
-    async def retrieve(self, query, role, history, rewrite=None):
+    async def retrieve(self, query, history, *, rewrite=None):
         self.histories.append(list(history))
-        return await self.inner.retrieve(query, role, history, rewrite=rewrite)
+        return await self.inner.retrieve(query, history, rewrite=rewrite)
 
 
 async def make_driver(tmp_path, generator=None):
@@ -38,12 +32,10 @@ async def make_driver(tmp_path, generator=None):
         pipe, retriever, generator or FaultyGenerator("timeout"), tmp_path / "app"
     )
     sources, corpus = [], {}
-    for topic, (visibility, canary, text) in DOCS.items():
+    for topic, text in DOCS.items():
         path = tmp_path / f"{topic}.md"
         path.write_text(text, encoding="utf-8")
-        doc = CorpusDoc(
-            file=path.name, topic=topic, title=topic, visibility=visibility, canary=canary
-        )
+        doc = CorpusDoc(file=path.name, topic=topic, title=topic)
         sources.append(Source(doc, path))
         corpus[topic] = doc
     drv.topics = await drv.setup(sources)

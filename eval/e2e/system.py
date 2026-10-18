@@ -36,7 +36,7 @@ class _Raising:
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    async def retrieve(self, query, role, history, rewrite=None):
+    async def retrieve(self, query, history, rewrite=None):
         raise self.error
 
 
@@ -44,7 +44,7 @@ async def faults(driver, probe: Case) -> list[CaseResult]:
     """Req 7.1: each fault on one answerable probe question, state restored after each."""
     state = driver.state
     saved = (state.generator, state.quota, state.retrieval, state.breaker)
-    headers = driver.headers(probe.role)
+    headers = driver.headers()
 
     async def ask() -> httpx.Response:  # a fresh conversation: no stored context between faults
         body = {"message": probe.question, "conversation_id": f"eval-{uuid.uuid4()}"}

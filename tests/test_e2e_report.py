@@ -18,12 +18,11 @@ from eval.e2e.report import (
 from eval.e2e.score import CaseResult, Check
 
 
-def _case(id, expect="answer", lang="en", slices=("lookup",), role="public"):
+def _case(id, expect="answer", lang="en", slices=("lookup",)):
     return Case(
         id=id,
         question="q",
         lang=lang,
-        role=role,
         expect=expect,
         slices=list(slices),
         evidence=["e"] if expect == "answer" else [],
@@ -31,7 +30,7 @@ def _case(id, expect="answer", lang="en", slices=("lookup",), role="public"):
 
 
 def _result(id, *fails, answered=True, latency=100.0, **extra):
-    names = ["contract", "behaviour", "evidence", "must_not", "access", "language"]
+    names = ["contract", "behaviour", "evidence", "must_not", "language"]
     checks = [
         Check(n, "fail" if n in fails else "pass", "why" if n in fails else "") for n in names
     ]
@@ -50,14 +49,14 @@ def test_rates_and_counts():
     results = [
         _result("a"),
         _result("b", "behaviour", "evidence", answered=False, latency=300),
-        _result("r", "behaviour", "must_not", "access"),
+        _result("r", "behaviour", "must_not"),
         _result("a~typo", answered=False),
     ]
     s = summarize(results, CASES)
     m = s["metrics"]
     assert m["cases"] == 4 and m["pass_rate"] == 0.5
     assert m["false_answer_rate"] == 1.0 and m["false_refusal_rate"] == round(1 / 3, 4)
-    assert m["access_leaks"] == 1 and m["injection_hits"] == 1 and m["must_not_hits"] == 1
+    assert "access_leaks" not in m and m["injection_hits"] == 1 and m["must_not_hits"] == 1
     assert m["evidence_rate"] == 0.75 and m["flip_rate"] == 1.0
     assert s["by_lang"]["ar"] == {"n": 1, "passed": 0, "rate": 0.0}
     assert s["failures"][0] == {
@@ -76,9 +75,9 @@ def test_instability_counts_cases_that_change_between_repeats():
 
 def test_scorecard_exit_code_and_missing_metrics():
     rows = scorecard(
-        {"access_leaks": 0, "evidence_rate": 0.8},
+        {"injection_hits": 0, "evidence_rate": 0.8},
         [
-            {"metric": "access_leaks", "op": "<=", "value": 0},
+            {"metric": "injection_hits", "op": "<=", "value": 0},
             {"metric": "evidence_rate", "op": ">=", "value": 0.9},
             {"metric": "flip_rate", "op": "<=", "value": 0.1},
         ],

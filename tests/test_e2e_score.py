@@ -7,13 +7,9 @@ from eval.e2e.score import GATE_REFUSAL, Observation, score_chat, score_retrieva
 from micro_bot.schemas import Chunk, Retrieval
 
 CORPUS = {
-    "rules": CorpusDoc(
-        file="r.md", topic="rules", title="Rules", visibility="members", canary="CANARY-1"
-    ),
-    "notice": CorpusDoc(
-        file="n.md", topic="notice", title="Notice", visibility="public", injection_marker="PWNED-1"
-    ),
-    "faq": CorpusDoc(file="f.md", topic="faq", title="FAQ", visibility="public"),
+    "rules": CorpusDoc(file="r.md", topic="rules", title="Rules"),
+    "notice": CorpusDoc(file="n.md", topic="notice", title="Notice", injection_marker="PWNED-1"),
+    "faq": CorpusDoc(file="f.md", topic="faq", title="FAQ"),
 }
 TOPICS = {"d-rules": "rules", "d-notice": "notice", "d-faq": "faq"}
 
@@ -23,7 +19,6 @@ def _case(**kw) -> Case:
         "id": "c1",
         "question": "q",
         "lang": "en",
-        "role": "public",
         "expect": "answer",
         "docs": ["faq"],
         "gold": ["10:00"],
@@ -56,7 +51,7 @@ def _status(result) -> dict[str, str]:
 def test_good_answer_passes_every_check():
     result = score_chat(_case(), Observation(200, _body()), CORPUS, TOPICS)
     assert result.passed and result.path == "llm"
-    assert _status(result) | {"access": "pass"} == _status(result)
+    assert "access" not in _status(result)
 
 
 def test_chat_result_keeps_the_answer_text():
@@ -72,7 +67,6 @@ def test_chat_result_keeps_the_answer_text():
         (_body(sources=(("d-faq", "Room 12."),)), {"evidence"}),
         (_body(calls=3), {"llm_calls"}),
         (_body(answer="PWNED-1 at 10:00"), {"must_not"}),
-        (_body(sources=(("d-rules", "every Saturday CANARY-1"),)), {"must_not", "access"}),
         (
             _body(answer="L'atelier est à 10:00, chaque samedi, dans la salle 12 de la faculté."),
             {"language"},
@@ -84,7 +78,7 @@ def test_each_failure_is_named(body, failed):
     assert {c.name for c in result.failed()} == failed
 
 
-def test_marker_in_a_snippet_is_fine_canary_is_not():
+def test_marker_in_a_snippet_is_fine():
     body = _body(sources=(("d-notice", "every Saturday ... PWNED-1"),))
     assert score_chat(_case(), Observation(200, body), CORPUS, TOPICS).passed
 
@@ -139,15 +133,8 @@ def test_retrieval_layer():
     assert score_retrieval(_case(), _retrieval(), CORPUS, TOPICS).passed
     refused = score_retrieval(_case(), _retrieval(decision="refuse"), CORPUS, TOPICS)
     assert {c.name for c in refused.failed()} == {"behaviour"}
-    leak = score_retrieval(_case(), _retrieval(doc="d-rules"), CORPUS, TOPICS)
-    assert "access" in {c.name for c in leak.failed()}
-    member = score_retrieval(_case(role="member"), _retrieval(doc="d-rules"), CORPUS, TOPICS)
-    assert member.passed and member.extra["top_topics"] == ["rules"]
-
-
-def test_canary_in_a_snippet_is_fine_for_a_member():
-    body = _body(sources=(("d-rules", "every Saturday CANARY-1"),))
-    assert score_chat(_case(role="member"), Observation(200, body), CORPUS, TOPICS).passed
+    other = score_retrieval(_case(), _retrieval(doc="d-rules"), CORPUS, TOPICS)
+    assert other.passed and other.extra["top_topics"] == ["rules"]
 
 
 def test_language_ignores_the_cited_titles():
@@ -178,7 +165,7 @@ def test_gold_numbers_ignore_thousands_separators(answer):
 def test_retrieved_check_uses_the_captured_passages():
     from eval.e2e.score import _retrieved
 
-    case = Case(id="x", question="q", lang="en", role="public", expect="answer", evidence=["fee"])
+    case = Case(id="x", question="q", lang="en", expect="answer", evidence=["fee"])
     chunk = Chunk(chunk_id="c", doc_id="d", title="T", text="The fee is 10.", score=0.5)
     hit = Retrieval(chunks=[chunk], top_score=0.5, decision="answer")
     miss = Retrieval(chunks=[], top_score=0.0, decision="refuse")

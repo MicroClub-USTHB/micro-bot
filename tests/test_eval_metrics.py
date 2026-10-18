@@ -43,16 +43,6 @@ def test_suggestion_is_the_highest_threshold_within_the_budget():
     assert m.suggest_threshold([], 0.05) is None
 
 
-def test_access_violations_count_public_rows_with_members_chunks():
-    rows = [
-        {"role": "public", "visibilities": ["public", "members"]},
-        {"role": "public", "visibilities": ["public"]},
-        {"role": "member", "visibilities": ["members"]},
-        {"role": "public", "visibilities": []},
-    ]
-    assert m.access_violations(rows) == 1
-
-
 def test_score_distribution_gives_quartiles():
     dist = m.score_distribution([0.1, 0.2, 0.3, 0.4, 0.5])
     assert dist == {"n": 5, "min": 0.1, "q1": 0.2, "median": 0.3, "q3": 0.4, "max": 0.5}

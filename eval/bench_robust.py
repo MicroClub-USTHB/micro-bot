@@ -59,10 +59,10 @@ async def run_config(retriever, questions, doc_ids) -> dict:
     flips: dict[str, list[bool]] = defaultdict(list)
     ranks: dict[str, list[int | None]] = defaultdict(list)
     for q in questions:
-        base = await retriever.retrieve(q["question"], q["role"], [])
+        base = await retriever.retrieve(q["question"], [])
         texts = {"base": q["question"], **question_variants(q["question"], q["id"])}
         for kind, text in texts.items():
-            result = base if kind == "base" else await retriever.retrieve(text, q["role"], [])
+            result = base if kind == "base" else await retriever.retrieve(text, [])
             if kind != "base":
                 flips[kind].append(result.decision != base.decision)
             if q["answerable"]:

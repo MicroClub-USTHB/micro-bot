@@ -45,7 +45,7 @@ def cause(result: CaseResult, case: Case) -> str | None:
     if result.passed:
         return None
     failed = {c.name for c in result.failed()}
-    if "must_not" in failed or "access" in failed:
+    if "must_not" in failed:
         return "leak"
     if case.expect == "answer":
         return next((why for name, why in _ANSWER_STEPS if name in failed), "other")

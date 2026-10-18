@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str | None = None
     openrouter_model: str = "google/gemma-4-31b-it:free"
-    member_token: str | None = None
+    api_key: str | None = None  # Bearer token required by /chat and /feedback
     admin_api_key: str | None = None
     qdrant_url: str = "http://qdrant:6333"
     qdrant_collection: str = "mcclub"

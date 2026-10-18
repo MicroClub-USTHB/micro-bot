@@ -11,9 +11,7 @@ AR = "ما هو آخر أجل للتسجيل في برنامج أدرس في ا�
 
 
 def _case(question: str, lang: str) -> Case:
-    return Case(
-        id="x", question=question, lang=lang, role="public", expect="refuse", slices=["lookup"]
-    )
+    return Case(id="x", question=question, lang=lang, expect="refuse", slices=["lookup"])
 
 
 def test_golden_variants_with_seed_0():

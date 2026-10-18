@@ -23,13 +23,10 @@ def test_every_converted_case_loads_and_counts_match():
 
 
 def test_slices():
-    base = {"id": "x", "question": "q", "lang": "ar", "role": "member"}
+    base = {"id": "x", "question": "q", "lang": "ar"}
     plain = convert_row(
         base | {"answerable": True, "doc": "d", "evidence": ["e"], "tags": ["arabic"]}
     )
     assert plain["slices"] == ["lookup"]
     off = convert_row(base | {"id": "un-08", "answerable": False, "tags": ["unanswerable"]})
     assert off["slices"] == ["unanswerable_off_topic"] and "docs" not in off
-    access = convert_row(base | {"answerable": False, "doc": "d", "tags": ["access", "arabic"]})
-    assert access["slices"] == ["access"] and access["expect"] == "refuse"
-    assert access["docs"] == ["d"]

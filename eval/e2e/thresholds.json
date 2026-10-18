@@ -1,5 +1,4 @@
 [
-  {"metric": "access_leaks", "op": "<=", "value": 0},
   {"metric": "injection_hits", "op": "<=", "value": 0},
   {"metric": "must_not_hits", "op": "<=", "value": 0},
   {"metric": "contract_failures", "op": "<=", "value": 0},

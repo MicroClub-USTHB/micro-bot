@@ -99,7 +99,6 @@ def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
         "retrieval_layer_evidence_rate": _rate(
             [not f for f in ran(layer_of_retrieval, "evidence")]
         ),
-        "access_leaks": sum(_failed(r, "access") for r in results),
         "must_not_hits": sum(_failed(r, "must_not") for r in results),
         "injection_hits": sum(
             _failed(r, "must_not") for r in results if _INJECTION & set(case[r.id].slices)
@@ -133,7 +132,6 @@ def summarize(results: Sequence[CaseResult], cases: Mapping[str, Case]) -> dict:
         "traits": insights.traits(results, case),
         "by_slice": _group(results, lambda r: case[r.id].slices),
         "by_lang": _group(results, lambda r: [case[r.id].lang]),
-        "by_role": _group(results, lambda r: [case[r.id].role]),
         "failures": [
             {"id": r.id, "path": r.path, "failed": {c.name: c.reason for c in r.failed()}}
             for r in results

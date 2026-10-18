@@ -7,20 +7,20 @@ from tests.pipeline_helpers import make_pipeline
 from tests.retrieval_helpers import make_retriever
 
 DOCS = {
-    "fees": ("# Cotisation\n\nLa cotisation annuelle est de 1500 dinars.", "public"),
-    "vote": ("# Élections\n\nLes élections du bureau ont lieu en juin.", "public"),
-    "board": ("# Bureau\n\nLe procès-verbal secret du bureau sur les élections.", "members"),
+    "fees": "# Cotisation\n\nLa cotisation annuelle est de 1500 dinars.",
+    "vote": "# Élections\n\nLes élections du bureau ont lieu en juin.",
+    "board": "# Bureau\n\nLe procès-verbal secret du bureau sur les élections.",
 }
 QUESTIONS = [
-    {"id": "q1", "question": "cotisation annuelle", "lang": "fr", "role": "member",
+    {"id": "q1", "question": "cotisation annuelle", "lang": "fr",
      "answerable": True, "doc": "fees", "evidence": ["1500 dinars"], "tags": ["french"]},
-    {"id": "q2", "question": "et en juin ?", "lang": "fr", "role": "public", "answerable": True,
+    {"id": "q2", "question": "et en juin ?", "lang": "fr", "answerable": True,
      "doc": "vote", "evidence": ["ont lieu en juin"], "tags": ["french", "follow_up"],
      "history": [{"user_message": "élections du bureau", "assistant_message": "En juin."}]},
-    {"id": "q3", "question": "piscine municipale", "lang": "fr", "role": "member",
+    {"id": "q3", "question": "piscine municipale", "lang": "fr",
      "answerable": False, "tags": ["french", "unanswerable"]},
-    {"id": "q4", "question": "procès-verbal secret du bureau", "lang": "fr", "role": "public",
-     "answerable": False, "doc": "board", "tags": ["french", "access"]},
+    {"id": "q4", "question": "procès-verbal secret du bureau", "lang": "fr",
+     "answerable": False, "doc": "board", "tags": ["french"]},
 ]  # fmt: skip
 
 
@@ -29,10 +29,10 @@ async def setup(tmp_path):
     pipe = make_pipeline(tmp_path)
     await pipe.start()
     doc_ids = {}
-    for topic, (text, visibility) in DOCS.items():
+    for topic, text in DOCS.items():
         path = tmp_path / f"{topic}.md"
         path.write_text(text, encoding="utf-8")
-        doc_ids[topic] = (await pipe.ingest_file(path, path.name, visibility, topic=topic)).doc_id
+        doc_ids[topic] = (await pipe.ingest_file(path, path.name, topic=topic)).doc_id
     yield make_retriever(pipe), doc_ids
     await pipe.close()
 
@@ -53,7 +53,7 @@ async def test_ingest_corpus_uses_the_text_and_the_manifest_title(tmp_path):
     corpus_dir, work = tmp_path / "corpus", tmp_path / "work"
     corpus_dir.mkdir()
     (corpus_dir / "dump.md").write_text(DUMP, encoding="utf-8")
-    manifest = [{"file": "dump.md", "topic": "real", "visibility": "public", "title": "Real doc"}]
+    manifest = [{"file": "dump.md", "topic": "real", "title": "Real doc"}]
     pipe = make_pipeline(tmp_path / "pipe")
     await pipe.start()
     doc_ids = await run_eval.ingest_corpus(pipe, manifest, corpus_dir, work)
@@ -70,7 +70,7 @@ async def test_rows_have_ranks_scores_and_timings(setup):
     assert by_id["q1"]["rank_reranked"] == 1 and by_id["q1"]["rank_fused"] is not None
     assert by_id["q2"]["history_used"] and by_id["q2"]["rank_reranked"] == 1
     assert by_id["q3"]["rank_reranked"] is None and by_id["q3"]["top_score"] < 1
-    assert by_id["q4"]["visibilities"] == ["public"]  # the members doc never reached public
+    assert "role" not in by_id["q4"] and "visibilities" not in by_id["q4"]
     assert all(r["ms_total"] >= r["ms_rerank"] >= 0 for r in rows)
 
 
@@ -80,7 +80,7 @@ async def test_summary_and_result_file(setup, tmp_path):
     summary = run_eval.summarize(rows, max_false_refusal=0.0)
     assert summary["overall"]["n"] == 2 and summary["overall"]["hit@5_reranked"] == 1.0
     assert set(summary["by_tag"]) == {"french", "follow_up"}
-    assert summary["access_violations"] == 0
+    assert "access_violations" not in summary
     assert summary["suggested_gate_threshold"] is not None
     assert set(summary["latency_ms"]) == set(run_eval.STAGES)
     gate = summary["gate_scores"]

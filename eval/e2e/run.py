@@ -147,9 +147,7 @@ def write(args, results, by_id, ctx, info, extra) -> int:
     for r in results:  # system probes get a synthetic case so they group by suite
         by_id.setdefault(
             r.id,
-            Case.model_construct(
-                id=r.id, question="", lang="en", role="public", expect="any", slices=[r.layer]
-            ),
+            Case.model_construct(id=r.id, question="", lang="en", expect="any", slices=[r.layer]),
         )
     summary = report.summarize(results, by_id)
     if getattr(args, "watch", None):

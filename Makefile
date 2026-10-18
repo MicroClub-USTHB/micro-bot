@@ -4,12 +4,11 @@ SHELL := /bin/bash
 
 API_URL ?= http://localhost:8000
 DOCS    ?= data/docs
-VIS     ?= public
 Q       ?= What is Micro Club?
 FAST_TESTS  := not ocr and not tokenizer and not embedder and not reranker
 MODEL_TESTS := ocr or tokenizer or embedder or reranker
 
-.PHONY: help dev env install up down restart logs ps health ingest ask docs models \
+.PHONY: help dev env install up down restart logs ps health ingest ask stream docs models \
         test test-models lint format check eval clean reset
 
 help: ## List the commands
@@ -43,12 +42,18 @@ health: ## Wait for the API and print its health
 
 ## --- Use --------------------------------------------------------------------
 
-ingest: ## Upload a folder: make ingest DOCS=data/docs VIS=public
-	@API_URL=$(API_URL) scripts/ingest.sh $(DOCS) $(VIS)
+ingest: ## Upload a folder: make ingest DOCS=data/docs
+	@API_URL=$(API_URL) scripts/ingest.sh $(DOCS)
 
 ask: ## Ask a question: make ask Q="Quand le club a-t-il été fondé ?"
 	@curl -sS $(API_URL)/api/v1/chat -H 'content-type: application/json' \
+		-H "Authorization: Bearer $$(grep '^API_KEY=' .env | cut -d= -f2-)" \
 		-d "$$(python3 -c 'import json,sys; print(json.dumps({"message": sys.argv[1]}))' "$(Q)")" | python3 -m json.tool
+
+stream: ## Stream an answer (SSE): make stream Q="..."
+	@curl -sSN $(API_URL)/api/v1/chat -H 'content-type: application/json' \
+		-H "Authorization: Bearer $$(grep '^API_KEY=' .env | cut -d= -f2-)" \
+		-d "$$(python3 -c 'import json,sys; print(json.dumps({"message": sys.argv[1], "stream": True}))' "$(Q)")"
 
 docs: ## List indexed documents
 	@curl -sS $(API_URL)/api/v1/documents -H "X-Admin-Key: $$(grep '^ADMIN_API_KEY=' .env | cut -d= -f2-)" | python3 -m json.tool

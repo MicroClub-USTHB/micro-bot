@@ -1,4 +1,4 @@
-"""In-process and HTTP drivers on fakes: access, gate text, follow-ups, documents (Req 5, 8)."""
+"""In-process and HTTP drivers on fakes: gate text, follow-ups, documents (Req 5, 8)."""
 
 import asyncio
 from collections import defaultdict
@@ -8,7 +8,7 @@ import pytest
 
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.drivers import HttpDriver, Source
-from eval.e2e.score import GATE_REFUSAL, score_chat
+from eval.e2e.score import GATE_REFUSAL
 from micro_bot.messages import UNAVAILABLE
 from tests.e2e_helpers import DOCS, make_driver
 
@@ -21,28 +21,26 @@ async def driver(tmp_path):
     await drv.pipe.close()
 
 
-def _case(question, role="member", **kw):
-    return Case(id="t", question=question, lang="en", role=role, expect="any", **kw)
+def _case(question, **kw):
+    return Case(id="t", question=question, lang="en", expect="any", **kw)
 
 
-async def test_member_reaches_members_document_public_does_not(driver):
-    question = "When is the winter retreat in Tikjda?"
-    member = await driver.chat(_case(question))
-    assert member.status == 200 and member.body["sources"]
-    public_case = _case(question, role="public", must_not=["CANARY-0001", "Tikjda"])
-    public = await driver.chat(public_case)
-    result = score_chat(public_case, public, driver.corpus, driver.topics)
-    assert result.passed, result.failed()
+async def test_chat_needs_the_api_key(driver):
+    body = {"message": "When is the winter retreat in Tikjda?"}
+    denied = await driver.request("POST", "/api/v1/chat", json=body)
+    assert denied.status_code == 401
+    observation = await driver.chat(_case(body["message"]))
+    assert observation.status == 200 and observation.body["sources"]
 
 
 async def test_gate_refusal_text_matches_the_app(driver):
-    observation = await driver.chat(_case("Quantum chromodynamics lattice?", role="public"))
+    observation = await driver.chat(_case("Quantum chromodynamics lattice?"))
     assert observation.body["answer"] == GATE_REFUSAL
     assert observation.body["usage"]["llm_calls"] == 0
 
 
 async def test_generator_failure_falls_back_with_one_call(driver):
-    observation = await driver.chat(_case("Python workshop Saturday room", role="public"))
+    observation = await driver.chat(_case("Python workshop Saturday room"))
     assert observation.body["usage"]["llm_calls"] == 1
     body = observation.body  # fallback: a notice, the passage in the sources, not grounded
     assert body["answer"] == UNAVAILABLE["en"] and body["grounded"] is False
@@ -74,12 +72,12 @@ async def test_http_driver_paces_and_uploads_with_eval_topics(tmp_path, monkeypa
             return httpx.Response(200, json={"doc_id": "d1"})
         return httpx.Response(429, json={"error": {"code": "rate_limited", "message": "slow"}})
 
-    monkeypatch.setenv("MEMBER_TOKEN", "m-token")
+    monkeypatch.setenv("API_KEY", "m-token")
     drv = HttpDriver("http://app", requests_per_window=1000, window_s=1)
     drv.client = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://app")
     path = tmp_path / "a.md"
     path.write_text("# A\n\ntext")
-    doc = CorpusDoc(file="a.md", topic="rules", title="Rules", visibility="public")
+    doc = CorpusDoc(file="a.md", topic="rules", title="Rules")
     assert await drv.setup([Source(doc, path)]) == {"d1": "rules"}
     assert b'name="topic"\r\n\r\neval-rules' in seen[0].content
     observation = await drv.chat(_case("q"))
@@ -158,6 +156,6 @@ async def test_pacing_never_has_two_tasks_waiting_for_the_same_slot(monkeypatch)
 async def test_driver_leaves_the_environment_alone(driver):
     import os
 
-    assert os.environ.get("MEMBER_TOKEN") != driver.member_token  # tokens live in the app settings
+    assert os.environ.get("API_KEY") != driver.api_key  # tokens live in the app settings
     response = await driver.request("GET", "/api/v1/documents", headers=driver.headers(admin=True))
     assert response.status_code == 200

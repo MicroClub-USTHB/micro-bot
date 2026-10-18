@@ -19,14 +19,14 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   - `text/lang.py: detect_language(text) -> Literal["ar","fr","en"]` (nisbenz, implemented)
   - `ingest/pipeline.py` (nisbenz, implemented as `async def`; the async form, the keyword-only
     additions and the extra functions are **pending eequaled's approval**):
-    `ingest_file(path, filename, visibility, *, title=None, topic=None) -> IngestResult`,
-    `ingest_url(url, visibility, *, title=None, topic=None) -> IngestResult`,
+    `ingest_file(path, filename, *, title=None, topic=None) -> IngestResult`,
+    `ingest_url(url, *, title=None, topic=None) -> IngestResult`,
     `list_documents() -> list[DocumentInfo]`, `delete_document(doc_id) -> bool`,
     `corpus_version() -> str`, `init_pipeline()` / `close_pipeline()` for the app lifespan.
     Failures raise typed `IngestError`s (new: `index_unavailable` 503, `embedding_error`, startup
     `embedder_config_error` / `index_stale`).
 - `doc_id` is derived in `pipeline.py` from the document `topic` (e.g. `uuid5(NAMESPACE, topic)`),
-  not in preprocessing. Same topic + same sha256 = `duplicate` (+ new visibility = `updated`, new
+  not in preprocessing. Same topic + same sha256 = `duplicate` (+ new expiry = `updated`, new
   hash = `replaced`). Default topic: filename stem (files) or final URL without query (web).
 - `INGEST_`-prefixed `IngestSettings` is a separate settings class so neither side edits the other's
   `config.py` fields.
@@ -34,15 +34,15 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   (`IngestResult`, `Chunk`, `Retrieval`, `DocInfo`; changing one needs the other's PR approval)
   and the backend protocols in `main.py`, which nisbenz implements and injects into
   `ApplicationState` (now wired, see below):
-  - `DocumentBackend`: `ingest_file(file: UploadFile, *, visibility, topic, expires_at) ->
+  - `DocumentBackend`: `ingest_file(file: UploadFile, *, topic, expires_at) ->
     schemas.IngestResult` (status `indexed` / `duplicate` / `failed`, `error` = our error code),
     `list_documents() -> list[DocInfo]` (`status`, `created_at` str, `topic`, `expires_at`),
     `delete_document(doc_id) -> bool`, `corpus_version() -> str`.
-  - `RetrievalBackend`: `retrieve(query, role, history: list[Turn]) -> Retrieval(chunks:
+  - `RetrievalBackend`: `retrieve(query, history: list[Turn]) -> Retrieval(chunks:
     list[Chunk(chunk_id, doc_id, title, text, score)], top_score, decision: "answer" | "refuse")`.
   - `ReadinessProbe.check() -> bool` for the document store (health).
   - Bad uploads: **200 path with `status="failed"`** and `error=<code>`; `api/documents.py` turns it
-    into the JSON error. Roles are `public` / `member` (singular); visibilities `public` / `members`.
+    into the JSON error.
 - **Wired (eequaled's PR #11, on `dev`):** `main.py` has `RealDocumentBackend` (adapter over the
   pipeline functions: `created`/`replaced`/`updated` -> `indexed`, `topic` read from the docstore),
   `PipelineProbe`, `RealLanguageDetector`, and `default_state()` uses them. The lifespan calls
@@ -58,7 +58,7 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   starting with `NOT_FOUND` (not grounded, no sources; no refusal-phrase matching); the prompt shows passage labels only (no doc_id) and asks for `[S1]`;
   `answer.build` also accepts a bare number, `[doc_id: X]`, `[X, Y]` and `【】` / `［］`, and
   rewrites citations as the document title, `[Title]` / `[Title A; Title B]`, written by the
-  app, not the model (one source per document, snippet from its first cited chunk); snippets come from `text/snippet.best_snippet`; `get_role` / `require_admin` read the app's settings; `config.py`
+  app, not the model (one source per document, snippet from its first cited chunk); snippets come from `text/snippet.best_snippet`; `require_api_key` / `require_admin` read the app's settings; `config.py`
   retrieval defaults equal `RetrievalSettings`; `expires_at` is parsed (ISO 8601, a bare date
   ends that day UTC), stored, listed, and expired documents are filtered in every query. Routes,
   params and response shapes are unchanged (a blank message gets a 200 prompt, delete of an
@@ -102,7 +102,7 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   `https://openrouter.ai/api/v1`. **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
   (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
-  sparse (fastembed). Visibility filter (`public` / `members`) goes **inside the query**.
+  sparse (fastembed). The expiry filter goes **inside the query**.
 - **Embedder (default since 2026-10-13):** `BAAI/bge-m3` from `onnx-community/bge-m3-ONNX`
   (`onnx/model_int8.onnx`, 568 MB), 1024 dims, no query prefix, CLS pooling + L2 normalize, via
   onnxruntime + tokenizers (**no sentence-transformers/PyTorch**). Chunks are still sized in
@@ -152,7 +152,7 @@ uv run python -m eval.e2e.run --suite all --label <name>   # e2e eval, in-proces
 uv run python -m eval.e2e.run --suite quality --mode record --max-llm-calls 10   # spends LLM quota
 uv run python -m eval.e2e.compare <a.json> <b.json>   # metric deltas, regressions
 uv run python scripts/build_eval_corpus.py   # rebuild data/parsed from eval/corpus_sources.txt
-uv run python scripts/ingest_folder.py <dir> --visibility public   # needs Qdrant
+uv run python scripts/ingest_folder.py <dir>   # needs Qdrant
 uv run python scripts/reindex.py   # rebuild after embedder/chunking changes
 cp .env.example .env && docker compose up -d --build
 ```
@@ -162,9 +162,9 @@ Arabic scans (`tests/fixtures/arabic_scan.pdf`, `arabic_photo.jpg`) skip until t
 
 ## Data preprocessing (implemented on `origin/dev`)
 
-Entry points (async): `preprocess_file(data, filename, *, visibility, title=None)` and
-`preprocess_url(url, *, visibility, title=None)` -> frozen `ParsedDocument` (`content_hash`, `title`,
-`source`, `source_type`, `mime_type`, `visibility`, `language`, `text`, `sections`, `ocr_used`,
+Entry points (async): `preprocess_file(data, filename, *, title=None)` and
+`preprocess_url(url, *, title=None)` -> frozen `ParsedDocument` (`content_hash`, `title`,
+`source`, `source_type`, `mime_type`, `language`, `text`, `sections`, `ocr_used`,
 `parser`, `page_count`, `warnings`, `created_at`). Flow: sniff type (magic bytes) -> extract (xberg /
 text decode / trafilatura) -> sections -> normalize -> language -> assemble.
 
@@ -227,13 +227,13 @@ bite:
 
 ## Retrieval (implemented, `specs/retrieval/`)
 
-`HybridRetriever.retrieve(query, role, history)` -> `schemas.Retrieval`: follow-up query ->
+`HybridRetriever.retrieve(query, history)` -> `schemas.Retrieval`: follow-up query ->
 dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe -> rerank (top 10) ->
 `RERANK_TOP_N` -> optional neighbours -> gate. Build it with `HybridRetriever.from_pipeline(pipeline)`
 (shares encoders, client, alias). Rules that bite:
 
-- **Visibility filter on every level** (each prefetch and the fused query). Role `public` ->
-  `visibility == "public"`, `member` -> both; unknown role raises `ValueError`.
+- **Everything is public** (since 2026-10-18): no roles, no visibility. `live_filter` (expired
+  documents out) is set on every level (each prefetch and the fused query).
 - **Rerank one pair per `session.run`.** int8 scores moved by up to 1.8 logits in a padded batch,
   and batches were slower. gte's `tokenizer.json` pads to 512: `no_padding()`. Truncate the passage
   only (`only_second`); a query too long for that falls back to `longest_first`.
@@ -267,12 +267,12 @@ dense + BM25 encode -> one Qdrant `query_points` (two prefetches, RRF) -> dedupe
   punctuation always collapsed; `RETRIEVAL_QUERY_FIX_CASE`, `RETRIEVAL_QUERY_STRIP_HARAKAT`
   on (`eval.bench_robust`: noise flips 9.6% -> 6.6%, clean questions unchanged).
 - **Cross-language arm:** `RETRIEVAL_CROSS_LANG_PREFETCH` (default 20, 0 = off) adds a third dense prefetch over
-  chunks whose `language` differs from the question's (`detect_language`), with the role filter.
+  chunks whose `language` differs from the question's (`detect_language`), with the expiry filter.
 - Settings: `RetrievalSettings` (`RETRIEVAL_*` + shared `RETRIEVE_TOP_K`, `RERANK_TOP_N`,
   `GATE_THRESHOLD`, `RERANK_MODEL`); `config.py` untouched. Qdrant's own RRF default `k` is 2; ours
   is a setting.
 - **Eval:** `eval/questions.jsonl` (128 questions: Arabic, darija, arabizi, cross-lingual both
-  ways, unanswerable, follow-ups, access), `eval/corpus.json` (VP candidacy members-only, the rest public), labels =
+  ways, unanswerable, follow-ups), `eval/corpus.json`, labels =
   doc topic + verbatim evidence (folded), so they survive rechunking. Results in `eval/results/`.
 - Log: one `retrieval_done` event (counts, top_score, decision, per-stage ms), never the query.
 
@@ -287,13 +287,12 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
   every document that holds the answer. Evidence is verbatim (folded) and checked against the
   documents by `tests/test_e2e_cases_corpus.py` (skips without `data/`). Case ids are unique
   across both case files.
-- **Leak detection is string match:** members-only adversarial docs carry a canary (added to every
-  public case's `must_not`), injection docs a marker (added to every case). Canaries may never be in
-  an answer or snippet; markers only in the answer (citing the injection doc is fine).
+- **Injection detection is string match:** injection docs carry a marker (added to every case's
+  `must_not`); markers may never be in the answer (citing the injection doc is fine).
 - **Drivers** speak the public API. Each chat request sends a fresh `eval-<uuid>`
   `conversation_id` so it starts a new conversation with no history, without changing the API;
-  follow-ups need the in-process driver (it seeds the conversation store). `get_role` reads the global settings, so
-  the in-process driver sets `MEMBER_TOKEN`/`ADMIN_API_KEY` in the environment until `close()`.
+  follow-ups need the in-process driver (it seeds the conversation store). The in-process driver passes `api_key` /
+  `admin_api_key` in the app's own settings.
 - **LLM budget:** the in-process app runs `RecordingGenerator` (budget `--max-llm-calls`, record /
   replay by prompt hash with the date masked). Once spent, fallback answers are `not_run`, not
   scored. A run where answerable cases were not answered by the LLM says "generation NOT
@@ -312,9 +311,14 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 ## API contract
 
 - Endpoints: `POST /api/v1/chat`, `GET /api/v1/health`, `POST/PUT/GET /api/v1/documents` (PUT = replace
-  by `replaces`=existing topic or file name, 404 if unknown; added 2026-10-16),
-  `DELETE /api/v1/documents/{doc_id}`, `POST /api/v1/feedback`.
-- Auth: members `Authorization: Bearer <MEMBER_TOKEN>`; admins `X-Admin-Key: <ADMIN_API_KEY>`.
+  by `replaces`=existing topic or file name, 404 if unknown), `GET/PUT/DELETE
+  /api/v1/documents/{doc_id}` (GET/PUT 404 if unknown), `POST /api/v1/feedback`.
+- Auth (2026-10-18): no public/members split. Chat and feedback need `Authorization: Bearer
+  <API_KEY>` (401); document CRUD needs `X-Admin-Key: <ADMIN_API_KEY>` (403).
+- Chat `stream: true` (default false): SSE `meta` -> `delta`* -> `done` (the full chat response,
+  authoritative) or `error`. `answer.StreamFilter` hides `NOT_FOUND`, rewrites citations live and
+  holds back prompt leaks; `OpenRouterClient.stream` uses `AsyncOpenAI` with
+  `stream_options.include_usage`; a generator without `stream` sends one delta.
 - Chat response: `answer`, `conversation_id`, `grounded`, `sources[{doc_id, title, snippet}]`,
   `usage{llm_calls, prompt_tokens, completion_tokens}`, `latency_ms` (integer).
   `message` longer than 2000 chars returns 422.
@@ -336,7 +340,7 @@ scripts/        download_models.py, ingest_folder.py, reindex.py
 eval/           README.md, questions.jsonl, corpus.json, metrics.py, run_eval.py, bench_models.py,
                 bench_report.py, bench_rerank.py, results/
 eval/e2e/       cases*.jsonl, corpus/, cases.py, score.py, insights.py, drivers.py, suites.py, run.py, …
-tests/          conftest.py, test_api_contract.py, test_access.py, test_ingest.py, test_gate.py
+tests/          conftest.py, test_api_contract.py, test_chat_stream.py, test_ingest.py, test_gate.py
 ```
 
 Built: preprocessing (below) and chunking (`ingest/chunk.py`, `ingest/tokens.py`,

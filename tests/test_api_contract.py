@@ -1,5 +1,5 @@
 from collections.abc import Generator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
@@ -16,18 +16,16 @@ from micro_bot.main import (
     create_app,
 )
 from micro_bot.messages import NO_ANSWER, UNAVAILABLE
-from micro_bot.schemas import Chunk, Retrieval, Role
+from micro_bot.schemas import Chunk, Retrieval
 
 
 @dataclass
 class FakeRetrieval:
     result: Retrieval
     calls: int = 0
-    roles: list[Role] = field(default_factory=list)
 
-    async def retrieve(self, query: str, role: Role, history: object, rewrite=None) -> Retrieval:
+    async def retrieve(self, query: str, history: object, *, rewrite=None) -> Retrieval:
         self.calls += 1
-        self.roles.append(role)
         return self.result
 
 
@@ -71,7 +69,7 @@ def build_client(
 ) -> TestClient:
     settings = Settings(
         data_dir=tmp_path,
-        member_token="member-secret",
+        api_key="api-secret",
         chat_rate_limit_requests=rate_limit,
     )
     state = ApplicationState(
@@ -87,7 +85,11 @@ def build_client(
         ),
         language_detector=detector or FakeLanguageDetector(),
     )
-    return TestClient(create_app(settings=settings, state=state), raise_server_exceptions=False)
+    return TestClient(
+        create_app(settings=settings, state=state),
+        raise_server_exceptions=False,
+        headers={"Authorization": "Bearer api-secret"},
+    )
 
 
 @pytest.fixture
@@ -250,13 +252,13 @@ def test_a_reply_that_repeats_the_prompt_is_withheld(tmp_path: Path) -> None:
 
 
 def test_auth_reads_each_apps_own_settings(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.delenv("MEMBER_TOKEN", raising=False)
+    monkeypatch.delenv("API_KEY", raising=False)
     get_settings.cache_clear()
     with build_client(tmp_path / "a") as first:
         ok = first.post(
             "/api/v1/chat",
             json={"message": "hi"},
-            headers={"Authorization": "Bearer member-secret"},
+            headers={"Authorization": "Bearer api-secret"},
         )
         bad = first.post(
             "/api/v1/chat", json={"message": "hi"}, headers={"Authorization": "Bearer other"}

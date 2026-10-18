@@ -20,7 +20,6 @@ def _doc(**overrides) -> ParsedDocument:
         "source": "rules.pdf",
         "source_type": "file",
         "mime_type": "application/pdf",
-        "visibility": "public",
         "language": "fr",
         "text": "Bonjour",
         "sections": [Section(text="Bonjour", heading="Intro", page=1, language="fr")],
@@ -31,17 +30,6 @@ def _doc(**overrides) -> ParsedDocument:
     }
     fields.update(overrides)
     return ParsedDocument(**fields)
-
-
-@pytest.mark.parametrize("visibility", ["public", "members"])
-def test_valid_visibility_is_kept(visibility):
-    assert _doc(visibility=visibility).visibility == visibility
-
-
-@pytest.mark.parametrize("visibility", ["admin", "member", "", "PUBLIC"])
-def test_invalid_visibility_rejected(visibility):
-    with pytest.raises(ValidationError):
-        _doc(visibility=visibility)
 
 
 def test_invalid_source_type_rejected():
@@ -110,7 +98,6 @@ def _result(**overrides) -> IngestResult:
         "title": "Club rules",
         "source": "rules.pdf",
         "source_type": "file",
-        "visibility": "public",
         "language": "fr",
         "chunk_count": 3,
         "content_hash": "ab" * 32,
@@ -140,7 +127,6 @@ def test_document_info_is_frozen():
         title="t",
         source="s",
         source_type="web",
-        visibility="members",
         language="ar",
         chunk_count=1,
         content_hash="cd" * 32,

@@ -32,8 +32,6 @@ from micro_bot.schemas import (
     DocInfo,
     IngestResult,
     Retrieval,
-    Role,
-    Visibility,
 )
 from micro_bot.text.lang import detect_language
 
@@ -45,12 +43,13 @@ class DocumentBackend(Protocol):
         self,
         file: UploadFile,
         *,
-        visibility: Visibility,
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult: ...
 
     async def list_documents(self) -> list[DocInfo]: ...
+
+    async def get_document(self, doc_id: str) -> DocInfo | None: ...
 
     async def delete_document(self, doc_id: str) -> bool: ...
 
@@ -63,7 +62,7 @@ class ReadinessProbe(Protocol):
 
 class RetrievalBackend(Protocol):
     async def retrieve(
-        self, query: str, role: Role, history: list[object], *, rewrite: QueryRewrite | None = None
+        self, query: str, history: list[object], *, rewrite: QueryRewrite | None = None
     ) -> Retrieval: ...
 
 
@@ -93,7 +92,6 @@ class FakeDocumentBackend:
         self,
         file: UploadFile,
         *,
-        visibility: Visibility,
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
@@ -116,7 +114,6 @@ class FakeDocumentBackend:
         self.documents[doc_id] = DocInfo(
             doc_id=doc_id,
             title=title,
-            visibility=visibility,
             status="indexed",
             chunk_count=1,
             created_at=datetime.now(UTC).isoformat(),
@@ -129,6 +126,9 @@ class FakeDocumentBackend:
 
     async def list_documents(self) -> list[DocInfo]:
         return list(self.documents.values())
+
+    async def get_document(self, doc_id: str) -> DocInfo | None:
+        return self.documents.get(doc_id)
 
     async def delete_document(self, doc_id: str) -> bool:
         if doc_id not in self.documents:
@@ -149,7 +149,7 @@ class FakeRetrievalBackend:
     )
 
     async def retrieve(
-        self, query: str, role: Role, history: list[object], *, rewrite: QueryRewrite | None = None
+        self, query: str, history: list[object], *, rewrite: QueryRewrite | None = None
     ) -> Retrieval:
         return self.retrieval
 
@@ -181,6 +181,9 @@ class OpenRouterGenerationService:
     async def generate(self, system: str, user: str) -> GenerationResult:
         return await asyncio.to_thread(self.client.generate, system, user)
 
+    def stream(self, system: str, user: str) -> AsyncIterator[str | GenerationResult]:
+        return self.client.stream(system, user)
+
 
 _INGEST_STATUS_MAP = {
     "created": "indexed",
@@ -197,7 +200,6 @@ class RealDocumentBackend:
         self,
         file: UploadFile,
         *,
-        visibility: Visibility,
         topic: str | None,
         expires_at: str | None,
     ) -> IngestResult:
@@ -211,7 +213,6 @@ class RealDocumentBackend:
                 ingest_pipeline.ingest_file,
                 tmp_path,
                 file.filename or "document",
-                visibility,
                 topic=topic,
                 expires_at=expiry,
             )
@@ -226,6 +227,9 @@ class RealDocumentBackend:
         stored, _ = await pipeline.docstore.load_all()
         topics = {item.doc_id: item.topic for item in stored}
         return [_map_doc_info(d, topics.get(d.doc_id)) for d in docs]
+
+    async def get_document(self, doc_id: str) -> DocInfo | None:
+        return next((d for d in await self.list_documents() if d.doc_id == doc_id), None)
 
     async def delete_document(self, doc_id: str) -> bool:
         return await _run_ingest(ingest_pipeline.delete_document, doc_id)
@@ -287,7 +291,6 @@ def _map_doc_info(doc: IngestDocumentInfo, topic: str | None = None) -> DocInfo:
     return DocInfo(
         doc_id=doc.doc_id,
         title=doc.title,
-        visibility=doc.visibility,
         status="indexed",
         chunk_count=doc.chunk_count,
         created_at=doc.ingested_at.isoformat(),

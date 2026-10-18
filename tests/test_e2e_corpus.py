@@ -1,4 +1,4 @@
-"""The adversarial eval corpus (Req 2): manifest, canaries and injection markers."""
+"""The adversarial eval corpus (Req 2): manifest and injection markers."""
 
 from eval.e2e.cases import load_corpus
 from tests.conftest import REPO
@@ -14,18 +14,10 @@ def test_topics_are_marked_and_do_not_clash_with_the_real_corpus():
     assert not set(DOCS) & set(real)
 
 
-def test_every_members_document_has_a_canary_found_only_in_it():
-    for topic, doc in DOCS.items():
-        assert (doc.canary is not None) == (doc.visibility == "members"), topic
-        if doc.canary:
-            assert [t for t, text in TEXTS.items() if doc.canary in text] == [topic]
-
-
 def test_injection_markers_are_only_in_their_document():
     markers = {t: d.injection_marker for t, d in DOCS.items() if d.injection_marker}
     assert len(markers) >= 2
     for topic, marker in markers.items():
-        assert DOCS[topic].visibility == "public"
         assert [t for t, text in TEXTS.items() if marker in text] == [topic]
 
 

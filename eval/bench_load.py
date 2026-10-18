@@ -47,7 +47,7 @@ async def quality(retriever, questions, doc_ids, cuts) -> dict[int, dict[str, fl
         if not q["answerable"]:
             continue
         query, _ = retriever.search_query(q["question"], [])
-        candidates = await retriever.candidates(query, q["role"])
+        candidates = await retriever.candidates(query)
         scored = dict(
             (c.point_id, s) for c, s in await retriever.rerank(query, candidates[: max(cuts)])
         )
@@ -70,7 +70,7 @@ async def load(retriever, questions, users: int, seconds: float) -> dict[str, fl
         while time.monotonic() < stop:
             q = questions[i % len(questions)]
             start = time.perf_counter()
-            await retriever.retrieve(q["question"], q["role"], [])
+            await retriever.retrieve(q["question"], [])
             latencies.append((time.perf_counter() - start) * 1000)
             i += users
 
