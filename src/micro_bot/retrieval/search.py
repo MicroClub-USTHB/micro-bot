@@ -1,6 +1,6 @@
-"""Hybrid dense + BM25 search in Qdrant with the visibility filter inside the query (Req 2, 3, 7).
+"""Hybrid dense + BM25 search in Qdrant with the expiry filter inside the query (Req 2, 3, 7).
 
-One ``query_points`` request: a dense and a BM25 prefetch fused server-side. The role's filter
+One ``query_points`` request: a dense and a BM25 prefetch fused server-side. The filter
 is set on each prefetch and on the fused query (the server would push the top-level one down
 anyway, measured on 1.19.2; being explicit costs nothing).
 """
@@ -15,7 +15,6 @@ from qdrant_client import models as qm
 
 from micro_bot.retrieval.settings import RetrievalSettings
 from micro_bot.retrieval.store import DENSE, SPARSE, guard
-from micro_bot.schemas import Role
 
 _PAYLOAD = [
     "doc_id",
@@ -24,7 +23,6 @@ _PAYLOAD = [
     "text",
     "title",
     "heading_path",
-    "visibility",
     "ingested_at",
     "instruction_like",
     "language",
@@ -40,7 +38,6 @@ class Candidate:
     title: str
     heading_path: tuple[str, ...]
     text: str
-    visibility: str
     ingested_at: datetime
     fused_score: float
     fused_rank: int
@@ -58,7 +55,6 @@ class Candidate:
             title=p.get("title", ""),
             heading_path=tuple(p.get("heading_path") or ()),
             text=p["text"],
-            visibility=p["visibility"],
             ingested_at=datetime.fromisoformat(p["ingested_at"]),
             fused_score=float(getattr(point, "score", 0.0) or 0.0),
             fused_rank=rank,
@@ -67,15 +63,8 @@ class Candidate:
         )
 
 
-def visibility_filter(role: Role, now: float | None = None) -> qm.Filter:
-    """public sees ``public`` only; member sees ``public`` and ``members``. Either way, only
-    documents without ``expires_at`` or not yet expired (eval-fixes Req 13)."""
-    if role == "public":
-        match: qm.MatchValue | qm.MatchAny = qm.MatchValue(value="public")
-    elif role == "member":
-        match = qm.MatchAny(any=["public", "members"])
-    else:
-        raise ValueError(f"unknown role {role!r}")
+def live_filter(now: float | None = None) -> qm.Filter:
+    """Only documents without ``expires_at`` or not yet expired (eval-fixes Req 13)."""
     current = time.time() if now is None else now
     not_expired = qm.Filter(
         should=[
@@ -84,7 +73,7 @@ def visibility_filter(role: Role, now: float | None = None) -> qm.Filter:
             qm.FieldCondition(key="expires_at", range=qm.Range(gt=current)),
         ]
     )
-    return qm.Filter(must=[qm.FieldCondition(key="visibility", match=match), not_expired])
+    return not_expired
 
 
 def dedupe(candidates: Sequence[Candidate]) -> list[Candidate]:
@@ -124,12 +113,11 @@ class HybridSearch:
         self,
         dense: list[float],
         sparse: qm.SparseVector,
-        role: Role,
         *,
         query_language: str | None = None,
         extra_dense: Sequence[tuple[list[float], str | None]] = (),
     ) -> list[Candidate]:
-        """Fused candidates (at most ``top_k``) visible to ``role``, deduplicated.
+        """Fused candidates (at most ``top_k``) of live documents, deduplicated.
 
         With ``RETRIEVAL_CROSS_LANG_PREFETCH`` > 0 and the query's language, a third dense arm
         brings chunks in *other* languages: both main arms favour same-language chunks, so an
@@ -137,7 +125,7 @@ class HybridSearch:
         ``extra_dense`` adds one dense arm per rewrite text (query-rewrite Req 2.2), over the
         chunks of the given language, or all chunks for None.
         """
-        flt = visibility_filter(role)
+        flt = live_filter()
         limit = self.settings.prefetch_limit
         prefetch = [
             qm.Prefetch(query=dense, using=DENSE, limit=limit, filter=flt),
@@ -170,10 +158,8 @@ class HybridSearch:
             )
         return dedupe([Candidate.from_point(p, rank) for rank, p in enumerate(response.points)])
 
-    async def neighbours(
-        self, hits: Sequence[Candidate], role: Role
-    ) -> dict[tuple[str, str, int], str]:
-        """Text of the chunks at ``index ± 1`` of each hit, same document version, same role."""
+    async def neighbours(self, hits: Sequence[Candidate]) -> dict[tuple[str, str, int], str]:
+        """Text of the chunks at ``index ± 1`` of each hit, same document version."""
         if not hits:
             return {}
         wanted = [
@@ -190,7 +176,7 @@ class HybridSearch:
             )
             for h in hits
         ]
-        flt = qm.Filter(must=[visibility_filter(role)], should=wanted)
+        flt = qm.Filter(must=[live_filter()], should=wanted)
         async with guard("neighbours"):
             points, _ = await self.client.scroll(
                 self.alias,

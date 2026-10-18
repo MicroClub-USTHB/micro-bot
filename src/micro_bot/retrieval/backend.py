@@ -21,9 +21,9 @@ from micro_bot.retrieval.embed import DenseEncoder, SparseEncoder
 from micro_bot.retrieval.gate import decide
 from micro_bot.retrieval.query import build_search_query, normalize_query
 from micro_bot.retrieval.rerank import Reranker, get_reranker, passage
-from micro_bot.retrieval.search import Candidate, HybridSearch, visibility_filter
+from micro_bot.retrieval.search import Candidate, HybridSearch
 from micro_bot.retrieval.settings import RetrievalSettings, get_retrieval_settings
-from micro_bot.schemas import Chunk, Retrieval, Role
+from micro_bot.schemas import Chunk, Retrieval
 from micro_bot.text.lang import detect_language
 from micro_bot.text.normalize import fold_for_search
 
@@ -115,11 +115,9 @@ class HybridRetriever:
         """Language for the cross-language arm, or None when that arm is off."""
         return detect_language(query) if self.settings.cross_lang_prefetch else None
 
-    async def candidates(self, query: str, role: Role) -> list[Candidate]:
+    async def candidates(self, query: str) -> list[Candidate]:
         dense, sparse = await self.encode(query)
-        return await self.search.search(
-            dense, sparse, role, query_language=self.query_language(query)
-        )
+        return await self.search.search(dense, sparse, query_language=self.query_language(query))
 
     def _normalize(self, text: str) -> str:
         s = self.settings
@@ -195,8 +193,8 @@ class HybridRetriever:
 
         return sorted(zip(candidates, scores, strict=True), key=rank)
 
-    async def _expand(self, hits: list[Candidate], role: Role) -> dict[str, str]:
-        found = await self.search.neighbours(hits, role)
+    async def _expand(self, hits: list[Candidate]) -> dict[str, str]:
+        found = await self.search.neighbours(hits)
         texts = {}
         for h in hits:
             before = found.get((h.doc_id, h.content_hash, h.index - 1))
@@ -205,7 +203,7 @@ class HybridRetriever:
         return texts
 
     async def rank(
-        self, query: str, role: Role, history: Sequence[object], rewrite: QueryRewrite | None
+        self, query: str, history: Sequence[object], rewrite: QueryRewrite | None
     ) -> Ranked | None:
         """Encode, search and rerank; None for an empty query (nothing to search)."""
         search_query, used_history = self.search_query(query, history)
@@ -222,7 +220,7 @@ class HybridRetriever:
         # A rewrite brings its own translations: the cross-language arm is for raw queries.
         language = None if rewrite else self.query_language(query)
         candidates = await self.search.search(
-            dense, sparse, role, query_language=language, extra_dense=extra
+            dense, sparse, query_language=language, extra_dense=extra
         )
         ms_search = _ms(step)
         step = time.perf_counter()
@@ -234,21 +232,19 @@ class HybridRetriever:
     async def retrieve(
         self,
         query: str,
-        role: Role,
         history: list[object],
         *,
         rewrite: QueryRewrite | None = None,
     ) -> Retrieval:
         s = self.settings
-        visibility_filter(role)  # unknown role: ValueError before any work
         started = time.perf_counter()
-        result = await self.rank(query, role, history, rewrite)
+        result = await self.rank(query, history, rewrite)
         if result is None:
             return Retrieval(chunks=[], top_score=0.0, decision="refuse")
         candidates, reranked = result.candidates, result.reranked
         ranked = reranked[: s.top_n]
         hits = [c for c, _ in ranked]
-        texts = await self._expand(hits, role) if s.neighbours and hits else {}
+        texts = await self._expand(hits) if s.neighbours and hits else {}
         # every reranked score: a penalised chunk pushed out of top_n still counts for the gate
         top_score, decision = decide([score for _, score in reranked], s.gate_threshold)
         chunks = [
@@ -263,7 +259,6 @@ class HybridRetriever:
         ]
         log.info(
             "retrieval_done",
-            role=role,
             candidates=len(candidates),
             returned=len(chunks),
             top_score=round(top_score, 4),

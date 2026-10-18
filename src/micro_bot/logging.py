@@ -86,7 +86,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             route = request.scope.get("route")
             event: dict[str, Any] = {
                 "route": getattr(route, "path", request.url.path),
-                "role": context.get("role", "public"),
                 "latency_ms": int((time.perf_counter() - started_at) * 1000),
                 "llm_calls": context.get("llm_calls", 0),
                 "prompt_tokens": context.get("prompt_tokens", 0),

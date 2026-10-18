@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from qdrant_client import AsyncQdrantClient
 
 from tests.pipeline_helpers import make_pipeline
@@ -22,13 +24,13 @@ async def test_version_changes_on_every_corpus_change(tmp_path):
         assert version != seen[-1]
         seen.append(version)
 
-    result = await p.ingest_file(path, "rules.md", "public")
+    result = await p.ingest_file(path, "rules.md")
     await changed()
-    assert (await p.ingest_file(path, "rules.md", "public")).status == "duplicate"
+    assert (await p.ingest_file(path, "rules.md")).status == "duplicate"
     assert await p.corpus_version() == seen[-1]
-    await p.ingest_file(path, "rules.md", "members")  # updated
+    await p.ingest_file(path, "rules.md", expires_at=datetime(2030, 1, 1, tzinfo=UTC))  # updated
     await changed()
-    await p.ingest_file(_write(tmp_path, "rules.md", RULES + " Ajout."), "rules.md", "members")
+    await p.ingest_file(_write(tmp_path, "rules.md", RULES + " Ajout."), "rules.md")
     await changed()  # replaced
     await p.delete_document(result.doc_id)
     await changed()
@@ -41,7 +43,7 @@ async def test_version_is_shared_across_processes_and_tracks_settings(tmp_path):
     api = make_pipeline(tmp_path, client=client)
     cli = make_pipeline(tmp_path, client=client)
     await api.start()
-    await cli.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md", "public")
+    await cli.ingest_file(_write(tmp_path, "rules.md", RULES), "rules.md")
     assert await api.corpus_version() == await cli.corpus_version()
     other = make_pipeline(tmp_path, client=client, chunk_target_tokens=40)
     assert await other.corpus_version() != await api.corpus_version()

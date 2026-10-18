@@ -90,11 +90,6 @@ def score_overlap(answerable: Sequence[float], refuse: Sequence[float]) -> float
     return sum(s >= q1 for s in refuse) / len(refuse)
 
 
-def access_violations(rows: Iterable[dict]) -> int:
-    """Public questions that got any members-only chunk, whatever its rank."""
-    return sum(r["role"] == "public" and "members" in r.get("visibilities", ()) for r in rows)
-
-
 def auc(good: Sequence[float], bad: Sequence[float]) -> float | None:
     """ROC AUC: chance that a good case scores above a bad one (ties half). 0.5 = no signal."""
     if not good or not bad:

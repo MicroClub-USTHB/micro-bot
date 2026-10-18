@@ -64,11 +64,6 @@ def _digest(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
 
 
-def _check_visibility(visibility: str) -> None:
-    if visibility not in ("public", "members"):
-        raise InvalidInput("visibility must be one of public, members")
-
-
 def _log_url(url: str) -> str:
     """URL for logs: no credentials, query string or fragment (they may carry tokens)."""
     try:
@@ -101,7 +96,6 @@ def _payload(
         "section_index": chunk.section_index,
         "language": chunk.language,
         "token_count": chunk.token_count,
-        "visibility": doc.visibility,
         "title": doc.title,
         "source": doc.source,
         "source_type": doc.source_type,
@@ -246,7 +240,6 @@ class IngestPipeline:
         self,
         path: str | os.PathLike[str],
         filename: str,
-        visibility: str,
         *,
         title: str | None = None,
         topic: str | None = None,
@@ -256,7 +249,7 @@ class IngestPipeline:
         return await self._logged(
             run,
             filename,
-            lambda: self._ingest_file(run, path, filename, visibility, title, topic, expires_at),
+            lambda: self._ingest_file(run, path, filename, title, topic, expires_at),
         )
 
     async def _ingest_file(
@@ -264,12 +257,10 @@ class IngestPipeline:
         run: _Run,
         path: str | os.PathLike[str],
         filename: str,
-        visibility: str,
         title: str | None,
         topic: str | None,
         expires_at: datetime | None = None,
     ) -> IngestResult:
-        _check_visibility(visibility)
         topic = clean_topic(topic) if topic is not None else file_topic(filename)
         source = Path(path)
         try:
@@ -284,20 +275,17 @@ class IngestPipeline:
             # Files are hashed on raw bytes, so a duplicate is caught before parsing or OCR.
             run.step("dedup")
             existing, replaces = await self._check_existing(
-                run, doc_id, hashlib.sha256(data).hexdigest(), visibility, expires_at
+                run, doc_id, hashlib.sha256(data).hexdigest(), expires_at
             )
             if existing is not None:
                 return existing
             run.step("preprocess")
-            doc = await self._preprocess_file(
-                data, filename, visibility=visibility, title=title, settings=self.settings
-            )
+            doc = await self._preprocess_file(data, filename, title=title, settings=self.settings)
             return await self._store_new(run, doc_id, topic, doc, replaces, expires_at)
 
     async def ingest_url(
         self,
         url: str,
-        visibility: str,
         *,
         title: str | None = None,
         topic: str | None = None,
@@ -307,31 +295,27 @@ class IngestPipeline:
         return await self._logged(
             run,
             _log_url(url),
-            lambda: self._ingest_url(run, url, visibility, title, topic, expires_at),
+            lambda: self._ingest_url(run, url, title, topic, expires_at),
         )
 
     async def _ingest_url(
         self,
         run: _Run,
         url: str,
-        visibility: str,
         title: str | None,
         topic: str | None,
         expires_at: datetime | None = None,
     ) -> IngestResult:
-        _check_visibility(visibility)
         topic = clean_topic(topic) if topic is not None else None
         # Web pages are hashed on extracted text, so the duplicate check follows the fetch.
         run.step("preprocess")
-        doc = await self._preprocess_url(
-            url, visibility=visibility, title=title, settings=self.settings
-        )
+        doc = await self._preprocess_url(url, title=title, settings=self.settings)
         topic = topic or url_topic(doc.source)  # final URL after redirects
         doc_id = run.doc_id = doc_id_for(topic)
         async with self._writing(doc_id):
             run.step("dedup")
             existing, replaces = await self._check_existing(
-                run, doc_id, doc.content_hash, visibility, expires_at
+                run, doc_id, doc.content_hash, expires_at
             )
             if existing is not None:
                 return existing
@@ -342,7 +326,6 @@ class IngestPipeline:
         run: _Run,
         doc_id: str,
         content_hash: str,
-        visibility: str,
         expires_at: datetime | None = None,
     ) -> tuple[IngestResult | None, bool]:
         """``duplicate`` / ``updated`` result for a complete copy of this content, else None.
@@ -357,10 +340,6 @@ class IngestPipeline:
         if others:  # leftover of an interrupted replacement
             await self.store.delete_other_versions(doc_id, content_hash)
         status: IngestStatus = "duplicate"
-        if marker.visibility != visibility:
-            await self.store.set_visibility(doc_id, visibility)
-            await self.docstore.set_visibility(doc_id, visibility)
-            status = "updated"
         if marker.expires_at != expires_at:  # re-upload with a new (or no) expiry date
             await self.store.set_fields(doc_id, {"expires_at": _epoch(expires_at)})
             await self.docstore.set_expiry(doc_id, expires_at)
@@ -371,7 +350,6 @@ class IngestPipeline:
             title=marker.title,
             source=marker.source,
             source_type=marker.source_type,
-            visibility=visibility,
             language=marker.language,
             chunk_count=marker.chunk_count,
             content_hash=content_hash,
@@ -463,7 +441,6 @@ class IngestPipeline:
             title=doc.title,
             source=doc.source,
             source_type=doc.source_type,
-            visibility=doc.visibility,
             language=doc.language,
             chunk_count=count,
             content_hash=doc.content_hash,
@@ -480,7 +457,6 @@ class IngestPipeline:
                 title=m.title,
                 source=m.source,
                 source_type=m.source_type,
-                visibility=m.visibility,
                 language=m.language,
                 chunk_count=m.chunk_count,
                 content_hash=m.content_hash,
@@ -501,7 +477,7 @@ class IngestPipeline:
         return had_points or had_json
 
     async def corpus_version(self) -> str:
-        """Changes whenever indexed content, visibility or index settings change.
+        """Changes whenever indexed content, expiry or index settings change.
 
         Read from Qdrant on every call (one marker scroll), so writes made by another process
         (the CLI) are seen at once; nothing is cached in memory.
@@ -509,7 +485,7 @@ class IngestPipeline:
         # Expired documents drop out, so the version changes when one expires (I14).
         now = datetime.now(UTC)
         documents = [
-            [m.doc_id, m.content_hash, m.visibility, _epoch(m.expires_at)]
+            [m.doc_id, m.content_hash, _epoch(m.expires_at)]
             for m in await self.store.markers()
             if m.expires_at is None or m.expires_at > now
         ]
@@ -609,7 +585,6 @@ async def close_pipeline() -> None:
 async def ingest_file(
     path: str | os.PathLike[str],
     filename: str,
-    visibility: str,
     *,
     title: str | None = None,
     topic: str | None = None,
@@ -617,22 +592,19 @@ async def ingest_file(
 ) -> IngestResult:
     pipeline = await get_pipeline()
     return await pipeline.ingest_file(
-        path, filename, visibility, title=title, topic=topic, expires_at=expires_at
+        path, filename, title=title, topic=topic, expires_at=expires_at
     )
 
 
 async def ingest_url(
     url: str,
-    visibility: str,
     *,
     title: str | None = None,
     topic: str | None = None,
     expires_at: datetime | None = None,
 ) -> IngestResult:
     pipeline = await get_pipeline()
-    return await pipeline.ingest_url(
-        url, visibility, title=title, topic=topic, expires_at=expires_at
-    )
+    return await pipeline.ingest_url(url, title=title, topic=topic, expires_at=expires_at)
 
 
 async def list_documents() -> list[DocumentInfo]:

@@ -4,7 +4,6 @@ from typing import Annotated
 from fastapi import Header, HTTPException, Request, status
 
 from micro_bot.config import Settings, get_settings
-from micro_bot.schemas import Role
 
 
 def _matches(actual: str | None, expected: str | None) -> bool:
@@ -20,17 +19,15 @@ def _settings(request: Request) -> Settings:
     return state.settings if state is not None else get_settings()
 
 
-def get_role(request: Request, authorization: Annotated[str | None, Header()] = None) -> Role:
-    if authorization is None:
-        return "public"
-
-    scheme, _, token = authorization.partition(" ")
-    if scheme != "Bearer" or not _matches(token, _settings(request).member_token):
+def require_api_key(
+    request: Request, authorization: Annotated[str | None, Header()] = None
+) -> None:
+    scheme, _, token = (authorization or "").partition(" ")
+    if scheme != "Bearer" or not _matches(token, _settings(request).api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid member token.",
+            detail="A valid API key is required: Authorization: Bearer <API_KEY>.",
         )
-    return "member"
 
 
 def require_admin(request: Request, x_admin_key: Annotated[str | None, Header()] = None) -> None:

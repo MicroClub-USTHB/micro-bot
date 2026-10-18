@@ -6,7 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-Visibility = Literal["public", "members"]
 SourceType = Literal["file", "web"]
 SourceKind = Literal["pdf", "docx", "xlsx", "image", "markdown", "text", "html"]
 
@@ -33,7 +32,6 @@ class ParsedDocument(BaseModel):
     source: str  # original filename, or final URL after redirects
     source_type: SourceType
     mime_type: str
-    visibility: Visibility
     language: str  # "ar" | "fr" | "en" | "mixed" | "und"
     text: str  # normalized, sections joined by blank lines
     sections: tuple[Section, ...]
@@ -76,7 +74,6 @@ class IngestResult(BaseModel):
     title: str
     source: str
     source_type: SourceType
-    visibility: Visibility
     language: str
     chunk_count: int
     content_hash: str
@@ -94,7 +91,6 @@ class DocumentInfo(BaseModel):
     title: str
     source: str
     source_type: SourceType
-    visibility: Visibility
     language: str
     chunk_count: int
     content_hash: str

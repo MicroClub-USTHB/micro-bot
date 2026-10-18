@@ -151,7 +151,7 @@ async def embedder_rows(name, cases, rewrites, args, work: Path, rerankers: dict
     for source in build.sources(corpus, work):
         doc = source.doc
         result = await pipeline.ingest_file(
-            source.path, source.path.name, doc.visibility, title=doc.title, topic=doc.topic
+            source.path, source.path.name, title=doc.title, topic=doc.topic
         )
         topics[result.doc_id] = doc.topic
         chunks += result.chunk_count
@@ -168,7 +168,7 @@ async def embedder_rows(name, cases, rewrites, args, work: Path, rerankers: dict
             for case in cases:
                 rewrite = rewrites[case.id]["rewrite"] if rewritten else None
                 reranker.spent_ms = 0.0
-                ranked = await retriever.rank(case.question, case.role, case.history, rewrite)
+                ranked = await retriever.rank(case.question, case.history, rewrite)
                 reranked = [c for c, _ in ranked.reranked]
                 row = {"case": case.id, "embedder": name, "reranker": rname}
                 rows.append(
@@ -216,7 +216,7 @@ async def run(args) -> Path:
     payload = {
         "label": args.label,
         "llm": args.ollama_model if args.llm == "ollama" else "openrouter",
-        "cases": {c.id: c.model_dump(include={"lang", "slices", "expect", "role"}) for c in cases},
+        "cases": {c.id: c.model_dump(include={"lang", "slices", "expect"}) for c in cases},
         "rewrites": {
             k: v | {"rewrite": v["rewrite"].__dict__ if v["rewrite"] else None}
             for k, v in rewrites.items()

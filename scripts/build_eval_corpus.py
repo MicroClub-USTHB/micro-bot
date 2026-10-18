@@ -3,7 +3,7 @@
     uv run python scripts/build_eval_corpus.py
     uv run python scripts/build_eval_corpus.py --only finfo.usthb.dz
 
-Each source line is ``<visibility> <URL or file name in data/sources/>``. Every source goes
+Each source line is a URL or a file name in ``data/sources/``. Every source goes
 through the project's own preprocessing (URL guard, fetch, trafilatura; or sniff, xberg, OCR)
 and is written in the ``scripts/parse.py`` dump format, under the file name that
 ``eval/corpus.json`` lists. Web pages are fetched 1 s apart. Prints one line per source and
@@ -32,16 +32,10 @@ FILES = ROOT / "data" / "sources"
 OUT = ROOT / "data" / "parsed"
 
 
-def read_sources(path: Path) -> list[tuple[str, str]]:
-    """``(visibility, target)`` per non-comment line."""
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip() and not line.startswith("#"):
-            visibility, target = line.split(" ", 1)
-            if visibility not in ("public", "members"):
-                raise ValueError(f"bad visibility in {line!r}")
-            rows.append((visibility, target.strip()))
-    return rows
+def read_sources(path: Path) -> list[str]:
+    """One target per non-comment line."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
 
 
 def is_url(target: str) -> bool:
@@ -74,17 +68,17 @@ def render(doc: ParsedDocument) -> str:
     return "\n".join([*lines, "", "# Text", "", doc.text, ""])
 
 
-async def build(sources: Sequence[tuple[str, str]], files: Path, out: Path) -> int:
+async def build(sources: Sequence[str], files: Path, out: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     failures = 0
-    for visibility, target in sources:
+    for target in sources:
         try:
             if is_url(target):
-                doc = await preprocess_url(quote_url(target), visibility=visibility)
+                doc = await preprocess_url(quote_url(target))
                 time.sleep(1)
             else:
                 data = (files / target).read_bytes()
-                doc = await preprocess_file(data, target, visibility=visibility)
+                doc = await preprocess_file(data, target)
         except (IngestError, OSError) as exc:
             failures += 1
             print(f"FAIL {target}: {getattr(exc, 'code', type(exc).__name__)}: {exc}")

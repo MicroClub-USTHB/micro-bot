@@ -79,13 +79,12 @@ async def test_transport_error_becomes_index_unavailable():
     await client.close()
 
 
-def _chunk_point(doc_id, content_hash, index, *, pid, visibility="public", day=10, count=2):
+def _chunk_point(doc_id, content_hash, index, *, pid, day=10, count=2):
     payload = {
         "doc_id": doc_id,
         "content_hash": content_hash,
         "index": index,
         "chunk_count": count,
-        "visibility": visibility,
         "title": f"title {doc_id}",
         "source": f"{doc_id}.md",
         "source_type": "file",
@@ -105,8 +104,8 @@ async def filled(store):
             _chunk_point("d1", "old", 0, pid=2, day=9),
             _chunk_point("d1", "new", 1, pid=3, day=10),
             _chunk_point("d1", "new", 0, pid=4, day=10),
-            _chunk_point("d2", "h2", 1, pid=5, visibility="members"),
-            _chunk_point("d2", "h2", 0, pid=6, visibility="members"),
+            _chunk_point("d2", "h2", 1, pid=5),
+            _chunk_point("d2", "h2", 0, pid=6),
             _chunk_point("d3", "partial", 1, pid=7),  # crashed: no marker
         ]
     )
@@ -116,7 +115,6 @@ async def filled(store):
 async def test_markers_keep_the_newest_version_per_document(filled):
     markers = await filled.markers()
     assert [(m.doc_id, m.content_hash) for m in markers] == [("d1", "new"), ("d2", "h2")]
-    assert markers[1].visibility == "members"
     assert markers[0].ingested_at == datetime(2026, 10, 10, tzinfo=UTC)
 
 
@@ -140,23 +138,6 @@ async def test_delete_version_and_doc(filled):
     assert await filled.delete_doc("d2") is True
     assert await filled.delete_doc("d2") is False
     assert [m.doc_id for m in await filled.markers()] == ["d1"]
-
-
-async def test_set_visibility_touches_every_point(filled):
-    await filled.set_visibility("d1", "members")
-    points, _ = await filled.client.scroll("mcclub", limit=100, with_payload=True)
-    d1 = [p.payload["visibility"] for p in points if p.payload["doc_id"] == "d1"]
-    assert d1 == ["members"] * 4
-
-
-async def test_visibility_filter_inside_the_query(filled):
-    public = qm.Filter(
-        must=[qm.FieldCondition(key="visibility", match=qm.MatchValue(value="public"))]
-    )
-    hits = await filled.client.query_points(
-        "mcclub", query=[1.0, 0, 0, 0], using=DENSE, query_filter=public, limit=100
-    )
-    assert {p.payload["doc_id"] for p in hits.points} == {"d1", "d3"}
 
 
 async def test_upsert_batches(store):

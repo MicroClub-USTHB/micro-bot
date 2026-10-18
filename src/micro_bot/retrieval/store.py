@@ -20,16 +20,15 @@ from qdrant_client import models as qm
 from qdrant_client.http.exceptions import ApiException
 
 from micro_bot.ingest.errors import IndexStale, IndexUnavailable
-from micro_bot.ingest.models import SourceType, Visibility
+from micro_bot.ingest.models import SourceType
 
 DENSE = "dense"
 SPARSE = "bm25"
-_KEYWORD_FIELDS = ("doc_id", "content_hash", "visibility", "language")
+_KEYWORD_FIELDS = ("doc_id", "content_hash", "language")
 _MARKER_PAYLOAD_EXTRA = ["expires_at"]  # optional marker fields
 _MARKER_FIELDS = [
     "doc_id",
     "content_hash",
-    "visibility",
     "chunk_count",
     "title",
     "source",
@@ -46,7 +45,6 @@ class Marker:
 
     doc_id: str
     content_hash: str
-    visibility: Visibility
     chunk_count: int
     title: str
     source: str
@@ -181,9 +179,6 @@ class VectorStore:
         flt = qm.Filter(must=_match(doc_id=doc_id, content_hash=content_hash))
         async with guard("count"):
             return (await self.client.count(self.alias, count_filter=flt, exact=True)).count
-
-    async def set_visibility(self, doc_id: str, visibility: Visibility) -> None:
-        await self.set_fields(doc_id, {"visibility": visibility})
 
     async def set_fields(self, doc_id: str, payload: dict) -> None:
         """Update document-level payload fields on every point of ``doc_id``."""

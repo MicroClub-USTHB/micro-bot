@@ -27,7 +27,6 @@ async def test_html_article(ocr_settings):
 
     doc = await preprocess_url(
         "https://club.example/old",
-        visibility="public",
         settings=ocr_settings,
         client=_client(handler),
         resolve=resolve,
@@ -49,7 +48,6 @@ async def test_pdf_url_goes_through_file_parser(ocr_settings, fixture_bytes):
 
     doc = await preprocess_url(
         "https://club.example/files/handbook.pdf",
-        visibility="members",
         settings=ocr_settings,
         client=_client(handler),
         resolve=resolve,
@@ -73,7 +71,6 @@ async def test_plain_text_url_without_extension(ocr_settings):
 
     doc = await preprocess_url(
         "https://club.example/hours",
-        visibility="public",
         settings=ocr_settings,
         client=_client(handler),
         resolve=resolve,
@@ -88,7 +85,6 @@ async def test_html_hash_ignores_boilerplate_changes(ocr_settings):
         docs.append(
             await preprocess_url(
                 "https://club.example/mars",
-                visibility="public",
                 settings=ocr_settings,
                 client=_client(_html(body)),
                 resolve=resolve,
@@ -101,7 +97,6 @@ async def test_query_string_never_logged(ocr_settings):
     with capture_logs() as logs:
         await preprocess_url(
             "https://club.example/mars?token=s3cret#frag",
-            visibility="public",
             settings=ocr_settings,
             client=_client(_html(ARTICLE)),
             resolve=resolve,
@@ -115,7 +110,6 @@ async def test_errors_propagate_and_are_logged(ocr_settings):
     with capture_logs() as logs, pytest.raises(FetchError, match="HTTP 404"):
         await preprocess_url(
             "https://club.example/missing?key=abc",
-            visibility="public",
             settings=ocr_settings,
             client=_client(lambda r: httpx.Response(404)),
             resolve=resolve,
@@ -127,9 +121,7 @@ async def test_errors_propagate_and_are_logged(ocr_settings):
 
 async def test_internal_url_rejected(ocr_settings):
     with pytest.raises(UrlNotAllowed):
-        await preprocess_url(
-            "http://127.0.0.1:6333/collections", visibility="public", settings=ocr_settings
-        )
+        await preprocess_url("http://127.0.0.1:6333/collections", settings=ocr_settings)
 
 
 async def test_empty_page(ocr_settings):
@@ -137,14 +129,12 @@ async def test_empty_page(ocr_settings):
     with pytest.raises(EmptyDocument):
         await preprocess_url(
             "https://club.example/",
-            visibility="public",
             settings=ocr_settings,
             client=_client(_html(page)),
             resolve=resolve,
         )
 
 
-@pytest.mark.parametrize(("url", "visibility"), [("", "public"), ("https://club.example", "x")])
-async def test_invalid_input(ocr_settings, url, visibility):
+async def test_invalid_input(ocr_settings):
     with pytest.raises(InvalidInput):
-        await preprocess_url(url, visibility=visibility, settings=ocr_settings)
+        await preprocess_url("", settings=ocr_settings)

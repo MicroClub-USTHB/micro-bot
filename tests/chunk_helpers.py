@@ -50,7 +50,6 @@ def doc(*sections: Section, title: str = "Doc", language: str = "fr") -> ParsedD
         source="doc.md",
         source_type="file",
         mime_type="text/markdown",
-        visibility="public",
         language=language,
         text="\n\n".join(s.text for s in sections),
         sections=sections,
@@ -87,7 +86,6 @@ async def mcoli_chunk_summary(settings: IngestSettings) -> list[list]:
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         document = await preprocess_url(
             "https://mcoli-ui.microclub.info/docs/introduction",
-            visibility="public",
             settings=settings,
             client=client,
             resolve=resolve,

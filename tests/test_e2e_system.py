@@ -22,11 +22,7 @@ async def driver(tmp_path):
 
 
 def _cases() -> list[Case]:
-    return [
-        Case(
-            id="l1", question="When is the Python workshop?", lang="en", role="public", expect="any"
-        )
-    ]
+    return [Case(id="l1", question="When is the Python workshop?", lang="en", expect="any")]
 
 
 async def test_load_reports_throughput_and_percentiles(driver):

@@ -13,7 +13,6 @@ PROBE = Case(
     id="p",
     question="Python workshop Saturday room",
     lang="en",
-    role="public",
     expect="answer",
     docs=["club-notice"],
     evidence=["every Saturday"],
