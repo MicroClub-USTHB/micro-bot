@@ -83,8 +83,9 @@ def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path)
 
     gemini = rewrite_providers(s)[0]
 
-    assert gemini.model == "gemini-3.5-flash-lite" and gemini.daily_limit == 7
-    assert gemini.extra == {"reasoning_effort": "minimal"}
+    assert gemini.model == "gemini-3.6-flash" and gemini.daily_limit == 7
+    assert gemini.extra == {"reasoning_effort": "none"}
+    assert gemini.rpm == 4
 
 
 def test_cloudflare_url_carries_the_account_id(tmp_path: Path) -> None:
@@ -160,4 +161,41 @@ async def test_rewrite_chain_is_reused_and_uses_the_rewrite_model(tmp_path: Path
     rewrite = c.for_rewrite()
 
     assert c.for_rewrite() is rewrite
-    assert (await rewrite.generate("s", "u")).text == "from gemini-3.5-flash-lite"
+    assert (await rewrite.generate("s", "u")).text == "from gemini-3.6-flash"
+
+
+async def test_per_minute_cap_moves_on_before_a_429(tmp_path: Path) -> None:
+    clock = Clock()
+    c, clients = chain(tmp_path, settings(tmp_path, gemini_rpm=2), clock=clock)
+
+    picked = [(await c.generate("s", "u")).provider for _ in range(3)]
+    clock.now += 61
+    later = await c.generate("s", "u")
+
+    assert picked == ["gemini", "gemini", "cloudflare"]
+    assert later.provider == "gemini"
+
+
+async def test_rewrite_and_answer_share_the_minute_window_per_model(tmp_path: Path) -> None:
+    s = settings(tmp_path, gemini_rpm=1, openrouter_rpm=1, llm_providers="openrouter,gemini")
+    c, _ = chain(tmp_path, s)
+
+    answer = await c.generate("s", "u")
+    rewrite = await c.for_rewrite().generate("s", "u")
+
+    assert answer.provider == "openrouter"
+    assert rewrite.provider == "gemini"  # openrouter's per-account minute is used up
+
+
+async def test_a_429_pauses_the_provider_only_briefly(tmp_path: Path) -> None:
+    clock = Clock()
+    c, _ = chain(tmp_path, settings(tmp_path), {"gemini": ["rate_limited"]}, clock)
+
+    await c.generate("s", "u")
+    clock.now += 5
+    during = await c.generate("s", "u")
+    clock.now += 6
+    after = await c.generate("s", "u")
+
+    assert during.provider == "cloudflare"
+    assert after.provider == "gemini"

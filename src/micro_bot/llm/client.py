@@ -39,6 +39,7 @@ class Provider:
     model: str
     daily_limit: int
     extra: dict[str, Any] = field(default_factory=dict)  # merged into every request
+    rpm: int = 0  # requests per minute the free tier allows; 0 = no known limit
 
 
 @dataclass(frozen=True)
