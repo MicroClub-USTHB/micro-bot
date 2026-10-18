@@ -4,8 +4,8 @@ import pytest
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
 
-from mcclub_rag.ingest.errors import IndexStale, IndexUnavailable
-from mcclub_rag.retrieval.store import DENSE, SPARSE, VectorStore
+from micro_bot.ingest.errors import IndexStale, IndexUnavailable
+from micro_bot.retrieval.store import DENSE, SPARSE, VectorStore
 
 SIG_A = "a" * 64
 SIG_B = "b" * 64

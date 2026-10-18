@@ -40,7 +40,7 @@ from eval.e2e.drivers import HttpDriver
 from eval.e2e.generator import CitingStub
 from eval.e2e.ingest_suite import ingest
 from eval.e2e.suites import Context, quality, robustness
-from mcclub_rag.llm.quota import CircuitBreaker
+from micro_bot.llm.quota import CircuitBreaker
 
 REPO = Path(__file__).resolve().parents[2]
 E2E = REPO / "eval" / "e2e"

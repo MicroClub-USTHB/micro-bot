@@ -48,7 +48,7 @@ eequaled reviews).
   - _Requirements: 1.1, 1.4_
 
 - [x] 2. Follow-up cues (I10, I12)
-- [x] 2.1 `has_followup_cue` in `src/mcclub_rag/retrieval/query.py`
+- [x] 2.1 `has_followup_cue` in `src/micro_bot/retrieval/query.py`
   - Cue table from design §2 (leading conjunctions, pronouns/demonstratives, ellipsis) for en, fr,
     ar and darija, matched on `fold_for_search` tokens from `text/sentences.split_words`.
   - `tests/test_retrieval_query.py`: one parametrized positive per cue, negatives "Who is the
@@ -63,7 +63,7 @@ eequaled reviews).
   - _Requirements: 5.5, 11.1, 11.2, 11.4_
 
 - [x] 3. Query normalization and gate calibration (I7, I8)
-- [x] 3.1 `strip_arabic_marks` in `src/mcclub_rag/text/normalize.py`
+- [x] 3.1 `strip_arabic_marks` in `src/micro_bot/text/normalize.py`
   - Factor the harakat + tatweel removal out of `fold_for_search` (which then calls it); stored
     text is never passed through it.
   - Tests: `fold_for_search` output unchanged on the existing cases; harakat removed, hamza
@@ -92,7 +92,7 @@ eequaled reviews).
     `réintégration-aux-études` (title + share bar, no content); list it in
     `tests/fixtures/README.md`.
   - _Requirements: 15.3_
-- [x] 4.2 `_drop_share_blocks` in `src/mcclub_rag/ingest/web.py`
+- [x] 4.2 `_drop_share_blocks` in `src/micro_bot/ingest/web.py`
   - Share-link host/path list and class/aria words from design §7; called in `prepare_html`
     before `_inline_links`.
   - Tests: the fixture raises `EmptyDocument`; `web/mcoli_introduction.html` Markdown unchanged
@@ -101,7 +101,7 @@ eequaled reviews).
   - _Requirements: 15.1, 15.2, 15.3_
 
 - [x] 5. PDF titles (I15)
-- [x] 5.1 `page_one_title` and `is_generic_title` in `src/mcclub_rag/ingest/preprocess.py`
+- [x] 5.1 `page_one_title` and `is_generic_title` in `src/micro_bot/ingest/preprocess.py`
   - Rules from design §8 (page-1 headings joined, skip page numbers / dates / "Contents" /
     "Sommaire" / "الفهرس" / < 3 letters; generic = filename stem, contained in the page-1 title,
     producer defaults).
@@ -129,7 +129,7 @@ eequaled reviews).
   - _Requirements: 12.1, 12.2_
 
 - [x] 7. Injection flag and payload schema 2 (I3, I11)
-- [x] 7.1 `looks_like_instruction` in `src/mcclub_rag/ingest/injection.py`
+- [x] 7.1 `looks_like_instruction` in `src/micro_bot/ingest/injection.py`
   - en/fr/ar patterns from design §6 on `fold_for_search` text.
   - Tests: positives from the adversarial corpus (`eval/e2e/corpus/`), negatives from real
     sentences about "instructions", "règlement", "تعليمات" in a normal sense.
@@ -184,7 +184,7 @@ eequaled reviews).
   - _Requirements: 17.1, 17.2, 17.4_
 
 - [x] 10. Snippet helper (I6, I24, nisbenz half)
-- [x] 10.1 `best_snippet` in `src/mcclub_rag/text/snippet.py`
+- [x] 10.1 `best_snippet` in `src/micro_bot/text/snippet.py`
   - Sentence split with `text/sentences.split_sentences`, score by `fold_for_search` word
     overlap, window of whole sentences ≤ `max_chars` with "…" at cut ends.
   - Tests: evidence sentence in the middle of a 2,000-character chunk is in the snippet; Arabic
@@ -236,7 +236,7 @@ eequaled reviews).
 - [x] 13. API hygiene [eequaled, with agreement]
 - [x] 13.1 Auth reads the app settings (I20)
   - `get_role` / `require_admin` take `request: Request` and read
-    `request.app.state.mcclub_state.settings`.
+    `request.app.state.micro_bot_state.settings`.
   - Tests: two apps with different tokens in one process each accept only their own token.
   - _Requirements: 16.3, 16.5_
 - [x] 13.2 Delete unknown document -> 404 (I17); blank message -> 422 (I18)

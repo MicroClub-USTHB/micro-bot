@@ -5,7 +5,7 @@ import io
 import pytest
 from PIL import Image, ImageDraw
 
-from mcclub_rag.ingest.deskew import deskew_image, skew_angle
+from micro_bot.ingest.deskew import deskew_image, skew_angle
 
 
 def _page(angle: float) -> Image.Image:

@@ -15,9 +15,9 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from mcclub_rag.ingest.errors import IngestError
-from mcclub_rag.ingest.pipeline import IngestPipeline, build_pipeline
-from mcclub_rag.ingest.settings import IngestSettings, get_ingest_settings
+from micro_bot.ingest.errors import IngestError
+from micro_bot.ingest.pipeline import IngestPipeline, build_pipeline
+from micro_bot.ingest.settings import IngestSettings, get_ingest_settings
 
 
 def _files(directory: Path, recursive: bool) -> list[Path]:

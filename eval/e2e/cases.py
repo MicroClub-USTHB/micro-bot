@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from mcclub_rag.schemas import Role, Visibility
+from micro_bot.schemas import Role, Visibility
 
 # The edge-case catalogue (Req 11), by group: retrieval, language, form, refusal,
 # conversation, safety.

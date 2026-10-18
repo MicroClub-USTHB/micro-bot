@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.models import ParsedDocument, Section, StoredDocument
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.models import ParsedDocument, Section, StoredDocument
 
 
 def _stored(

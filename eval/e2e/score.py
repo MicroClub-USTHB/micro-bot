@@ -14,10 +14,10 @@ from pydantic import ValidationError
 
 from eval.e2e.cases import Case, CorpusDoc
 from eval.metrics import fold
-from mcclub_rag.answer import strip_references
-from mcclub_rag.messages import NO_ANSWER
-from mcclub_rag.schemas import ChatResponse, ErrorResponse, Retrieval
-from mcclub_rag.text.lang import detect_language
+from micro_bot.answer import strip_references
+from micro_bot.messages import NO_ANSWER
+from micro_bot.schemas import ChatResponse, ErrorResponse, Retrieval
+from micro_bot.text.lang import detect_language
 
 Status = Literal["pass", "fail", "skip"]
 # Mirrors the gate refusal text of api/chat.py (checked by tests/test_e2e_driver.py).

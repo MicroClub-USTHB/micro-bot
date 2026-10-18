@@ -3,9 +3,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
-from mcclub_rag.main import (
+from micro_bot.config import Settings
+from micro_bot.llm.client import GenerationResult, GenerationUsage
+from micro_bot.main import (
     ApplicationState,
     FakeDocumentBackend,
     FakeGenerationService,
@@ -13,7 +13,7 @@ from mcclub_rag.main import (
     FakeLanguageDetector,
     create_app,
 )
-from mcclub_rag.schemas import Chunk, Retrieval, Role
+from micro_bot.schemas import Chunk, Retrieval, Role
 
 
 @dataclass

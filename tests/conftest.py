@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import structlog
 
-from mcclub_rag.ingest.settings import IngestSettings
+from micro_bot.ingest.settings import IngestSettings
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -84,7 +84,7 @@ def _models_dir() -> Path:
 @pytest.fixture(scope="session")
 def onnx_path() -> Path:
     """Pinned embedder ONNX model (and its tokenizer). Fails (never skips) when missing."""
-    from mcclub_rag.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
+    from micro_bot.retrieval.registry import DEFAULT_EMBEDDER, EMBEDDERS
 
     directory = _models_dir() / "embedder"
     path = directory / EMBEDDERS[DEFAULT_EMBEDDER].onnx_file
@@ -100,7 +100,7 @@ def onnx_path() -> Path:
 @pytest.fixture(scope="session")
 def reranker_dir() -> Path:
     """Pinned default reranker (mmarco int8 + tokenizer). Fails (never skips) when missing."""
-    from mcclub_rag.retrieval.registry import DEFAULT_RERANKER, RERANKERS
+    from micro_bot.retrieval.registry import DEFAULT_RERANKER, RERANKERS
 
     spec = RERANKERS[DEFAULT_RERANKER]
     root = _models_dir() / "reranker"
@@ -117,7 +117,7 @@ def reranker_dir() -> Path:
 @pytest.fixture(scope="session")
 def real_bm25_dir() -> Path:
     """Pinned BM25 stopword lists. Fails (never skips) when missing."""
-    from mcclub_rag.retrieval.registry import BM25_FILES
+    from micro_bot.retrieval.registry import BM25_FILES
 
     directory = _models_dir() / "bm25"
     if not all((directory / name).is_file() for name in BM25_FILES):

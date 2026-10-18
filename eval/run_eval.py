@@ -24,14 +24,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from eval import metrics as m
-from mcclub_rag.conversation import Turn
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.rerank import get_reranker
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.conversation import Turn
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+from micro_bot.retrieval.rerank import get_reranker
+from micro_bot.retrieval.settings import RetrievalSettings
 
 REPO = Path(__file__).resolve().parents[1]
 STAGES = ("ms_encode", "ms_search", "ms_rerank", "ms_total")

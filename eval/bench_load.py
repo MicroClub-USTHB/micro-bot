@@ -28,12 +28,12 @@ from qdrant_client import AsyncQdrantClient
 
 from eval import metrics as m
 from eval.run_eval import REPO, ingest_corpus
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+from micro_bot.retrieval.settings import RetrievalSettings
 
 
 def _pick(values: list[float], q: float) -> float:

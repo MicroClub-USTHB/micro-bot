@@ -4,8 +4,8 @@ import time
 
 import pytest
 
-from mcclub_rag.retrieval.registry import DEFAULT_RERANKER, RERANKERS
-from mcclub_rag.retrieval.rerank import OnnxReranker
+from micro_bot.retrieval.registry import DEFAULT_RERANKER, RERANKERS
+from micro_bot.retrieval.rerank import OnnxReranker
 
 CASES = {
     "ar": (

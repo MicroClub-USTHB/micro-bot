@@ -91,9 +91,9 @@ def select(cases: Sequence[Case], loaded: set[str]) -> list[Case]:
 
 
 async def make_rewrites(args, cases: Sequence[Case]) -> dict[str, dict]:
-    from mcclub_rag.config import get_settings
-    from mcclub_rag.llm.client import OpenRouterClient
-    from mcclub_rag.llm.rewrite import QueryRewriter
+    from micro_bot.config import get_settings
+    from micro_bot.llm.client import OpenRouterClient
+    from micro_bot.llm.rewrite import QueryRewriter
 
     if args.llm == "ollama":
         inner = ThreadedClient(OllamaClient(args.ollama_model))
@@ -124,13 +124,13 @@ async def make_rewrites(args, cases: Sequence[Case]) -> dict[str, dict]:
 async def embedder_rows(name, cases, rewrites, args, work: Path, rerankers: dict) -> tuple:
     from qdrant_client import AsyncQdrantClient
 
-    from mcclub_rag.ingest.docstore import DocStore
-    from mcclub_rag.ingest.pipeline import IngestPipeline
-    from mcclub_rag.ingest.settings import IngestSettings
-    from mcclub_rag.retrieval.backend import HybridRetriever
-    from mcclub_rag.retrieval.embed import get_dense_encoder, get_sparse_encoder
-    from mcclub_rag.retrieval.registry import EMBEDDERS as SPECS
-    from mcclub_rag.retrieval.settings import RetrievalSettings
+    from micro_bot.ingest.docstore import DocStore
+    from micro_bot.ingest.pipeline import IngestPipeline
+    from micro_bot.ingest.settings import IngestSettings
+    from micro_bot.retrieval.backend import HybridRetriever
+    from micro_bot.retrieval.embed import get_dense_encoder, get_sparse_encoder
+    from micro_bot.retrieval.registry import EMBEDDERS as SPECS
+    from micro_bot.retrieval.settings import RetrievalSettings
 
     settings = IngestSettings(
         data_dir=work / "data",
@@ -191,8 +191,8 @@ async def embedder_rows(name, cases, rewrites, args, work: Path, rerankers: dict
 
 
 async def run(args) -> Path:
-    from mcclub_rag.retrieval.rerank import get_reranker
-    from mcclub_rag.retrieval.settings import RetrievalSettings
+    from micro_bot.retrieval.rerank import get_reranker
+    from micro_bot.retrieval.settings import RetrievalSettings
 
     os.environ.setdefault("MODELS_DIR", str(REPO / "models"))
     os.environ.setdefault("TESSDATA_PREFIX", str(REPO / "models" / "tessdata"))

@@ -6,12 +6,12 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
-from mcclub_rag.llm.quota import DailyQuota
-from mcclub_rag.llm.rewrite import QueryRewriter
-from mcclub_rag.main import ApplicationState, FakeDocumentBackend, FakeHealthProbe, create_app
-from mcclub_rag.schemas import Chunk, Retrieval
+from micro_bot.config import Settings
+from micro_bot.llm.client import GenerationResult, GenerationUsage
+from micro_bot.llm.quota import DailyQuota
+from micro_bot.llm.rewrite import QueryRewriter
+from micro_bot.main import ApplicationState, FakeDocumentBackend, FakeHealthProbe, create_app
+from micro_bot.schemas import Chunk, Retrieval
 
 REWRITE = {"lang": "arabizi", "query": "wach kayen parking?", "en": "Is there parking?"}
 CHUNK = Chunk(chunk_id="c1", doc_id="d1", title="Guide", text="Parking: yes.", score=0.9)

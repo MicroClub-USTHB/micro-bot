@@ -12,12 +12,12 @@ from urllib.parse import urlsplit
 
 from qdrant_client import AsyncQdrantClient
 
-from mcclub_rag.ingest.docstore import DocStore
-from mcclub_rag.ingest.errors import EmptyDocument, InvalidInput, UnsupportedFileType
-from mcclub_rag.ingest.models import ParsedDocument, Section
-from mcclub_rag.ingest.pipeline import IngestPipeline
-from mcclub_rag.ingest.settings import IngestSettings
-from mcclub_rag.retrieval.embed import Bm25SparseEncoder
+from micro_bot.ingest.docstore import DocStore
+from micro_bot.ingest.errors import EmptyDocument, InvalidInput, UnsupportedFileType
+from micro_bot.ingest.models import ParsedDocument, Section
+from micro_bot.ingest.pipeline import IngestPipeline
+from micro_bot.ingest.settings import IngestSettings
+from micro_bot.retrieval.embed import Bm25SparseEncoder
 from tests.chunk_helpers import FakeCounter
 
 STOPWORDS = {"arabic.txt": "في\n", "french.txt": "le\nla\n", "english.txt": "the\n"}
@@ -40,7 +40,7 @@ class FakeDenseEncoder:
     def embed_documents(self, texts):
         self.calls += 1
         if self.fail_after is not None:
-            from mcclub_rag.ingest.errors import EmbeddingError
+            from micro_bot.ingest.errors import EmbeddingError
 
             raise EmbeddingError("embedding model failed: test")
         return [self._vector(t) for t in texts]

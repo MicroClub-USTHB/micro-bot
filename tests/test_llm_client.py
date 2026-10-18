@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcclub_rag.config import Settings
-from mcclub_rag.llm.client import OPENROUTER_BASE_URL, OpenRouterClient
+from micro_bot.config import Settings
+from micro_bot.llm.client import OPENROUTER_BASE_URL, OpenRouterClient
 
 
 @dataclass

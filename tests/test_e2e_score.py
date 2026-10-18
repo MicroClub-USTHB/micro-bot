@@ -4,7 +4,7 @@ import pytest
 
 from eval.e2e.cases import Case, CorpusDoc
 from eval.e2e.score import GATE_REFUSAL, Observation, score_chat, score_retrieval
-from mcclub_rag.schemas import Chunk, Retrieval
+from micro_bot.schemas import Chunk, Retrieval
 
 CORPUS = {
     "rules": CorpusDoc(

@@ -4,11 +4,11 @@ import httpx
 import pytest
 from structlog.testing import capture_logs
 
-from mcclub_rag.conversation import Turn
-from mcclub_rag.ingest.errors import EmbeddingError, IndexUnavailable, RerankError
-from mcclub_rag.retrieval.backend import HybridRetriever
-from mcclub_rag.retrieval.settings import RetrievalSettings
-from mcclub_rag.schemas import Retrieval
+from micro_bot.conversation import Turn
+from micro_bot.ingest.errors import EmbeddingError, IndexUnavailable, RerankError
+from micro_bot.retrieval.backend import HybridRetriever
+from micro_bot.retrieval.settings import RetrievalSettings
+from micro_bot.schemas import Retrieval
 from tests.pipeline_helpers import make_pipeline
 from tests.retrieval_helpers import FakeReranker, make_retriever
 
@@ -288,7 +288,7 @@ async def test_rerank_top_k_scores_only_the_first_candidates(pipe, rules, tmp_pa
 
 
 def _rewrite(**translations):
-    from mcclub_rag.llm.rewrite import QueryRewrite
+    from micro_bot.llm.rewrite import QueryRewrite
 
     return QueryRewrite("élections du bureau", "fr", translations)
 

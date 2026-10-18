@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from mcclub_rag.retrieval.settings import RetrievalSettings, get_retrieval_settings
+from micro_bot.retrieval.settings import RetrievalSettings, get_retrieval_settings
 
 _SHARED = {
     "RETRIEVE_TOP_K",

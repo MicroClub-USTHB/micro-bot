@@ -6,15 +6,15 @@ import pytest
 from fastapi import UploadFile
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.errors import IngestError
-from mcclub_rag.main import (
+from micro_bot.config import Settings, get_settings
+from micro_bot.errors import IngestError
+from micro_bot.main import (
     ApplicationState,
     FakeDocumentBackend,
     FakeHealthProbe,
     create_app,
 )
-from mcclub_rag.schemas import IngestResult, Visibility
+from micro_bot.schemas import IngestResult, Visibility
 
 
 class ErrorDocumentBackend(FakeDocumentBackend):
@@ -103,7 +103,7 @@ def test_health_reports_document_count_and_degraded_dependencies(client: TestCli
     upload(client)
     assert client.get("/api/v1/health").json() == {"status": "ok", "documents": 1}
 
-    client.app.state.mcclub_state.document_probe.healthy = False
+    client.app.state.micro_bot_state.document_probe.healthy = False
     assert client.get("/api/v1/health").json() == {"status": "degraded", "documents": 1}
 
 

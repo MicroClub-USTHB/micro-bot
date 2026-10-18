@@ -4,13 +4,13 @@ Guidance for AI coding agents working in this repo. Humans: see [README.md](READ
 
 ## Project
 
-`mcclub-rag` (package `mcclub_rag`): RAG chatbot for the MC Club RAG Chatbot Challenge.
+`micro-bot` (package `micro_bot`): Micro Bot, the multilingual RAG assistant of Micro Club (built for the MC Club RAG Chatbot Challenge).
 Plain Python, no RAG or agent framework (no LlamaIndex, LangChain, Haystack, CrewAI).
 Corpus is multilingual (Arabic, French, English, often mixed), runs offline on CPU in a container.
 
 ## Team and ownership
 
-Two people, each owning a slice. Do not edit the other's files or journal without asking.
+Two people, each owning a slice. Do not edit the other's files without asking.
 
 - **nisbenz:** data preprocessing (`ingest/` parsing/OCR/web, `text/`, `scripts/download_models.py`
   tessdata part), then the ingest pipeline (`ingest/pipeline.py`, chunking, embedding, Qdrant store).
@@ -80,7 +80,7 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
   (see `specs/data-preprocessing/`). Read the relevant spec before touching that area; keep it in
   sync with the code. Chunking (`specs/chunking/`) and the ingest pipeline
   (`specs/ingest-pipeline/`) and retrieval + eval (`specs/retrieval/`) are spec'd and built, and
-  wired into the API. Version 0.1.0 is the first release; see PROGRESS.md for what is left.
+  wired into the API. Version 0.1.0 is the first release.
 - **Test-first** per task; tick the task in `tasks.md` when done.
 - Branches: work on feature branches (e.g. `nisbenz/data-preprocessing`) into `dev`; `dev` into `main`.
   Commits: one lowercase imperative line, no prefix, no trailing period — name the change, then
@@ -132,6 +132,8 @@ Two people, each owning a slice. Do not edit the other's files or journal withou
 
 ## Commands
 
+`make help` lists the one-line targets (`make dev`, `make test`, `make clean`, ...). Raw commands:
+
 ```bash
 uv sync --locked
 uv run ruff check . && uv run ruff format --check .
@@ -158,28 +160,6 @@ cp .env.example .env && docker compose up -d --build
 OCR tests **fail with an instruction** (not skip) when traineddata is missing. Tests that need real
 Arabic scans (`tests/fixtures/arabic_scan.pdf`, `arabic_photo.jpg`) skip until the files are added.
 
-## 4 GB / 2-core VPS simulation (`specs/vps-simulation/`, `docs/simulation/4gb-vps.md`)
-
-A separate Compose **project** (`mc-rag-sim`) over the unchanged image and services, with the WSL 2 VM
-capped at 4 GB / 2 CPUs. Production files stay untouched (`Dockerfile`, `docker-compose.yml`,
-`.env.example`, app code); the eval harness gained only `--requests-per-minute` and the load report
-now prints the load generator's peak RSS. S0 = no provider key (health is `degraded`, retrieval
-works, 0 LLM calls), S1 = the free OpenRouter model. Profile A keeps the shipped 20/60 s rate limit,
-Profile B raises it to 1000/60 s in a simulation-only overlay.
-
-```powershell
-powershell -File scripts/simulation/Set-SimVmLimits.ps1 -Mode Show      # then -Mode Apply, -Mode Restore
-powershell -File scripts/simulation/Test-SimPreflight.ps1               # stage 1: proves the setup parses
-powershell -File scripts/simulation/Start-Simulation.ps1 -Build        # stage 3: build, up, wait for health
-powershell -File scripts/simulation/Invoke-SimBenchmark.ps1 -Scenario S0 -Profile B -Concurrency 4 -Duration 120 -RequestsPerMinute 240 -Label simB-c4
-powershell -File scripts/simulation/Stop-Simulation.ps1                # stage 8: this project only (-v deletes its data)
-uv run python -m eval.e2e.run --target http --base-url http://127.0.0.1:8001 --suite load --requests-per-minute 240 --label manual
-```
-
-Build **before** applying the VM ceiling (deps + ~700 MB of models). Nothing prints a secret: the
-scripts redact it, because `docker compose config` does not. Results land in
-`eval/results/simulation/*.csv` (git-ignored).
-
 ## Data preprocessing (implemented on `origin/dev`)
 
 Entry points (async): `preprocess_file(data, filename, *, visibility, title=None)` and
@@ -188,7 +168,7 @@ Entry points (async): `preprocess_file(data, filename, *, visibility, title=None
 `parser`, `page_count`, `warnings`, `created_at`). Flow: sniff type (magic bytes) -> extract (xberg /
 text decode / trafilatura) -> sections -> normalize -> language -> assemble.
 
-Modules in `src/mcclub_rag/`: `ingest/{models,errors,settings,sniff,ocr,parse,sections,url_guard,web,preprocess}.py`,
+Modules in `src/micro_bot/`: `ingest/{models,errors,settings,sniff,ocr,parse,sections,url_guard,web,preprocess}.py`,
 `text/{normalize,lang}.py`. Rules that bite:
 
 - **Own magic-byte sniffing before xberg** (xberg trusts extensions). Extension only picks md vs txt.
@@ -343,7 +323,7 @@ synthetic `eval/e2e/corpus/`), scored by rules, run by `python -m eval.e2e.run`.
 ## Layout
 
 ```
-src/mcclub_rag/
+src/micro_bot/
 ├── main.py, config.py, deps.py, schemas.py, errors.py, logging.py
 ├── answer.py, conversation.py
 ├── api/        chat.py, documents.py, feedback.py, health.py
@@ -378,12 +358,8 @@ settings class (why, the measurement), and add it to `.env.example` only if a de
 ## Repo docs
 
 - [README.md](README.md): overview, architecture, key decisions. Keep in sync.
-- [EDGE_CASES.md](EDGE_CASES.md): table `Edge case | Proof it is real | Decision | Why`. Add a row
-  for every non-obvious edge case, with evidence (a real probe or file), including accepted/open ones.
 - [eval/README.md](eval/README.md): the eval guide; update its "Latest results" and issue index
   after a measurement worth keeping.
-- [PROGRESS.md](PROGRESS.md): dated log (`Shipped` / `Blocked` / `Next`); update when finishing work.
-- `journals/<user>/project_journal.md`: per-person; don't edit the other's.
 - `specs/<feature>/`: requirements / design / tasks (see Workflow).
 - `tests/fixtures/README.md`: lists every fixture. Fixtures are generated by
   `tests/fixtures/make_fixtures.py` and committed; tests never regenerate them. The web fixture

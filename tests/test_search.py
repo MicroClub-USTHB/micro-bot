@@ -5,9 +5,9 @@ import pytest
 from qdrant_client import AsyncQdrantClient
 from qdrant_client import models as qm
 
-from mcclub_rag.ingest.errors import IndexUnavailable
-from mcclub_rag.retrieval.search import Candidate, HybridSearch, dedupe, visibility_filter
-from mcclub_rag.retrieval.settings import RetrievalSettings
+from micro_bot.ingest.errors import IndexUnavailable
+from micro_bot.retrieval.search import Candidate, HybridSearch, dedupe, visibility_filter
+from micro_bot.retrieval.settings import RetrievalSettings
 from tests.pipeline_helpers import make_pipeline
 
 T0 = datetime(2026, 10, 10, tzinfo=UTC)

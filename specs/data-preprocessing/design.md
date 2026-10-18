@@ -87,7 +87,7 @@ CPU-bound pure-Python steps (trafilatura, normalization, langid) run in `asyncio
 
 ## Components and Interfaces
 
-New files (all under `src/mcclub_rag/`, consistent with the README layout):
+New files (all under `src/micro_bot/`, consistent with the README layout):
 
 | File | Responsibility | Key interface |
 |---|---|---|
@@ -344,7 +344,7 @@ class IngestSettings(BaseSettings):
     web_timeout_s: float = 15
     web_max_bytes: int = 5 * 1024 * 1024
     web_max_redirects: int = 5
-    web_user_agent: str = "mcclub-rag/0.1 (+document ingestion)"
+    web_user_agent: str = "micro-bot/0.1 (+document ingestion)"
     lang_codes: list[str] = ["ar", "fr", "en"]
     lang_min_chars: int = 20
     lang_min_prob: float = 0.5

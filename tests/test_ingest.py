@@ -4,8 +4,8 @@ import importlib
 
 import pytest
 
-from mcclub_rag.ingest import errors
-from mcclub_rag.ingest.preprocess import preprocess_file
+from micro_bot.ingest import errors
+from micro_bot.ingest.preprocess import preprocess_file
 from tests.conftest import FIXTURES
 
 # name -> (language, ocr_used, minimum sections)

@@ -5,9 +5,9 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.deps import get_role, require_admin
-from mcclub_rag.errors import IngestError, install_error_handlers
+from micro_bot.config import Settings, get_settings
+from micro_bot.deps import get_role, require_admin
+from micro_bot.errors import IngestError, install_error_handlers
 
 
 @pytest.fixture
@@ -142,7 +142,7 @@ def test_every_standard_error_is_json(client: TestClient) -> None:
 
 
 def test_app_defaults_match_the_retrieval_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcclub_rag.retrieval.settings import RetrievalSettings
+    from micro_bot.retrieval.settings import RetrievalSettings
 
     for name in ("RERANK_MODEL", "RETRIEVE_TOP_K", "RERANK_TOP_N", "GATE_THRESHOLD"):
         monkeypatch.delenv(name, raising=False)

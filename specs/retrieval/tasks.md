@@ -8,7 +8,7 @@ fake preprocessing) and a `FakeReranker` / fake ONNX session. Only tasks 4.2, 5.
 the real reranker. Commits stay under 200 changed lines; split a task across commits if needed.
 
 - [x] 1. Settings, errors, registry and model download
-- [x] 1.1 `RetrievalSettings` in `src/mcclub_rag/retrieval/settings.py`
+- [x] 1.1 `RetrievalSettings` in `src/micro_bot/retrieval/settings.py`
   - Fields and defaults from design "Components / RetrievalSettings": `env_prefix="RETRIEVAL_"`;
     `top_k`, `top_n`, `gate_threshold`, `rerank_model`, `models_dir`, `qdrant_collection` read
     through `validation_alias` of `RETRIEVE_TOP_K`, `RERANK_TOP_N`, `GATE_THRESHOLD`,
@@ -22,9 +22,9 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     `RETRIEVAL_RERANK_MAX_LENGTH=512` raise `ValidationError`.
   - _Requirements: 2.1, 4.2, 4.6, 5.4, 6.2, 7.1, 9.2_
 - [x] 1.2 Errors and the shared Qdrant guard
-  - `src/mcclub_rag/ingest/errors.py`: `RerankError` (`rerank_error`), `RerankerConfigError`
+  - `src/micro_bot/ingest/errors.py`: `RerankError` (`rerank_error`), `RerankerConfigError`
     (`reranker_config_error`); add both to `ALL_ERRORS`.
-  - `src/mcclub_rag/retrieval/store.py`: rename `_guard` to public `guard` (update call sites).
+  - `src/micro_bot/retrieval/store.py`: rename `_guard` to public `guard` (update call sites).
   - Extend `tests/test_errors.py`: codes stable and unique.
   - _Requirements: 4.5, 8.1, 8.2_
 - [x] 1.3 Reranker registry entries and download target
@@ -51,24 +51,24 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
   - _Requirements: 4.1, 4.5, 11.2_
 
 - [x] 2. Pure building blocks
-- [x] 2.1 Follow-up query builder in `src/mcclub_rag/retrieval/query.py`
+- [x] 2.1 Follow-up query builder in `src/micro_bot/retrieval/query.py`
   - `build_search_query(message, history, max_words) -> tuple[str, bool]` per design.
   - `tests/test_retrieval_query.py`: no history; short follow-up joins the previous
     `user_message`; long message ignores history; only the last turn is used; non-`Turn` items
     ignored; whitespace/NFC normalised; empty message returns `("", False)`.
   - _Requirements: 1.5, 6.1, 6.2, 6.3, 6.4_
-- [x] 2.2 Gate in `src/mcclub_rag/retrieval/gate.py`
+- [x] 2.2 Gate in `src/micro_bot/retrieval/gate.py`
   - `decide(scores, threshold) -> (top_score, decision)`.
   - `tests/test_gate.py`: empty -> `(0.0, "refuse")`; None -> answer; below / equal / above.
   - _Requirements: 1.4, 5.1, 5.2, 5.4, 5.5_
-- [x] 2.3 Reranker passage text in `src/mcclub_rag/retrieval/rerank.py`
+- [x] 2.3 Reranker passage text in `src/micro_bot/retrieval/rerank.py`
   - `passage(title, heading_path, text, *, header=True)`: header without consecutive repeats,
     `"\n\n"`, text; text alone when `header` is false.
   - Tests in `tests/test_rerank.py`: equals the chunk's `embed_text` for a chunk built by
     `chunk_document` with a short header (same header rule); repeats collapsed; header off.
   - _Requirements: 4.2_
 
-- [x] 3. Hybrid search in `src/mcclub_rag/retrieval/search.py`
+- [x] 3. Hybrid search in `src/micro_bot/retrieval/search.py`
 - [x] 3.1 `Candidate`, `visibility_filter`, `dedupe`
   - `tests/test_search.py`: public filter matches only `public`; member filter matches both;
     unknown role -> `ValueError`; `dedupe` keeps newest `ingested_at` per `(doc_id, index)`, tie
@@ -111,7 +111,7 @@ the real reranker. Commits stay under 200 changed lines; split a task across com
     RSS; reads the model from the registry and `MODELS_DIR`. No test (manual tool), but ruff-clean.
   - _Requirements: 9.2_
 
-- [x] 5. Backend `src/mcclub_rag/retrieval/backend.py`
+- [x] 5. Backend `src/micro_bot/retrieval/backend.py`
 - [x] 5.1 `HybridRetriever.retrieve` core
   - Constructor with injected settings, encoders, client, reranker; `candidates()` (encode in
     `to_thread`, `HybridSearch.search`) and `rerank()` (lock + `to_thread`, `passage()` input);

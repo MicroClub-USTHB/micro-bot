@@ -1,7 +1,7 @@
 import pytest
 
-from mcclub_rag.ingest.errors import InvalidInput
-from mcclub_rag.ingest.identity import (
+from micro_bot.ingest.errors import InvalidInput
+from micro_bot.ingest.identity import (
     MAX_TOPIC,
     clean_topic,
     doc_id_for,

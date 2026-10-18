@@ -102,7 +102,7 @@ jobs:
             models/chunk-tokenizer
             models/embedder
             models/bm25
-          key: embedder-${{ hashFiles('src/mcclub_rag/retrieval/registry.py') }}
+          key: embedder-${{ hashFiles('src/micro_bot/retrieval/registry.py') }}
 
       - name: Download embedder and BM25 files (pinned revisions, sha256-verified)
         env:
@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: models/reranker
-          key: reranker-${{ hashFiles('src/mcclub_rag/retrieval/registry.py') }}
+          key: reranker-${{ hashFiles('src/micro_bot/retrieval/registry.py') }}
 
       - name: Download reranker (pinned revision, sha256-verified)
         env:

@@ -30,4 +30,3 @@ eval/results/**
 !eval/results/**/
 !eval/results/README.md
 !eval/results/e2e/README.md
-!eval/results/simulation/README.md

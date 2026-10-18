@@ -270,7 +270,7 @@ Handover designs, each small:
 ### 13. API hygiene [E] — `deps.py`, `api/documents.py`, `schemas.py`, `config.py`
 
 - I20: `get_role(request: Request, authorization=Header(None))` and `require_admin(request, ...)`
-  read `request.app.state.mcclub_state.settings`. Clients send the same headers (routes frozen).
+  read `request.app.state.micro_bot_state.settings`. Clients send the same headers (routes frozen).
   Then `eval/e2e/drivers.py` [N] stops setting `MEMBER_TOKEN` / `ADMIN_API_KEY`.
 - I17: `delete_document` raises `HTTPException(404)` when the backend returns `False`; the
   existing handler emits `{"error": {"code": "not_found", ...}}`.

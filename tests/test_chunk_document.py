@@ -3,9 +3,9 @@ import re
 import pytest
 from structlog.testing import capture_logs
 
-from mcclub_rag.ingest.chunk import _header, chunk_document
-from mcclub_rag.ingest.models import Section
-from mcclub_rag.ingest.settings import IngestSettings
+from micro_bot.ingest.chunk import _header, chunk_document
+from micro_bot.ingest.models import Section
+from micro_bot.ingest.settings import IngestSettings
 from tests.chunk_helpers import FakeCounter, doc, md, words
 
 COUNTER = FakeCounter()

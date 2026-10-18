@@ -23,8 +23,8 @@ from eval.e2e.cases import Case
 from eval.e2e.contract import check, expect
 from eval.e2e.generator import FaultyGenerator
 from eval.e2e.score import CaseResult
-from mcclub_rag.ingest.errors import IndexUnavailable, RerankError
-from mcclub_rag.llm.quota import CircuitBreaker
+from micro_bot.ingest.errors import IndexUnavailable, RerankError
+from micro_bot.llm.quota import CircuitBreaker
 
 
 class _NoQuota:

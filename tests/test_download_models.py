@@ -262,7 +262,7 @@ def test_bm25_mismatch_leaves_no_file(tmp_path):
 
 
 def test_pins_come_from_the_registry():
-    from mcclub_rag.retrieval import registry
+    from micro_bot.retrieval import registry
 
     assert dm.EMBEDDER is registry.EMBEDDERS[registry.DEFAULT_EMBEDDER] is registry.BGE_M3
     assert dm.TOKENIZER_SHA256 == registry.CHUNK_TOKENIZER.tokenizer_sha256
@@ -317,7 +317,7 @@ def test_reranker_mismatch_leaves_no_file(tmp_path):
 
 
 def test_reranker_keys_resolve_to_one_spec_per_model():
-    from mcclub_rag.retrieval import registry
+    from micro_bot.retrieval import registry
 
     r = registry.RERANKERS
     assert r["Alibaba-NLP/gte-multilingual-reranker-base"] is registry.GTE_RERANKER

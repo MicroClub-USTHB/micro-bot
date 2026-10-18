@@ -2,8 +2,8 @@ import httpx
 import pytest
 from structlog.testing import capture_logs
 
-from mcclub_rag.ingest.errors import EmptyDocument, FetchError, InvalidInput, UrlNotAllowed
-from mcclub_rag.ingest.preprocess import preprocess_url
+from micro_bot.ingest.errors import EmptyDocument, FetchError, InvalidInput, UrlNotAllowed
+from micro_bot.ingest.preprocess import preprocess_url
 from tests.test_web import ARTICLE
 
 

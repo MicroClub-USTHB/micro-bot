@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from mcclub_rag.config import Settings, get_settings
-from mcclub_rag.llm.client import GenerationResult, GenerationUsage
-from mcclub_rag.main import (
+from micro_bot.config import Settings, get_settings
+from micro_bot.llm.client import GenerationResult, GenerationUsage
+from micro_bot.main import (
     ApplicationState,
     FakeDocumentBackend,
     FakeHealthProbe,
@@ -15,8 +15,8 @@ from mcclub_rag.main import (
     LanguageDetector,
     create_app,
 )
-from mcclub_rag.messages import NO_ANSWER, UNAVAILABLE
-from mcclub_rag.schemas import Chunk, Retrieval, Role
+from micro_bot.messages import NO_ANSWER, UNAVAILABLE
+from micro_bot.schemas import Chunk, Retrieval, Role
 
 
 @dataclass
