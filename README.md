@@ -26,8 +26,8 @@
   question. A query rewrite translates each question so a French document answers an Arabic one.
 - **Grounded or silent.** Every answer cites the documents it came from. When the answer isn't
   there, Micro Bot says so instead of inventing.
-- **Members-only content stays private.** Visibility is a filter inside the vector query, so a
-  public user cannot retrieve a members-only passage at all.
+- **Streams its answers.** Send `"stream": true` to get the answer token by token over
+  Server-Sent Events, citations included.
 - **Any document.** PDF, scanned PDF and photos (Tesseract OCR), Office files, Markdown, text and
   web pages.
 - **Cheap to run.** At most 2 LLM calls per question, works on a free OpenRouter model, and the
@@ -48,7 +48,7 @@ The first build downloads about 700 MB of models (each sha256-checked). Then add
 `.env` (`OPENROUTER_API_KEY=...`), run `make restart`, and feed it documents:
 
 ```bash
-make ingest DOCS=path/to/folder           # uploads every file (public/ and members/ subfolders respected)
+make ingest DOCS=path/to/folder           # uploads every file of the folder
 make ask Q="Quand le club a-t-il été fondé ?"
 ```
 
@@ -61,7 +61,8 @@ The API listens on `http://localhost:8000`.
 | `make dev` | Create `.env` with fresh secrets if missing, build and start the stack, wait for health |
 | `make up` / `make down` / `make restart` | Start, stop (data kept) or restart the containers |
 | `make logs` / `make ps` / `make health` | Follow API logs, show containers, check health |
-| `make ingest DOCS=dir VIS=public` | Upload a folder of documents |
+| `make ingest DOCS=dir` | Upload a folder of documents |
+| `make stream Q="..."` | Stream an answer from the terminal |
 | `make ask Q="..."` | Ask a question from the terminal |
 | `make docs` | List indexed documents |
 | `make install` / `make models` | Install Python deps with uv / download the models locally |
@@ -107,8 +108,8 @@ flowchart LR
 
 1. **Rewrite** (call 1): the LLM turns the question into a standalone query plus French, English and
    Arabic translations. Skipped if it would spend the answer's last quota slot.
-2. **Retrieve**: dense (bge-m3) and BM25 search in Qdrant, fused with RRF, with the visibility filter
-   inside the query.
+2. **Retrieve**: dense (bge-m3) and BM25 search in Qdrant, fused with RRF (expired documents filtered
+   inside the query).
 3. **Rerank**: a multilingual cross-encoder (mmarco MiniLM) reranks the top 10 and keeps the top 5.
 4. **Answer** (call 2): the LLM answers from those passages only and cites them. The app rewrites
    citations as document titles and attaches snippets. If the model can't answer, the reply is
@@ -119,40 +120,62 @@ Tesseract OCR only for pages without a text layer, trafilatura for web pages). N
 the language, and chunk by headings and sentences (~300 tokens). Then embed dense + sparse and
 upsert. Uploading the same file twice is a no-op. A new version replaces the old one atomically.
 
-**Access**: no header = `public`. `Authorization: Bearer <MEMBER_TOKEN>` = `member` (public +
-members). `X-Admin-Key: <ADMIN_API_KEY>` manages documents.
+**Access**: everything is public to chat users. Chat needs `Authorization: Bearer <API_KEY>`;
+`X-Admin-Key: <ADMIN_API_KEY>` manages documents.
 
 ## API
 
+Every chat call needs `Authorization: Bearer <API_KEY>`. Every document call needs
+`X-Admin-Key: <ADMIN_API_KEY>`. All documents are visible to every chat user.
+
 | Endpoint | Auth | Purpose |
 |---|---|---|
-| `POST /api/v1/chat` | none or member | `{message, conversation_id?}`: ask a question |
+| `POST /api/v1/chat` | API key | `{message, conversation_id?, stream?}`: ask a question |
+| `POST /api/v1/feedback` | API key | `{conversation_id, rating: "up" \| "down", comment?}` |
 | `GET /api/v1/health` | none | `{"status": "ok" \| "degraded", "documents": n}` |
-| `POST /api/v1/documents` | admin | Upload `file` (or `url`) with `visibility` (`public` / `members`), optional `topic`, `expires_at` |
-| `PUT /api/v1/documents` | admin | Replace a document: `file`, `replaces` (its listed topic or file name) |
+| `POST /api/v1/documents` | admin | Create: upload `file`, optional `topic`, `expires_at` |
 | `GET /api/v1/documents` | admin | List documents |
+| `GET /api/v1/documents/{doc_id}` | admin | Read one document (404 if unknown) |
+| `PUT /api/v1/documents/{doc_id}` | admin | Update: replace its file (`file`, optional `expires_at`) |
+| `PUT /api/v1/documents` | admin | Update by name: `file`, `replaces` (its listed topic or file name) |
 | `DELETE /api/v1/documents/{doc_id}` | admin | Delete a document |
-| `POST /api/v1/feedback` | none or member | `{conversation_id, rating: "up" \| "down", comment?}` |
 
 A chat reply carries `answer`, `conversation_id` (send it back for follow-ups), `grounded`,
 `sources[{doc_id, title, snippet}]`, `usage{llm_calls, prompt_tokens, completion_tokens}` and
 `latency_ms`. Every error is JSON: `{"error": {"code": "...", "message": "..."}}`.
 
+### Streaming
+
+Send `"stream": true` (default `false`) to get the answer as it is written, as
+[Server-Sent Events](https://developer.mozilla.org/docs/Web/API/Server-sent_events):
+
+| Event | Data |
+|---|---|
+| `meta` | `{"conversation_id": "..."}`, sent first |
+| `delta` | `{"text": "..."}`, a piece of the answer, citations already shown as `[Title]` |
+| `done` | the full chat reply, same shape as `stream: false`. Its `answer` is authoritative |
+| `error` | `{"error": {"code", "message"}}`, then the stream ends |
+
+Auth, validation and the rate limit fail before the stream starts, with a normal HTTP status.
+A refusal marker or a reply that repeats the instructions is never streamed.
+
 <details>
 <summary>curl examples</summary>
 
 ```bash
-# public question
-curl -s localhost:8000/api/v1/chat -H 'content-type: application/json' \
-  -d '{"message":"chhal mn edition dar MCTF?"}'
+# ask
+curl -s localhost:8000/api/v1/chat -H "Authorization: Bearer $API_KEY" \
+  -H 'content-type: application/json' -d '{"message":"chhal mn edition dar MCTF?"}'
 
-# member question
-curl -s localhost:8000/api/v1/chat -H "Authorization: Bearer $MEMBER_TOKEN" \
-  -H 'content-type: application/json' -d '{"message":"..."}'
+# stream (-N: print events as they arrive)
+curl -sN localhost:8000/api/v1/chat -H "Authorization: Bearer $API_KEY" \
+  -H 'content-type: application/json' -d '{"message":"What is MicroHack?","stream":true}'
 
-# upload a members-only file
-curl -s localhost:8000/api/v1/documents -H "X-Admin-Key: $ADMIN_API_KEY" \
-  -F file=@bylaws.pdf -F visibility=members
+# upload, read, replace, delete a document
+curl -s localhost:8000/api/v1/documents -H "X-Admin-Key: $ADMIN_API_KEY" -F file=@bylaws.pdf
+curl -s localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMIN_API_KEY"
+curl -s -X PUT localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMIN_API_KEY" -F file=@bylaws-v2.pdf
+curl -s -X DELETE localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMIN_API_KEY"
 ```
 </details>
 
@@ -164,7 +187,7 @@ curl -s localhost:8000/api/v1/documents -H "X-Admin-Key: $ADMIN_API_KEY" \
 | Variable | Default | Purpose |
 |---|---|---|
 | `OPENROUTER_API_KEY` | none | LLM access (optional) |
-| `MEMBER_TOKEN`, `ADMIN_API_KEY` | none | Bearer token for members, key for document admin |
+| `API_KEY`, `ADMIN_API_KEY` | none | Bearer key for chat, key for document admin |
 | `OPENROUTER_MODEL` | `google/gemma-4-31b-it:free` | Any OpenRouter model id |
 | `LLM_DAILY_LIMIT`, `LLM_RESERVE` | 50, 5 | Daily LLM budget (OpenRouter free tier) and the margin held back |
 | `REWRITE_ENABLED` | true | `false` = 1 LLM call per question |
@@ -196,7 +219,6 @@ end-to-end cases across 42 slices. Details in [eval/README.md](eval/README.md).
 | Retrieval hit@5 (all / darija / cross-lingual) | **0.971** / 1.0 / 0.981 |
 | Answerable questions passing every rule check | **85%** |
 | False refusals / false answers | 4% / 3% |
-| Members-only content leaked to the public | **0** |
 | Prompt injections followed | **0** |
 | Retrieval latency p50 / p95 | 652 / 823 ms |
 
