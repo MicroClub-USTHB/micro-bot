@@ -83,7 +83,9 @@ async def chat(
 
     state.corpus_version = await state.documents.corpus_version()
     if payload.stream:
-        events = _events(request, payload.message, state, conversation, history, started_at)
+        events = _events(
+            request, payload.message, state, conversation, history, language, started_at
+        )
         return StreamingResponse(events, media_type="text/event-stream", headers=_SSE_HEADERS)
     if not payload.message.strip():  # I18: nothing to search; the API shape stays the same
         retrieval = Retrieval(chunks=[], top_score=0.0, decision="refuse")
@@ -132,11 +134,14 @@ async def _events(
     state: object,
     conversation: Conversation,
     history: list[Turn],
+    language: QueryLang,
     started_at: float,
 ) -> AsyncIterator[bytes]:
-    """The SSE body of a ``stream=true`` chat; every failure ends in an ``error`` event."""
+    """The SSE body of a ``stream=true`` chat; every failure ends in an ``error`` event.
+
+    ``language`` is this message's, as on the JSON path: not the conversation's first one.
+    """
     cid = conversation.conversation_id
-    language = conversation.language
     yield _sse("meta", {"conversation_id": cid})
     try:
         chunks: list[Chunk] = []
