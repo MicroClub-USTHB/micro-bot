@@ -10,6 +10,30 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str | None = None
     openrouter_model: str = "google/gemma-4-31b-it:free"
+    # Free tier without a card: 50 requests/day, 1000 once 10 credits were ever bought
+    # (openrouter.ai/docs/api/reference/limits, 2026-10-18)
+    openrouter_daily_limit: int = Field(default=50, ge=0)
+    # Google Gemini API, OpenAI-compatible. Free tier needs no card and lists Algeria
+    # (ai.google.dev/gemini-api/docs/available-regions, 2026-10-18); free content may be used
+    # to improve Google's products, so only public documents belong here.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"  # thinking can be off on 2.5 Flash, not on Pro / 3.x
+    gemini_rewrite_model: str = "gemini-2.5-flash-lite"  # the cheap quota pays for the rewrite
+    # Google shows free quotas only in AI Studio: set these to your project's RPD
+    gemini_daily_limit: int = Field(default=250, ge=0)
+    gemini_rewrite_daily_limit: int = Field(default=1000, ge=0)
+    # Cloudflare Workers AI: 10,000 free neurons/day; gpt-oss-120b is ~74 neurons per answer
+    # (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-18), so ~130/day
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+    cloudflare_model: str = "@cf/openai/gpt-oss-120b"
+    cloudflare_daily_limit: int = Field(default=120, ge=0)
+    # Order the answer call tries providers in; the first with quota left and no recent
+    # failure is used, so a question still makes at most one answer call
+    llm_providers: str = "gemini,cloudflare,openrouter"
+    llm_provider_cooldown_s: int = Field(default=120, gt=0)  # after a 429, 5xx or timeout
+    # Answers to a first message (no history) are reused for the same question and corpus
+    answer_cache_size: int = Field(default=512, ge=0)
     api_key: str | None = None  # Bearer token required by /chat and /feedback
     admin_api_key: str | None = None
     qdrant_url: str = "http://qdrant:6333"
@@ -20,7 +44,8 @@ class Settings(BaseSettings):
     rerank_model: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
     models_dir: Path = Path("/app/models")
     data_dir: Path = Path("/data")
-    llm_daily_limit: int = Field(default=50, gt=0)
+    # Overall daily cap across providers; each provider also keeps its own *_DAILY_LIMIT
+    llm_daily_limit: int = Field(default=1500, gt=0)
     llm_reserve: int = Field(default=5, ge=0)
     llm_timeout_s: int = Field(default=25, gt=0)
     # Ask OpenRouter to skip a reasoning model's thinking (nemotron chat 18.1 s -> 3-8 s,

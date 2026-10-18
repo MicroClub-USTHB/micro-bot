@@ -19,6 +19,7 @@ from micro_bot.errors import IngestError
 from micro_bot.ingest import errors as ingest_errors
 from micro_bot.ingest import pipeline as ingest_pipeline
 from micro_bot.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
+from micro_bot.llm.providers import ProviderChain
 from micro_bot.main import (
     FakeGenerationService,
     OpenRouterGenerationService,
@@ -63,7 +64,10 @@ def test_real_language_detector_delegates_to_detect_language(text: str, expected
 
 def test_default_state_wires_the_real_backends(tmp_path: Path) -> None:
     # Explicit None: a developer's .env or environment may hold a real key.
-    state = default_state(Settings(data_dir=tmp_path, openrouter_api_key=None))
+    settings = Settings(
+        data_dir=tmp_path, openrouter_api_key=None, gemini_api_key=None, cloudflare_api_token=None
+    )
+    state = default_state(settings)
 
     assert isinstance(state.documents, RealDocumentBackend)
     assert isinstance(state.document_probe, PipelineProbe)
@@ -72,9 +76,13 @@ def test_default_state_wires_the_real_backends(tmp_path: Path) -> None:
 
 
 def test_default_state_wires_the_llm_when_a_key_is_set(tmp_path: Path) -> None:
-    state = default_state(Settings(data_dir=tmp_path, openrouter_api_key="sk-test"))
-    assert isinstance(state.generator, OpenRouterGenerationService)
-    assert isinstance(state.generator.client, OpenRouterClient)
+    settings = Settings(
+        data_dir=tmp_path, openrouter_api_key="sk-test", gemini_api_key=None,
+        cloudflare_api_token=None,
+    )  # fmt: skip
+    state = default_state(settings)
+    assert isinstance(state.generator, ProviderChain)
+    assert state.generator.names == ["openrouter"]
 
 
 class _Completions:
@@ -245,7 +253,7 @@ async def test_lifespan_wires_the_hybrid_retriever_over_the_shared_pipeline(
             assert health.json() == {"status": "ok", "documents": 1}
 
             # a key is set, so the real OpenRouter service is wired; stub its answer (no network)
-            assert isinstance(state.generator, OpenRouterGenerationService)
+            assert isinstance(state.generator, ProviderChain)
             state.generator = FakeGenerationService(
                 GenerationResult(f"Samedi au local du club [{doc_id}].", GenerationUsage(1))
             )

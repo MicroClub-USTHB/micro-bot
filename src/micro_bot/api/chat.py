@@ -193,7 +193,10 @@ async def _rewrite(state: object, message: str, history: list[Turn]) -> RewriteO
     def allow() -> bool:  # leave a quota slot for the answer call
         return state.breaker.allow() and state.quota.acquire(keep=1)
 
-    outcome = await rewriter.rewrite(state.generator, message, previous, allow)
+    # A provider chain answers the rewrite with its cheaper model and quota.
+    for_rewrite = getattr(state.generator, "for_rewrite", None)
+    generator = for_rewrite() if for_rewrite else state.generator
+    outcome = await rewriter.rewrite(generator, message, previous, allow)
     if outcome.failed:
         state.breaker.record_failure()
     elif outcome.usage.llm_calls:
