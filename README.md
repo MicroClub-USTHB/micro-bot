@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/micro-bot.png" alt="Micro Bot mascot" width="120">
+</p>
+
 <h1 align="center">Micro Bot</h1>
 
 <p align="center">
