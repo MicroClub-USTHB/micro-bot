@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # the flash models (3.6, 3.8, 3-preview) 5. Past the rewrite's 5, rewrites go to the next
     # provider while answers stay on flash-lite.
     gemini_rpm: int = Field(default=15, ge=0)
-    gemini_rewrite_rpm: int = Field(default=5, ge=0)
+    gemini_rewrite_rpm: int = Field(default=4, ge=0)  # 5 still drew 429s: Google's window drifts
     # Cloudflare Workers AI: 10,000 free neurons/day; gpt-oss-120b is ~74 neurons per answer
     # (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-18), so ~130/day
     cloudflare_account_id: str | None = None
