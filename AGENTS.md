@@ -98,8 +98,13 @@ Two people, each owning a slice. Do not edit the other's files without asking.
 - **Tooling:** Python 3.12, FastAPI, pydantic-settings, uv (`pyproject.toml` + `uv.lock`, src layout),
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
-- **LLM:** `google/gemma-4-31b-it:free` via the `openai` SDK, base_url
-  `https://openrouter.ai/api/v1`. **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
+- **LLM:** free tiers that need no credit card, via the `openai` SDK, in `LLM_PROVIDERS` order
+  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-3.5-flash-lite` for answer and rewrite,
+  `reasoning_effort` `none` / `minimal`; Algeria is on Google's available-regions list), Cloudflare Workers
+  AI (`@cf/openai/gpt-oss-120b`), OpenRouter (`google/gemma-4-31b-it:free`). Each provider has
+  its own daily quota (`DATA_DIR/llm_providers/`) and a cool-down after a 429/5xx/timeout; the
+  provider is picked before the call, never retried. Grounded answers to a first question are
+  cached per `corpus_version` (`answer_cache.py`, off in the e2e eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
   (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). The expiry filter goes **inside the query**.

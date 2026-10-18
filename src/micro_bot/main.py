@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 import structlog
 from fastapi import FastAPI, UploadFile
 
+from micro_bot.answer_cache import AnswerCache
 from micro_bot.api.chat import router as chat_router
 from micro_bot.api.documents import router as documents_router
 from micro_bot.api.feedback import router as feedback_router
@@ -23,6 +24,7 @@ from micro_bot.ingest import errors as ingest_errors
 from micro_bot.ingest import pipeline as ingest_pipeline
 from micro_bot.ingest.models import DocumentInfo as IngestDocumentInfo
 from micro_bot.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
+from micro_bot.llm.providers import ProviderChain, answer_providers
 from micro_bot.llm.quota import CircuitBreaker, DailyQuota
 from micro_bot.llm.rewrite import QueryRewrite, QueryRewriter
 from micro_bot.logging import RequestLoggingMiddleware
@@ -258,7 +260,7 @@ class ProviderProbe:
     settings: Settings
 
     async def check(self) -> bool:
-        return bool(self.settings.openrouter_api_key)
+        return bool(answer_providers(self.settings))
 
 
 def _map_ingest_result(result: object) -> IngestResult:
@@ -318,6 +320,7 @@ class ApplicationState:
     language_detector: LanguageDetector = field(default_factory=FakeLanguageDetector)
     generator: GenerationService = field(default_factory=FakeGenerationService)
     rewriter: QueryRewriter | None = None  # the optional first LLM call (query-rewrite)
+    answer_cache: AnswerCache | None = None
     conversations: ConversationStore = field(default_factory=ConversationStore)
     rate_limiter: SlidingWindowRateLimiter | None = None
     quota: DailyQuota | None = None
@@ -325,6 +328,8 @@ class ApplicationState:
     corpus_version: str = "0"
 
     def __post_init__(self) -> None:
+        if self.answer_cache is None:
+            self.answer_cache = AnswerCache(self.settings.answer_cache_size)
         if self.rate_limiter is None:
             self.rate_limiter = SlidingWindowRateLimiter(
                 self.settings.chat_rate_limit_requests,
@@ -342,7 +347,7 @@ def default_state(settings: Settings) -> ApplicationState:
     """Production state wired to nisbenz's real ingestion and retrieval backends."""
     generator = _generator(settings)
     rewriter = None
-    if settings.rewrite_enabled and settings.openrouter_api_key:
+    if settings.rewrite_enabled and answer_providers(settings):
         rewriter = QueryRewriter(
             timeout_s=settings.rewrite_timeout_s, cache_size=settings.rewrite_cache_size
         )
@@ -358,9 +363,12 @@ def default_state(settings: Settings) -> ApplicationState:
 
 
 def _generator(settings: Settings) -> GenerationService:
-    if settings.openrouter_api_key:
-        return OpenRouterGenerationService(OpenRouterClient(settings))
-    _log.warning("llm_disabled", reason="OPENROUTER_API_KEY not set: extractive fallback only")
+    providers = answer_providers(settings)
+    if providers:
+        chain = ProviderChain(settings, providers)
+        _log.info("llm_providers", order=chain.names)
+        return chain
+    _log.warning("llm_disabled", reason="no LLM provider key set: extractive fallback only")
     return FakeGenerationService()
 
 
