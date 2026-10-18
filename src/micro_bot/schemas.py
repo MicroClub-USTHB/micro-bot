@@ -9,8 +9,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-Role = Literal["public", "member"]
-Visibility = Literal["public", "members"]
 DocStatus = Literal["indexed", "duplicate", "failed"]
 HealthStatus = Literal["ok", "degraded"]
 FeedbackRating = Literal["up", "down"]
@@ -21,6 +19,7 @@ RetrieveDecision = Literal["answer", "refuse"]
 class ChatRequest(BaseModel):
     message: str = Field(..., max_length=2000)
     conversation_id: str | None = None
+    stream: bool = False  # true: Server-Sent Events (meta, delta..., done) instead of one JSON
 
 
 class Source(BaseModel):
@@ -56,7 +55,6 @@ class DocumentCreateResponse(BaseModel):
 class DocInfo(BaseModel):
     doc_id: str
     title: str
-    visibility: Visibility
     status: str
     chunk_count: int
     created_at: str

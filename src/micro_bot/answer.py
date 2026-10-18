@@ -143,3 +143,120 @@ def _source_from_chunk(chunk: Chunk, query: str = "") -> Source:
         title=chunk.title,
         snippet=best_snippet(chunk.text, query, max_chars=SNIPPET_CHARS),
     )
+
+
+_OPENERS = "[【［"
+_CLOSERS = "]】］"
+_CITATION_MAX_CHARS = 80  # an opener left open longer than this is plain text, not a citation
+_LEAK_PREFIX_CHARS = 12  # hold a sentence back while it may still become an instruction sentence
+
+
+class StreamFilter:
+    """The model's streamed reply, made safe to show as it arrives (``stream=true``).
+
+    Applies what ``build`` and ``leaks_prompt`` do to a whole reply, one delta at a time:
+    a ``NOT_FOUND`` marker is never shown (nor the refusal's citations), ``[S1]`` citations
+    become ``[Title]`` once their bracket closes, and text that starts repeating a sentence of
+    the instructions or the passage layout is held back, then dropped for good. The streamed
+    text is a preview: the final ``done`` event carries the authoritative answer from ``build``.
+    """
+
+    def __init__(self, chunks: Sequence[Chunk], system: str) -> None:
+        self._chunks = chunks
+        self._system = system
+        instructions = " ".join(system.split("\nPrior conversation", 1)[0].split()).casefold()
+        self._sentences = [
+            s for s in _SENTENCE_END_RE.split(instructions) if len(s) >= _LEAK_MIN_CHARS
+        ]
+        self._raw = ""  # every delta received
+        self._pos = -1  # how much of _raw is converted; -1 until the marker check is done
+        self._refusal = False
+        self._held = ""  # converted text not yet shown
+        self._shown = ""  # converted text already shown
+        self._stopped = False
+
+    def feed(self, delta: str) -> str:
+        """Text to show now for ``delta`` (may be empty: held back or withheld)."""
+        self._raw += delta
+        return self._emit(final=False)
+
+    def finish(self) -> str:
+        """Whatever is still held, once the model has finished."""
+        return self._emit(final=True)
+
+    def _emit(self, *, final: bool) -> str:
+        if self._stopped:
+            return ""
+        if self._pos < 0 and not self._check_marker(final):
+            return ""
+        self._held += self._convert(final)
+        if final:
+            ready, self._held = self._held, ""
+        else:
+            cut = max(self._held.rfind(" "), self._held.rfind("\n"))
+            if cut < 0:
+                return ""
+            ready, self._held = self._held[: cut + 1], self._held[cut + 1 :]
+            if self._may_leak(ready + self._held):
+                self._held = ready + self._held
+                return ""
+        if leaks_prompt(self._shown + ready, self._system):
+            self._stopped = True
+            return ""
+        self._shown += ready
+        return ready
+
+    def _check_marker(self, final: bool) -> bool:
+        """Settle whether the reply is a ``NOT_FOUND`` refusal; False while it can't be told."""
+        head = re.sub(r"^\W+", "", self._raw)
+        if not final and len(head) < len(NOT_FOUND) and NOT_FOUND.startswith(head):
+            return False
+        marker = _NOT_FOUND_RE.match(self._raw)
+        self._refusal = marker is not None
+        end = marker.end() if marker else 0
+        while end and self._raw[end - 1] in _OPENERS:  # ``\W*`` took a citation's bracket
+            end -= 1
+        self._pos = end
+        return True
+
+    def _convert(self, final: bool) -> str:
+        out: list[str] = []
+        raw, i = self._raw, self._pos
+        while i < len(raw):
+            char = raw[i]
+            if char in _OPENERS:
+                close = next((j for j in range(i + 1, len(raw)) if raw[j] in _CLOSERS), -1)
+                if close < 0:
+                    if not final and len(raw) - i <= _CITATION_MAX_CHARS:
+                        break  # wait for the bracket to close
+                    out.append(char)
+                    i += 1
+                    continue
+                if not self._refusal:
+                    out.append(self._titles(raw[i + 1 : close]))
+                i = close + 1
+                continue
+            out.append(char)
+            i += 1
+        self._pos = i
+        return "".join(out)
+
+    def _titles(self, group: str) -> str:
+        group = re.sub(r"^\s*doc_id\s*:\s*", "", group, flags=re.IGNORECASE).strip()
+        doc_ids: list[str] = []
+        titles: list[str] = []
+        for index in _cited_chunks(group, self._chunks):
+            if index is not None and self._chunks[index].doc_id not in doc_ids:
+                doc_ids.append(self._chunks[index].doc_id)
+                titles.append(_title(self._chunks[index]))
+        return f"[{'; '.join(titles)}]" if titles else ""
+
+    def _may_leak(self, text: str) -> bool:
+        """The unfinished sentence (or a ``title:`` line) could still turn into a leak."""
+        line = text.rsplit("\n", 1)[-1]
+        if re.match(r"^\W*title:", line, re.IGNORECASE):
+            return True
+        sentence = _SENTENCE_END_RE.split(" ".join((self._shown + text).split()))[-1].casefold()
+        return len(sentence) >= _LEAK_PREFIX_CHARS and any(
+            s.startswith(sentence) for s in self._sentences
+        )
