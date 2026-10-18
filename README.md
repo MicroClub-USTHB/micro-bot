@@ -34,13 +34,15 @@
   Server-Sent Events, citations included.
 - **Any document.** PDF, scanned PDF and photos (Tesseract OCR), Office files, Markdown, text and
   web pages.
-- **Cheap to run.** At most 2 LLM calls per question, works on a free OpenRouter model, and the
+- **Free to run, all day.** At most 2 LLM calls per question, spread over free tiers that need no
+  credit card (Gemini, Cloudflare Workers AI, OpenRouter), repeated questions served from a cache, and the
   embedder, reranker and OCR all run on CPU inside the container. No GPU, no paid API.
 - **Plain Python.** FastAPI + Qdrant + ONNX Runtime. No LangChain, no LlamaIndex, no agent loop.
 
 ## Quick start
 
-You need **Docker** and **make**. An [OpenRouter](https://openrouter.ai/keys) key is optional:
+You need **Docker** and **make**. An LLM key is optional ([Gemini](https://aistudio.google.com),
+[Cloudflare](https://dash.cloudflare.com) or [OpenRouter](https://openrouter.ai/keys), all free):
 without one, Micro Bot returns the most relevant passages instead of a written answer.
 
 ```bash
@@ -49,7 +51,7 @@ make dev                                  # creates .env, builds, starts, waits 
 ```
 
 The first build downloads about 700 MB of models (each sha256-checked). Then add your key to
-`.env` (`OPENROUTER_API_KEY=...`), run `make restart`, and feed it documents:
+`.env` (`GEMINI_API_KEY=...`), run `make restart`, and feed it documents:
 
 ```bash
 make ingest DOCS=path/to/folder           # uploads every file of the folder
@@ -95,7 +97,7 @@ flowchart LR
         qdrant[(Qdrant<br/>dense + sparse vectors)]
     end
 
-    llm[[OpenRouter LLM]]
+    llm[[Free LLM providers<br/>Gemini · Cloudflare · OpenRouter]]
 
     client --> api
     api --> ingest
@@ -190,10 +192,13 @@ curl -s -X DELETE localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMI
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENROUTER_API_KEY` | none | LLM access (optional) |
+| `GEMINI_API_KEY` | none | Main LLM (free, no card). Set `GEMINI_DAILY_LIMIT` to your AI Studio quota |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | none | Workers AI fallback, ~120 answers/day free |
+| `OPENROUTER_API_KEY` | none | Last fallback, 50 requests/day free |
+| `LLM_PROVIDERS` | `gemini,cloudflare,openrouter` | Order the providers are tried in |
 | `API_KEY`, `ADMIN_API_KEY` | none | Bearer key for chat, key for document admin |
-| `OPENROUTER_MODEL` | `google/gemma-4-31b-it:free` | Any OpenRouter model id |
-| `LLM_DAILY_LIMIT`, `LLM_RESERVE` | 50, 5 | Daily LLM budget (OpenRouter free tier) and the margin held back |
+| `GEMINI_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-2.5-flash`, `@cf/openai/gpt-oss-120b`, `google/gemma-4-31b-it:free` | Answer model per provider (the rewrite uses `gemini-2.5-flash-lite`) |
+| `LLM_DAILY_LIMIT`, `LLM_RESERVE` | 1500, 5 | Overall daily cap across providers, and the margin held back |
 | `REWRITE_ENABLED` | true | `false` = 1 LLM call per question |
 | `QDRANT_URL` | `http://qdrant:6333` | Vector store |
 | `LOG_LEVEL` | INFO | Log level |
