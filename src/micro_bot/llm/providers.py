@@ -180,8 +180,14 @@ class ProviderChain:
 
     def _settle(self, slot: _Slot, result: GenerationResult) -> GenerationResult:
         if result.error in _FAILURES:
+            s = self.settings
+            pause = (
+                s.llm_rate_limit_cooldown_s
+                if result.error == "rate_limited"
+                else s.llm_provider_cooldown_s
+            )
             with self._lock:
-                slot.blocked_until = self.clock() + self.settings.llm_provider_cooldown_s
+                slot.blocked_until = self.clock() + pause
             log.warning("llm_provider_failed", provider=slot.provider.name, error=result.error)
         return replace(result, provider=slot.provider.name)
 

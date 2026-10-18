@@ -47,7 +47,9 @@ class Settings(BaseSettings):
     # Order the answer call tries providers in; the first with quota left and no recent
     # failure is used, so a question still makes at most one answer call
     llm_providers: str = "gemini,cloudflare,openrouter"
-    llm_provider_cooldown_s: int = Field(default=120, gt=0)  # after a 429, 5xx or timeout
+    llm_provider_cooldown_s: int = Field(default=120, gt=0)  # after a 5xx, timeout or error
+    # After a 429: Gemini's says "retry in ~5 s" (per-minute cap); the RPM guard avoids most
+    llm_rate_limit_cooldown_s: int = Field(default=10, gt=0)
     # Answers to a first message (no history) are reused for the same question and corpus
     answer_cache_size: int = Field(default=512, ge=0)
     api_key: str | None = None  # Bearer token required by /chat and /feedback

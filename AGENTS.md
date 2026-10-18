@@ -99,10 +99,11 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
 - **LLM:** free tiers that need no credit card, via the `openai` SDK, in `LLM_PROVIDERS` order
-  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.6-flash` for the rewrite (the 15/minute free cap is per model),
+  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.6-flash` for the rewrite, since the free cap of 15/minute is per model;
   `reasoning_effort` `none` / `minimal`; Algeria is on Google's available-regions list), Cloudflare Workers
   AI (`@cf/openai/gpt-oss-120b`), OpenRouter (`google/gemma-4-31b-it:free`). Each provider has
-  its own daily quota (`DATA_DIR/llm_providers/`) and a cool-down after a 429/5xx/timeout; the
+  its own daily quota (`DATA_DIR/llm_providers/`), a per-minute guard (`*_RPM`) and a cool-down
+  (10 s after a 429, 120 s after a 5xx/timeout); the
   provider is picked before the call, never retried. Grounded answers to a first question are
   cached per `corpus_version` (`answer_cache.py`, off in the e2e eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
   (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.

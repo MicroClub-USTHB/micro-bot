@@ -184,3 +184,17 @@ async def test_rewrite_and_answer_share_the_minute_window_per_model(tmp_path: Pa
 
     assert answer.provider == "openrouter"
     assert rewrite.provider == "gemini"  # openrouter's per-account minute is used up
+
+
+async def test_a_429_pauses_the_provider_only_briefly(tmp_path: Path) -> None:
+    clock = Clock()
+    c, _ = chain(tmp_path, settings(tmp_path), {"gemini": ["rate_limited"]}, clock)
+
+    await c.generate("s", "u")
+    clock.now += 5
+    during = await c.generate("s", "u")
+    clock.now += 6
+    after = await c.generate("s", "u")
+
+    assert during.provider == "cloudflare"
+    assert after.provider == "gemini"
