@@ -26,8 +26,11 @@ class Settings(BaseSettings):
     # the free tier, same answer on the measured questions (2026-10-18)
     gemini_model: str = "gemini-3.5-flash-lite"
     gemini_reasoning_effort: str = "minimal"
-    gemini_rewrite_model: str = "gemini-3.5-flash-lite"  # the cheap quota pays for the rewrite
-    gemini_rewrite_reasoning_effort: str = "minimal"
+    # The rewrite on another model: the 15/minute cap is per model, so a question no longer
+    # spends two calls of flash-lite's minute. 3.6-flash: 1.3 s median, 5/5 valid JSON on
+    # ar/fr/en/arabizi rewrites (2026-10-18), and it takes reasoning_effort "none".
+    gemini_rewrite_model: str = "gemini-3.6-flash"
+    gemini_rewrite_reasoning_effort: str = "none"
     # Google shows free quotas only in AI Studio: set these to your project's RPD. When the
     # answer and rewrite models are the same they share one counter, so keep the limits equal.
     gemini_daily_limit: int = Field(default=1000, ge=0)
