@@ -1,5 +1,6 @@
 from datetime import date
 
+from micro_bot.answer import leaks_prompt
 from micro_bot.conversation import Turn
 from micro_bot.llm.prompts import build_prompt
 from micro_bot.schemas import Chunk
@@ -25,7 +26,8 @@ def test_prompt_includes_date_language_history_and_fenced_untrusted_sources() ->
     )
 
     assert "Today is 2026-10-10." in system
-    assert "Answer in English and answer only from the retrieved passages." in system
+    assert "Answer in English, whatever language the passages are in." in system
+    assert "Answer only from the retrieved passages" in system
     assert "```conversation" in system
     assert "User: Tell me about the workshop" in system
     assert "Assistant: It is soon." in system  # the old turn's references are dropped
@@ -91,3 +93,25 @@ def test_prompt_counts_a_no_or_a_corrected_premise_as_an_answer():
     # coc-08 / fac-22: "NOT_FOUND… non-students are not eligible", "NOT_FOUND… it was 1974".
     system, _ = build_prompt("Le département a été créé en 1990, c'est ça ?", "fr", [])
     assert "answers yes or no, or corrects a wrong premise" in system
+
+
+def test_prompt_answers_questions_about_the_bot_without_not_found() -> None:
+    system, _ = build_prompt("Who are you?", "en", [], today=date(2026, 10, 28))
+
+    assert "Questions about you." in system
+    assert "who you are, what you can do" in system
+    assert "without NOT_FOUND" in system
+    assert "Do not name the company or model behind you" in system
+    assert "USTHB" in system  # the club the bot belongs to
+
+
+def test_a_typical_self_introduction_is_not_taken_for_a_prompt_leak() -> None:
+    system, _ = build_prompt("Who are you?", "en", [], today=date(2026, 10, 28))
+    replies = [
+        "Hi! I'm Micro Bot, the assistant of Micro Club. I answer from the club's own "
+        "documents, so you can ask me about its sections, events or how to join.",
+        "Je suis Micro Bot, l'assistant de Micro Club. Posez-moi une question sur ses "
+        "départements ou ses événements.",
+    ]
+
+    assert not any(leaks_prompt(reply, system) for reply in replies)
