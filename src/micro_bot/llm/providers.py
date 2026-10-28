@@ -344,7 +344,8 @@ class ProviderChain:
             with self._lock:
                 slot.level = 0
             tokens = result.usage.prompt_tokens + result.usage.completion_tokens
-            if tokens:
+            if tokens and slot.provider.daily_tokens:
+                # Only a provider with a token budget reads this back (Groq's TPD)
                 slot.quota.record_tokens(tokens)
         if result.error in _FAILURES:
             log.warning(

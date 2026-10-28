@@ -362,3 +362,11 @@ def build_from_env(
         configuration, answer_providers(configuration), clock=clock, client_factory=make
     )
     return chain, clients, clock
+
+
+def test_tokens_are_recorded_only_for_a_provider_with_a_token_budget(tmp_path: Path) -> None:
+    gemini, _, _ = build(tmp_path, gemini_api_key="g", llm_providers="gemini")
+    gemini._settle(gemini._pick(), GenerationResult("ok", GenerationUsage(1, 900, 100)))
+    counter = next((tmp_path / "llm_providers" / "gemini").glob("*/llm_quota.json"))
+
+    assert "tokens" not in json.loads(counter.read_text())  # nothing reads it without a TPD

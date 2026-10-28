@@ -70,7 +70,8 @@ class DailyQuota:
         This is an observation only; callers that intend to make a request must
         use ``acquire`` so the limit check and reservation are atomic.
         """
-        return self.used < self._usable_limit and not self.tokens_spent
+        state = self._observed()
+        return state["count"] < self._usable_limit and not self._tokens_spent(state)
 
     def acquire(self, keep: int = 0) -> bool:
         """Atomically reserve one generation slot outside the safety reserve.
@@ -114,14 +115,12 @@ class DailyQuota:
 
     @property
     def used(self) -> int:
-        with self._locked_state() as state:
-            return state["count"]
+        return self._observed()["count"]
 
     @property
     def tokens(self) -> int:
         """The day's tokens, 0 when the provider has no token budget."""
-        with self._locked_state() as state:
-            return state.get("tokens", 0)
+        return self._observed().get("tokens", 0)
 
     @property
     def tokens_spent(self) -> bool:
@@ -138,6 +137,14 @@ class DailyQuota:
         moment = self._moment()
         tomorrow = (moment + _ONE_DAY).date()
         return datetime.combine(tomorrow, datetime.min.time(), self.reset_tz).timestamp()
+
+    def _observed(self) -> dict[str, int | str]:
+        """Read the counter without the write-back: picking a credential must not spend I/O.
+
+        ``_write_state`` replaces the file atomically, so a reader sees the previous or the new
+        state and never a half-written one, and no lock file has to be created to look.
+        """
+        return self._read_state()
 
     def _tokens_spent(self, state: dict[str, int | str]) -> bool:
         return self.token_limit > 0 and int(state.get("tokens", 0) or 0) >= self.token_limit

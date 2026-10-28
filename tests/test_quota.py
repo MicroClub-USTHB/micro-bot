@@ -147,3 +147,24 @@ def test_next_reset_is_the_providers_own_midnight(tmp_path: Path, clock: FakeClo
     quota = DailyQuota(tmp_path, limit=2, reserve=0, clock=clock, reset_tz="America/Los_Angeles")
 
     assert quota.next_reset() == datetime(2026, 10, 29, 7, 0, tzinfo=UTC).timestamp()
+
+
+def test_reading_the_counter_does_not_write_it(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock)
+
+    assert quota.allow() is True  # an observation, not a reservation
+    assert quota.used == 0
+    assert quota.remaining == 5
+    assert not (tmp_path / "llm_quota.json").exists()  # no file, no lock file for a look
+    assert not (tmp_path / "llm_quota.lock").exists()
+
+    assert quota.acquire() is True
+    assert (tmp_path / "llm_quota.json").exists()
+
+
+def test_reading_after_a_write_sees_the_reserved_slot(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock)
+    quota.acquire()
+
+    assert quota.used == 1  # the atomic replace is what a reader picks up
+    assert quota.remaining == 4
