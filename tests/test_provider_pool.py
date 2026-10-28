@@ -248,3 +248,117 @@ def test_reasoning_is_omitted_when_reasoning_is_allowed(tmp_path: Path) -> None:
         answer_providers(configuration.model_copy(update={"llm_disable_reasoning": False}))[0].extra
         == {}
     )
+
+
+def from_env(monkeypatch, tmp_path: Path, **variables: str) -> Settings:
+    """A Settings built the way a deployment does it: from the environment, not kwargs."""
+    for name in (
+        "GEMINI_API_KEY",
+        "GEMINI_API_KEYS",
+        "GROQ_API_KEY",
+        "GROQ_API_KEYS",
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_API_KEYS",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNTS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    for name, value in variables.items():
+        monkeypatch.setenv(name, value)
+    return Settings(_env_file=None)
+
+
+def test_four_gemini_keys_are_read_from_the_environment(monkeypatch, tmp_path: Path) -> None:
+    configuration = from_env(
+        monkeypatch,
+        tmp_path,
+        GEMINI_API_KEYS="AIza-one,AIza-two, AIza-three ,AIza-four",
+    )
+
+    providers = answer_providers(configuration)
+
+    assert [p.api_key for p in providers] == ["AIza-one", "AIza-two", "AIza-three", "AIza-four"]
+    assert len({p.key_id for p in providers}) == 4
+    assert pool_sizes(configuration) == {"gemini": 4}
+    assert daily_capacity(configuration) == 4 * 500
+
+
+def test_blank_and_duplicate_entries_in_the_list_are_ignored(monkeypatch, tmp_path: Path) -> None:
+    configuration = from_env(monkeypatch, tmp_path, GEMINI_API_KEYS="a,, a ,  ,b,")
+
+    assert [p.api_key for p in answer_providers(configuration)] == ["a", "b"]
+
+
+def test_the_singular_key_and_the_environment_list_are_merged(monkeypatch, tmp_path: Path) -> None:
+    configuration = from_env(
+        monkeypatch, tmp_path, GEMINI_API_KEY="first", GEMINI_API_KEYS="first,second"
+    )
+
+    assert [p.api_key for p in answer_providers(configuration)] == ["first", "second"]
+
+
+async def test_each_of_four_credentials_keeps_its_own_count_file(
+    monkeypatch, tmp_path: Path
+) -> None:
+    chain, clients, _ = build_from_env(
+        monkeypatch, tmp_path, GEMINI_API_KEYS="k1,k2,k3,k4", llm_providers="gemini"
+    )
+
+    for _ in range(4):
+        await chain.generate("s", "u")
+
+    counters = sorted((tmp_path / "llm_providers" / "gemini").glob("*/llm_quota.json"))
+    assert len(counters) == 4
+    assert all(json.loads(counter.read_text())["count"] == 1 for counter in counters)
+    assert sorted(client.calls for client in clients.values()) == [1, 1, 1, 1]
+
+
+async def test_a_pool_of_four_serves_four_answers_then_reports_exhaustion(
+    monkeypatch, tmp_path: Path
+) -> None:
+    chain, _, _ = build_from_env(
+        monkeypatch,
+        tmp_path,
+        GEMINI_API_KEYS="k1,k2,k3,k4",
+        llm_providers="gemini",
+        GEMINI_DAILY_LIMIT="1",
+    )
+
+    answers = [await chain.generate("s", "u") for _ in range(5)]
+
+    assert [a.provider for a in answers[:4]] == ["gemini"] * 4
+    assert answers[4].error == "providers_exhausted"
+
+
+def test_cloudflare_accounts_are_read_from_the_environment(monkeypatch, tmp_path: Path) -> None:
+    configuration = from_env(
+        monkeypatch,
+        tmp_path,
+        CLOUDFLARE_ACCOUNTS="acc1:tok1,acc2:tok2",
+    )
+
+    cloudflare = [p for p in answer_providers(configuration) if p.name == "cloudflare"]
+
+    assert [p.api_key for p in cloudflare] == ["tok1", "tok2"]
+    assert "acc2" in cloudflare[1].base_url
+
+
+def build_from_env(
+    monkeypatch, tmp_path: Path, **variables: str
+) -> tuple[ProviderChain, dict[str, Client], Clock]:
+    """A chain over a Settings read from the environment, with one client per credential."""
+    configuration = from_env(monkeypatch, tmp_path, **variables)
+    clock = Clock()
+    clients: dict[str, Client] = {}
+
+    def make(provider: Provider) -> Client:
+        client = Client(provider, [])
+        clients[provider.key_id or provider.name] = client
+        return client
+
+    chain = ProviderChain(
+        configuration, answer_providers(configuration), clock=clock, client_factory=make
+    )
+    return chain, clients, clock
