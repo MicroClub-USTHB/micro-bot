@@ -108,15 +108,21 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   (`llm/providers.py`, 2026-10-29): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.1-flash-lite`
   for the rewrite, each model its own per-project quota: 15 RPM / 500 RPD; `reasoning_effort` is
   per model from `_GEMINI_EFFORT`, since 3.x cannot stop thinking and the wrong value is a 400;
-  Algeria is on Google's available-regions list), Groq (`openai/gpt-oss-120b`, 30 RPM, 1000 RPD,
-  200k TPD), Cloudflare Workers AI (`@cf/openai/gpt-oss-120b`), OpenRouter
-  (`google/gemma-4-31b-it:free`). Each **credential** has its own daily quota
-  (`DATA_DIR/llm_providers/<provider>/<model>__<key hash>/`), per-minute guard (`*_RPM`) and
-  cool-down, and a provider may hold a pool (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`) rotated by
-  `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project, so extra Gemini keys
-  only help across projects, which Google treats as a ToS violation. A 429 is classified: a body
-  naming a daily budget (`quotaId` …`PerDay`) spends the credential until the provider's own reset
-  (midnight Pacific for Gemini), a per-minute one cools for its `Retry-After`; 5xx/timeout cool
+  Algeria is on Google's available-regions list), Groq (`openai/gpt-oss-120b`, then
+  `openai/gpt-oss-20b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each),
+  Cloudflare Workers AI (`@cf/openai/gpt-oss-120b`), OpenRouter
+  (`google/gemma-4-31b-it:free`). Each **credential and model** has its own daily quota
+  (`DATA_DIR/llm_providers/<provider>/<model>__<key hash>/`), per-minute guard (`*_RPM`,
+  `*_TPM`) and cool-down, and a provider may hold a pool (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`)
+  rotated by `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project, so extra
+  Gemini keys only help across projects, which Google treats as a ToS violation, and Groq's is
+  per organization, so extra keys only help across accounts. Groq's TPM binds long before its
+  RPM (a grounded prompt is ~2.5k tokens), so the minute guard counts tokens too, and a second
+  model id is a second day of quota on the same key (`GROQ_MODELS`, model-major order: 120b
+  serves until its day is spent). A 429 is classified: a body
+  naming a daily budget (`quotaId` …`PerDay`, Groq's `TPD`/`RPD`) spends the credential until the
+  provider's own reset (midnight Pacific for Gemini), a per-minute one cools for its
+  `Retry-After` (or Groq's `x-ratelimit-reset-tokens`); 5xx/timeout cool
   with an escalating backoff. The provider is picked before the call, never retried. Grounded
   answers to a first question are cached per `corpus_version` (`answer_cache.py`, off in the e2e
   eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
