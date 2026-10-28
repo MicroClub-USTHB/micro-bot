@@ -68,6 +68,12 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   instructions or the passage layout (I26, checked in `api/chat.py`, no second call); the prompt
   asks for `NOT_FOUND` even when passages hold related facts and on break-in / secrets requests,
   says examples are not facts, and counts a yes/no or a corrected premise as an answer (I27, I28).
+- **Quota max (2026-10-29, branch `quotaoptimisations`):** credential pools per provider
+  (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`) with `LLM_KEY_STRATEGY`, a quota file per credential and
+  per provider reset zone (Gemini: midnight Pacific), Groq as a provider, the rewrite on
+  `gemini-3.1-flash-lite` (own 500/day pool; `gemini-3.6-flash` is only 20/day), 429s split into
+  `quota_exhausted` / `rate_limited` with the provider's own retry hint, `LLM_DAILY_LIMIT=0` =
+  the sum of the pools, `LLM_MAX_OUTPUT_TOKENS`.
 - **Query rewrite (2026-10-15, PR #21, same go-ahead, to review with eequaled):**
   `api/chat.py` makes the rewrite call (`llm/rewrite.py`) before retrieval and sums both calls in
   `usage`; `main.py` adds `ApplicationState.rewriter`; `config.py` has `REWRITE_*` and
@@ -99,13 +105,21 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
 - **LLM:** free tiers that need no credit card, via the `openai` SDK, in `LLM_PROVIDERS` order
-  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.6-flash` for the rewrite, since the free per-minute cap is per model: 15 for flash-lite, 5 for flash;
-  `reasoning_effort` `none` / `minimal`; Algeria is on Google's available-regions list), Cloudflare Workers
-  AI (`@cf/openai/gpt-oss-120b`), OpenRouter (`google/gemma-4-31b-it:free`). Each provider has
-  its own daily quota (`DATA_DIR/llm_providers/`), a per-minute guard (`*_RPM`) and a cool-down
-  (10 s after a 429, 120 s after a 5xx/timeout); the
-  provider is picked before the call, never retried. Grounded answers to a first question are
-  cached per `corpus_version` (`answer_cache.py`, off in the e2e eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
+  (`llm/providers.py`, 2026-10-29): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.1-flash-lite`
+  for the rewrite, each model its own per-project quota: 15 RPM / 500 RPD; `reasoning_effort` is
+  per model from `_GEMINI_EFFORT`, since 3.x cannot stop thinking and the wrong value is a 400;
+  Algeria is on Google's available-regions list), Groq (`openai/gpt-oss-120b`, 30 RPM, 1000 RPD,
+  200k TPD), Cloudflare Workers AI (`@cf/openai/gpt-oss-120b`), OpenRouter
+  (`google/gemma-4-31b-it:free`). Each **credential** has its own daily quota
+  (`DATA_DIR/llm_providers/<provider>/<model>__<key hash>/`), per-minute guard (`*_RPM`) and
+  cool-down, and a provider may hold a pool (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`) rotated by
+  `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project, so extra Gemini keys
+  only help across projects, which Google treats as a ToS violation. A 429 is classified: a body
+  naming a daily budget (`quotaId` …`PerDay`) spends the credential until the provider's own reset
+  (midnight Pacific for Gemini), a per-minute one cools for its `Retry-After`; 5xx/timeout cool
+  with an escalating backoff. The provider is picked before the call, never retried. Grounded
+  answers to a first question are cached per `corpus_version` (`answer_cache.py`, off in the e2e
+  eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
   (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). The expiry filter goes **inside the query**.
