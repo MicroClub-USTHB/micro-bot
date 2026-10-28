@@ -115,3 +115,12 @@ def test_a_typical_self_introduction_is_not_taken_for_a_prompt_leak() -> None:
     ]
 
     assert not any(leaks_prompt(reply, system) for reply in replies)
+
+
+def test_prompt_keeps_the_club_nickname_for_insider_questions() -> None:
+    system, _ = build_prompt("What do we call you inside the club?", "en", [])
+
+    assert "Lembi" in system
+    assert "Never bring it up yourself" in system
+    reply = "Inside the club, members call me Lembi."
+    assert not leaks_prompt(reply, system)
