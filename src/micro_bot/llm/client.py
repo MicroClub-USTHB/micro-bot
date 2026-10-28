@@ -5,8 +5,11 @@ OpenRouter by default; ``Provider`` points it at another endpoint (Gemini, Cloud
 
 from __future__ import annotations
 
+import re
+import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 import httpx
@@ -15,6 +18,20 @@ from openai import APIConnectionError, APITimeoutError, AsyncOpenAI, OpenAI
 from micro_bot.config import Settings, get_settings
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# A 429 whose body names a daily budget is the day's pool, not a minute's: the credential is
+# spent until the provider's reset instead of paused for a few seconds.
+_DAILY_QUOTA = re.compile(
+    r"PerDay|per[-_ ]day|daily|free-models-per-day|\b(?:TPD|RPD)\b|tokens? per day"
+    r"|requests? per day",
+    re.IGNORECASE,
+)
+# "7.5s", "5m", "1h2m3s", "60" (Groq's Retry-After sends relative units)
+_DURATION = re.compile(
+    r"(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$", re.IGNORECASE
+)
+_TRY_AGAIN = re.compile(r"try again in\s+([\dhms.]+)", re.IGNORECASE)
+_RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"([^"]+)"')
 
 
 class _Completions(Protocol):
@@ -31,7 +48,7 @@ class OpenAIClient(Protocol):
 
 @dataclass(frozen=True)
 class Provider:
-    """One OpenAI-compatible endpoint and the model it answers with."""
+    """One OpenAI-compatible endpoint and the model it answers with, for one credential."""
 
     name: str
     base_url: str
@@ -40,6 +57,10 @@ class Provider:
     daily_limit: int
     extra: dict[str, Any] = field(default_factory=dict)  # merged into every request
     rpm: int = 0  # requests per minute the free tier allows; 0 = no known limit
+    # Short hash of the credential: names the quota file and the log field, never the key itself
+    key_id: str = ""
+    daily_tokens: int = 0  # per-day token cap (Groq's TPD); 0 = no known cap
+    quota_reset_tz: str = "UTC"  # the zone its daily counter resets in (Gemini: Pacific)
 
 
 @dataclass(frozen=True)
@@ -61,6 +82,7 @@ class GenerationResult:
     usage: GenerationUsage
     error: str | None = None
     provider: str | None = None  # which provider answered (logged, never sent to clients)
+    retry_after_s: float | None = None  # the provider's own hint on a 429, when it gave one
 
     @property
     def ok(self) -> bool:
@@ -106,7 +128,10 @@ class OpenRouterClient:
         try:
             completion = client.chat.completions.create(**self._request(system, user))
         except Exception as exc:  # Provider/SDK failures must not reach the API layer.
-            return GenerationResult(None, GenerationUsage(llm_calls=1), self._error_kind(exc))
+            error, retry_after_s = _failure(exc)
+            return GenerationResult(
+                None, GenerationUsage(llm_calls=1), error, retry_after_s=retry_after_s
+            )
 
         return self._parse_completion(completion, calls=1)
 
@@ -119,6 +144,8 @@ class OpenRouterClient:
             ],
             "timeout": self.settings.llm_timeout_s,
         }
+        if self.settings.llm_max_output_tokens:
+            request["max_tokens"] = self.settings.llm_max_output_tokens
         if self.provider is not None:
             request.update(self.provider.extra)
         elif self.settings.llm_disable_reasoning:
@@ -149,6 +176,7 @@ class OpenRouterClient:
         parts: list[str] = []
         usage = None
         error: str | None = None
+        retry_after_s: float | None = None
         try:
             stream = await self._async_client.chat.completions.create(
                 **self._request(system, user),
@@ -172,7 +200,7 @@ class OpenRouterClient:
                         parts.append(text)
                         yield text
         except Exception as exc:  # Provider/SDK failures must not reach the API layer.
-            error = self._error_kind(exc)
+            error, retry_after_s = _failure(exc)
         content = "".join(parts)
         if error is None and not content.strip():
             error = "invalid_response"
@@ -184,6 +212,7 @@ class OpenRouterClient:
                 completion_tokens=_token_count(usage, "completion_tokens"),
             ),
             error,
+            retry_after_s=retry_after_s,
         )
 
     @staticmethod
@@ -215,20 +244,90 @@ class OpenRouterClient:
 
     @staticmethod
     def _error_kind(exc: Exception) -> str:
-        status_code = _status_code(exc)
-        if status_code == 429:
-            return "rate_limited"
-        if 500 <= status_code <= 599:
-            return "provider_5xx"
-        timeout_errors = (
-            APITimeoutError,
-            APIConnectionError,
-            httpx.TimeoutException,
-            TimeoutError,
-        )
-        if isinstance(exc, timeout_errors):
-            return "timeout"
-        return "provider_error"
+        return _failure(exc)[0]
+
+
+def _failure(exc: Exception) -> tuple[str, float | None]:
+    """The error code and the provider's own retry hint, from an SDK or ``httpx`` exception.
+
+    A 429 splits in two: a body that names a daily budget is ``quota_exhausted`` (the credential
+    is done until the provider's reset), anything else is ``rate_limited`` (a minute at most).
+    """
+    status_code = _status_code(exc)
+    if status_code == 429:
+        body = _error_text(exc)
+        kind = "quota_exhausted" if _DAILY_QUOTA.search(body) else "rate_limited"
+        return kind, _retry_hint(exc, body)
+    if 500 <= status_code <= 599:
+        return "provider_5xx", None
+    timeout_errors = (
+        APITimeoutError,
+        APIConnectionError,
+        httpx.TimeoutException,
+        TimeoutError,
+    )
+    if isinstance(exc, timeout_errors):
+        return "timeout", None
+    return "provider_error", None
+
+
+def _error_text(exc: Exception) -> str:
+    """The provider's message and body, which carry the quota id or the retry delay."""
+    response = getattr(exc, "response", None)
+    body = getattr(response, "text", "") if response is not None else ""
+    return f"{exc} {body if isinstance(body, str) else ''}"
+
+
+def _retry_hint(exc: Exception, body: str) -> float | None:
+    """The provider's own cool-down: headers first, then the body."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None) or {}
+    delay = _RETRY_DELAY.search(body)
+    prose = _TRY_AGAIN.search(body)
+    for hint in (
+        headers.get("retry-after"),
+        headers.get("x-ratelimit-reset-requests"),
+        delay.group(1) if delay else None,
+        prose.group(1).rstrip(".") if prose else None,
+    ):
+        seconds = _seconds(hint)
+        if seconds is not None:
+            return seconds
+    return None
+
+
+def _seconds(value: object) -> float | None:
+    """Seconds from ``"7.5s"``, ``"5m"``, ``"1h2m"``, ``"60"``, an HTTP date or an epoch."""
+    if value is None:
+        return None
+    if isinstance(value, int | float):
+        return _relative_or_epoch(float(value))
+    text = str(value).strip()
+    if not text:
+        return None
+    # Parse the unit before the number: int("5m") is 5, a 5 s cool-down instead of 5 minutes.
+    duration = _DURATION.fullmatch(text)
+    if duration is not None and any(duration.groups()):
+        hours, minutes, seconds = (float(part or 0) for part in duration.groups())
+        return hours * 3600 + minutes * 60 + seconds
+    try:
+        return _relative_or_epoch(float(text))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(text)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, when.timestamp() - time.time())
+
+
+def _relative_or_epoch(value: float) -> float:
+    """A small number is seconds; a big one is an epoch, in seconds (>1e9) or ms (>1e10)."""
+    if value > 1e10:
+        return max(0.0, value / 1000 - time.time())
+    if value > 1e9:
+        return max(0.0, value - time.time())
+    return max(0.0, value)
 
 
 def _status_code(exc: Exception) -> int:

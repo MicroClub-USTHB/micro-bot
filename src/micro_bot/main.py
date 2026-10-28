@@ -24,7 +24,12 @@ from micro_bot.ingest import errors as ingest_errors
 from micro_bot.ingest import pipeline as ingest_pipeline
 from micro_bot.ingest.models import DocumentInfo as IngestDocumentInfo
 from micro_bot.llm.client import GenerationResult, GenerationUsage, OpenRouterClient
-from micro_bot.llm.providers import ProviderChain, answer_providers
+from micro_bot.llm.providers import (
+    ProviderChain,
+    answer_providers,
+    daily_capacity,
+    pool_sizes,
+)
 from micro_bot.llm.quota import CircuitBreaker, DailyQuota
 from micro_bot.llm.rewrite import QueryRewrite, QueryRewriter
 from micro_bot.logging import RequestLoggingMiddleware
@@ -38,6 +43,7 @@ from micro_bot.schemas import (
 from micro_bot.text.lang import detect_language
 
 _log = structlog.get_logger(__name__)
+_UNLIMITED_DAILY = 10**6  # no provider pool: the global cap has nothing to protect
 
 
 class DocumentBackend(Protocol):
@@ -336,11 +342,13 @@ class ApplicationState:
                 self.settings.chat_rate_limit_window_s,
             )
         if self.quota is None:
-            self.quota = DailyQuota(
-                self.settings.data_dir,
-                self.settings.llm_daily_limit,
-                self.settings.llm_reserve,
+            # LLM_DAILY_LIMIT=0 means "the sum of the configured pools".
+            # With no pool configured there is nothing to protect: the extractive fallback or a
+            # test generator serves every call, so the cap is effectively absent.
+            limit = (
+                self.settings.llm_daily_limit or daily_capacity(self.settings) or _UNLIMITED_DAILY
             )
+            self.quota = DailyQuota(self.settings.data_dir, limit, self.settings.llm_reserve)
 
 
 def default_state(settings: Settings) -> ApplicationState:
@@ -366,7 +374,12 @@ def _generator(settings: Settings) -> GenerationService:
     providers = answer_providers(settings)
     if providers:
         chain = ProviderChain(settings, providers)
-        _log.info("llm_providers", order=chain.names)
+        _log.info(
+            "llm_providers",
+            order=chain.names,
+            pools=pool_sizes(settings),
+            daily_capacity=daily_capacity(settings),
+        )
         return chain
     _log.warning("llm_disabled", reason="no LLM provider key set: extractive fallback only")
     return FakeGenerationService()

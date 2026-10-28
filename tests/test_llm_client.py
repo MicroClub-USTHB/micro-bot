@@ -38,8 +38,10 @@ class FakeCompletion:
 
 
 class ProviderError(Exception):
-    def __init__(self, status_code: int) -> None:
+    def __init__(self, status_code: int, text: str = "", headers: dict | None = None) -> None:
+        super().__init__()
         self.status_code = status_code
+        self.response = type("Response", (), {"text": text, "headers": headers or {}})()
 
 
 class FakeCompletions:
@@ -146,3 +148,49 @@ def test_reasoning_is_turned_off_unless_allowed() -> None:
     first, second = fake.chat.completions.calls
     assert first["extra_body"] == {"reasoning": {"enabled": False}}
     assert "extra_body" not in second
+
+
+def test_the_daily_quota_429_is_not_a_minute_429() -> None:
+    body = (
+        '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[{"@type":'
+        '"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":'
+        '"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]},{"@type":'
+        '"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"33s"}]}}'
+    )
+    fake = FakeClient([ProviderError(429, body)])
+    client = OpenRouterClient(settings(), client=fake)
+
+    result = client.generate("system", "question")
+
+    assert result.error == "quota_exhausted"  # the day is gone, not the minute
+    assert result.retry_after_s == 33
+
+
+def test_a_per_minute_429_keeps_the_provider_retry_after() -> None:
+    fake = FakeClient([ProviderError(429, "quota exceeded", {"retry-after": "5m"})])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert (result.error, result.retry_after_s) == ("rate_limited", 300)
+
+
+def test_a_prose_retry_hint_is_read_in_seconds() -> None:
+    fake = FakeClient(
+        [ProviderError(429, "Rate limit reached for model. Please try again in 7.5s.")]
+    )
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert (result.error, result.retry_after_s) == ("rate_limited", 7.5)
+
+
+def test_the_answer_is_capped_in_tokens() -> None:
+    fake = FakeClient([FakeCompletion("a"), FakeCompletion("b")])
+
+    capped = settings().model_copy(update={"llm_max_output_tokens": 42})
+    OpenRouterClient(capped, client=fake).generate("s", "u")
+    uncapped = settings().model_copy(update={"llm_max_output_tokens": 0})
+    OpenRouterClient(uncapped, client=fake).generate("s", "u")
+
+    assert fake.chat.completions.calls[0]["max_tokens"] == 42  # thinking is billed as output
+    assert "max_tokens" not in fake.chat.completions.calls[1]
