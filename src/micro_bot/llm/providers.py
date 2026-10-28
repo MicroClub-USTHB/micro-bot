@@ -11,6 +11,11 @@ reset, so the next question goes to the next one. When none is left the caller g
 A provider may hold several credentials (``*_API_KEYS``): each is its own pool,
 its own per-minute window and its own cool-down, and ``LLM_KEY_STRATEGY`` decides which one
 serves the next call. That is how the free tiers are actually used up rather than 429'd away.
+A provider may also hold several models (``GROQ_MODELS``): Groq's free limits are a row per
+model, so a second model is a second day of quota behind the first.
+
+The per-minute guard counts tokens as well as requests, because a grounded prompt is ~2.5k
+tokens and the token cap is the one a RAG assistant reaches first (Groq: 8k TPM against 30 RPM).
 
 The rewrite goes through ``ProviderChain.for_rewrite()``: the same order, but Gemini answers it
 with a cheaper model on its own quota, so the answer model's quota pays only for answers.
@@ -57,6 +62,15 @@ _GEMINI_EFFORT = {
     "gemini-3.8-flash": "none",
 }
 
+# gpt-oss bills its thinking as completion tokens, and Groq's TPD counts them, so a grounded
+# answer must spend as little on thinking as the model allows ("low" is gpt-oss's floor).
+# A model missing here gets no parameter at all: an unsupported value is a 400, not a hint.
+_GROQ_EFFORT = {
+    "openai/gpt-oss-120b": "low",
+    "openai/gpt-oss-20b": "low",
+    "openai/gpt-oss-safeguard-20b": "low",
+}
+
 
 def answer_providers(settings: Settings) -> list[Provider]:
     """Configured credentials for the answer call, in ``LLM_PROVIDERS`` order."""
@@ -74,7 +88,7 @@ def daily_capacity(settings: Settings) -> int:
 
 
 def pool_sizes(settings: Settings) -> dict[str, int]:
-    """Credentials per provider, for the startup log."""
+    """Slots per provider for the startup log: models times credentials on Groq."""
     sizes: dict[str, int] = {}
     for provider in answer_providers(settings):
         sizes[provider.name] = sizes.get(provider.name, 0) + 1
@@ -110,19 +124,25 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 quota_reset_tz=settings.gemini_quota_reset_tz,
             )
         )
-    for key in _keys(settings.groq_api_key, settings.groq_api_keys):
-        providers.append(
-            Provider(
-                name="groq",
-                base_url=GROQ_BASE_URL,
-                api_key=key,
-                model=settings.groq_model,
-                daily_limit=settings.groq_daily_limit,
-                rpm=settings.groq_rpm,
-                key_id=_key_id(key),
-                daily_tokens=settings.groq_daily_tokens,
+    for model in _keys(settings.groq_model, settings.groq_models):
+        effort = settings.groq_reasoning_effort.strip() or _GROQ_EFFORT.get(model, "")
+        for key in _keys(settings.groq_api_key, settings.groq_api_keys):
+            providers.append(
+                Provider(
+                    name="groq",
+                    base_url=GROQ_BASE_URL,
+                    api_key=key,
+                    model=model,
+                    daily_limit=settings.groq_daily_limit,
+                    rpm=settings.groq_rpm,
+                    tpm=settings.groq_tpm,
+                    key_id=_key_id(key),
+                    daily_tokens=settings.groq_daily_tokens,
+                    extra={"reasoning_effort": effort}
+                    if effort and settings.llm_disable_reasoning
+                    else {},
+                )
             )
-        )
     for account_id, token in _cloudflare_accounts(settings):
         providers.append(
             Provider(
@@ -216,7 +236,7 @@ class ProviderChain:
         quota_dir: Path | None = None,
         clock: Callable[[], float] = time.monotonic,
         client_factory: Callable[[Provider], OpenRouterClient] | None = None,
-        _shared: tuple[Lock, dict[tuple[str, str, str], deque[float]]] | None = None,
+        _shared: tuple[Lock, dict[tuple[str, str, str], deque[tuple[float, int]]]] | None = None,
     ) -> None:
         self.settings = settings
         self.clock = clock
@@ -226,8 +246,8 @@ class ProviderChain:
         # One quota file per provider, model and credential: the rewrite and answer chains
         # share it when they use the same model, and each Gemini model keeps its own.
         self._slots = [_Slot(p, self._make(p), self._quota(p)) for p in providers]
-        # Calls of the last minute per credential, shared with the rewrite chain: the per-minute
-        # caps (Gemini per model, Groq and OpenRouter per key) count both calls.
+        # Calls of the last minute per credential, as (moment, tokens), shared with the rewrite
+        # chain: the per-minute caps (Gemini per model, Groq per key and model) count both calls.
         self._lock, self._recent = _shared or (Lock(), {})
         self._sticky: _Slot | None = None
         self._sticky_uses = 0
@@ -261,29 +281,38 @@ class ProviderChain:
             )
         return self._rewrite
 
-    def _pick(self) -> _Slot | None:
+    def _pick(self, cost: int = 0) -> _Slot | None:
         """The next eligible credential: provider order first, strategy inside a provider."""
         now = self.clock()
         with self._lock:
-            for name in self._provider_names():
-                candidates = [s for s in self._slots if s.provider.name == name]
+            for group in self._groups():
+                candidates = [
+                    s for s in self._slots if (s.provider.name, s.provider.model) == group
+                ]
                 for slot in self._candidates(candidates):
-                    if not self._available(slot, now):
+                    if not self._available(slot, now, cost):
                         continue
                     if slot.quota.acquire():
                         slot.last_used = now
-                        self._recent[slot.key].append(now)
+                        self._recent[slot.key].append((now, cost))
                         self._remember(slot)
                         return slot
         return None
 
-    def _provider_names(self) -> list[str]:
-        """Provider names in slot order, each once (a pool repeats its provider name)."""
-        names: list[str] = []
+    def _groups(self) -> list[tuple[str, str]]:
+        """``(provider, model)`` pairs in slot order, each once.
+
+        Groq's free limits are a row per model, so a second model id is a second pool: grouping
+        by model keeps the better one serving until its day is spent, and ``LLM_KEY_STRATEGY``
+        rotates credentials *inside* a model instead of spreading a question onto a weaker model
+        for the sake of levelling the call counts.
+        """
+        groups: list[tuple[str, str]] = []
         for slot in self._slots:
-            if slot.provider.name not in names:
-                names.append(slot.provider.name)
-        return names
+            group = (slot.provider.name, slot.provider.model)
+            if group not in groups:
+                groups.append(group)
+        return groups
 
     def _candidates(self, candidates: list[_Slot]) -> list[_Slot]:
         """Order one provider's credentials by ``LLM_KEY_STRATEGY``."""
@@ -307,16 +336,19 @@ class ProviderChain:
         else:
             self._sticky, self._sticky_uses = slot, 1
 
-    def _available(self, slot: _Slot, now: float) -> bool:
+    def _available(self, slot: _Slot, now: float, cost: int = 0) -> bool:
         """Not cooled down, not rate-limited this minute, not out of quota or tokens."""
         if slot.blocked_until > now:
             return False
         recent = self._recent.setdefault(slot.key, deque())
-        while recent and recent[0] <= now - 60:
+        while recent and recent[0][0] <= now - 60:
             recent.popleft()
         rpm = slot.provider.rpm
         if rpm and len(recent) >= rpm:
             return False  # its per-minute cap would answer 429: try another credential
+        tpm = slot.provider.tpm
+        if tpm and sum(tokens for _, tokens in recent) + cost > tpm:
+            return False  # the token cap, which a grounded prompt hits long before the request cap
         return not (slot.quota.remaining == 0 or slot.quota.tokens_spent)
 
     def _settle(self, slot: _Slot, result: GenerationResult) -> GenerationResult:
@@ -360,16 +392,26 @@ class ProviderChain:
         return replace(result, provider=slot.provider.name)
 
     async def generate(self, system: str, user: str) -> GenerationResult:
-        slot = self._pick()
+        slot = self._pick(_estimate_tokens(system, user, self.settings.llm_max_output_tokens))
         if slot is None:
             return GenerationResult(None, GenerationUsage(llm_calls=0), "providers_exhausted")
         result = await asyncio.to_thread(slot.client.generate, system, user)
         return self._settle(slot, result)
 
     async def stream(self, system: str, user: str) -> AsyncIterator[str | GenerationResult]:
-        slot = self._pick()
+        slot = self._pick(_estimate_tokens(system, user, self.settings.llm_max_output_tokens))
         if slot is None:
             yield GenerationResult(None, GenerationUsage(llm_calls=0), "providers_exhausted")
             return
         async for item in slot.client.stream(system, user):
             yield self._settle(slot, item) if isinstance(item, GenerationResult) else item
+
+
+def _estimate_tokens(system: str, user: str, max_output: int) -> int:
+    """An upper bound for one call's tokens, which only the per-minute guard reads.
+
+    Three characters per token, not four: Arabic and French tokenize worse than English, and an
+    under-estimate would earn the 429 the guard exists to prevent. The output cap is added
+    because a reasoning model spends it out of the same budget.
+    """
+    return (len(system) + len(user)) // 3 + max_output

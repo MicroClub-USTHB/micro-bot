@@ -10,6 +10,7 @@ from micro_bot.llm.client import GenerationResult, GenerationUsage, Provider
 from micro_bot.llm.providers import (
     GROQ_BASE_URL,
     ProviderChain,
+    _estimate_tokens,
     answer_providers,
     daily_capacity,
     pool_sizes,
@@ -189,7 +190,13 @@ def test_repeated_failures_escalate_the_cooldown_and_a_success_clears_it(tmp_pat
 
 
 def test_tokens_are_recorded_and_a_token_budget_skips_the_provider(tmp_path: Path) -> None:
-    chain, _, _ = build(tmp_path, groq_api_key="g", llm_providers="groq", groq_daily_tokens=100)
+    chain, _, _ = build(
+        tmp_path,
+        groq_api_key="g",
+        llm_providers="groq",
+        groq_models="",
+        groq_daily_tokens=100,
+    )
 
     chain._settle(chain._pick(), GenerationResult("ok", GenerationUsage(1, 80, 20)))
 
@@ -197,26 +204,41 @@ def test_tokens_are_recorded_and_a_token_budget_skips_the_provider(tmp_path: Pat
     assert chain._pick() is None  # 80 of 100 tokens: the binding limit is the TPD, not the RPD
 
 
+def test_a_second_model_is_a_second_day_behind_the_first(tmp_path: Path) -> None:
+    """Groq's free limits are a row per model, so 20b answers only once 120b's day is spent."""
+    chain, _, _ = build(tmp_path, groq_api_key="g", llm_providers="groq", groq_daily_limit=1)
+
+    picked = [chain._pick().provider.model for _ in range(2)]
+
+    assert picked == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    assert chain._pick() is None  # both models' days are spent: providers_exhausted
+
+
 def test_groq_is_configured_from_the_same_pool_helper(tmp_path: Path) -> None:
     configuration = settings(tmp_path, groq_api_key="g1,g2", llm_providers="groq")
 
     providers = answer_providers(configuration)
 
-    assert [p.api_key for p in providers] == ["g1", "g2"]
+    # Model-major: every credential of 120b before any of 20b
+    assert [(p.model, p.api_key) for p in providers] == [
+        ("openai/gpt-oss-120b", "g1"),
+        ("openai/gpt-oss-120b", "g2"),
+        ("openai/gpt-oss-20b", "g1"),
+        ("openai/gpt-oss-20b", "g2"),
+    ]
     assert providers[0].base_url == GROQ_BASE_URL
-    assert (providers[0].model, providers[0].rpm, providers[0].daily_limit) == (
-        "openai/gpt-oss-120b",
-        30,
-        1000,
-    )
+    assert (providers[0].rpm, providers[0].tpm, providers[0].daily_limit) == (30, 8000, 1000)
     assert providers[0].daily_tokens == 200_000
+    # gpt-oss bills its thinking as completion tokens, which Groq counts against the 200k TPD
+    assert providers[0].extra == {"reasoning_effort": "low"}
 
 
 def test_daily_capacity_sums_every_pool(tmp_path: Path) -> None:
     configuration = settings(tmp_path, gemini_api_keys="a,b", groq_api_key="g")
 
-    # Two Gemini credentials count twice, which is why the ToS note keeps them on one project
-    assert daily_capacity(configuration) == 500 + 500 + 1000
+    # Two Gemini credentials count twice, which is why the ToS note keeps them on one project;
+    # Groq's two models are two rows in its own table, so they count twice on a single key
+    assert daily_capacity(configuration) == 500 + 500 + 1000 + 1000
 
 
 def test_the_rewrite_uses_its_own_flash_lite_model_and_pool(tmp_path: Path) -> None:
@@ -370,3 +392,40 @@ def test_tokens_are_recorded_only_for_a_provider_with_a_token_budget(tmp_path: P
     counter = next((tmp_path / "llm_providers" / "gemini").glob("*/llm_quota.json"))
 
     assert "tokens" not in json.loads(counter.read_text())  # nothing reads it without a TPD
+
+
+def test_the_token_cap_blocks_the_third_grounded_prompt_of_a_minute(tmp_path: Path) -> None:
+    """Groq's 8000 TPM against a ~3.2k call is the limit a RAG prompt reaches, not the 30 RPM."""
+    chain, _, clock = build(tmp_path, groq_api_key="g", llm_providers="groq", groq_models="")
+    call = 3_200  # what one grounded prompt costs, as the guard estimates it
+
+    picked = [chain._pick(call) for _ in range(3)]
+
+    assert all(slot is not None for slot in picked[:2])  # 6400 of 8000 tokens fit
+    assert picked[2] is None  # 9600 would be a 429 the guard exists to prevent
+    clock.now += 61
+    assert chain._pick(call) is not None  # the window is a minute, not a day
+
+
+async def test_a_big_prompt_books_itself_against_the_minute(tmp_path: Path) -> None:
+    """The per-minute guard reads the prompt before the call, so generate has to feed it."""
+    chain, _, _ = build(
+        tmp_path,
+        groq_api_key="g",
+        llm_providers="groq",
+        groq_models="",
+        groq_tpm=1000,
+        llm_max_output_tokens=0,
+    )
+    prompt = "x" * 1_200  # three characters a token: 400 per call
+
+    answers = [await chain.generate("", prompt) for _ in range(3)]
+
+    assert [a.ok for a in answers[:2]] == [True, True]
+    assert answers[2].error == "providers_exhausted"  # 1200 of 1000 tokens in one minute
+
+
+def test_the_output_cap_is_part_of_the_estimate() -> None:
+    """Thinking is billed as output, so a reasoning model's cap spends the minute's budget too."""
+    assert _estimate_tokens("", "", 0) == 0
+    assert _estimate_tokens("x" * 300, "x" * 300, 800) == 200 + 800

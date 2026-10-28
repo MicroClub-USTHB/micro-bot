@@ -184,6 +184,32 @@ def test_a_prose_retry_hint_is_read_in_seconds() -> None:
     assert (result.error, result.retry_after_s) == ("rate_limited", 7.5)
 
 
+def test_a_groq_day_429_is_the_day_and_not_the_minute() -> None:
+    body = (
+        "Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01` on tokens "
+        "per day (TPD): Limit 200000, Used 199500, Requested 2500. Please try again in 1h2m3s."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "quota_exhausted"  # the credential is spent until its own reset
+
+
+def test_a_groq_minute_429_takes_the_token_reset_not_the_day_reset() -> None:
+    body = (
+        "Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): "
+        "Limit 8000, Used 7900, Requested 2500."
+    )
+    headers = {"x-ratelimit-reset-tokens": "7.66s", "x-ratelimit-reset-requests": "2m59.56s"}
+    fake = FakeClient([ProviderError(429, body, headers)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    # Groq documents ...-reset-requests as the request *day*; the minute is the binding limit here
+    assert (result.error, result.retry_after_s) == ("rate_limited", 7.66)
+
+
 def test_the_answer_is_capped_in_tokens() -> None:
     fake = FakeClient([FakeCompletion("a"), FakeCompletion("b")])
 

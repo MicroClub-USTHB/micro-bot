@@ -57,6 +57,10 @@ class Provider:
     daily_limit: int
     extra: dict[str, Any] = field(default_factory=dict)  # merged into every request
     rpm: int = 0  # requests per minute the free tier allows; 0 = no known limit
+    # Tokens the free tier allows per minute; 0 = no known limit. Counted as an upper bound
+    # before the call, because a grounded prompt is ~2.5k tokens and that cap binds long before
+    # the request one does (Groq: 8000 TPM against 30 RPM).
+    tpm: int = 0
     # Short hash of the credential: names the quota file and the log field, never the key itself
     key_id: str = ""
     daily_tokens: int = 0  # per-day token cap (Groq's TPD); 0 = no known cap
@@ -279,13 +283,19 @@ def _error_text(exc: Exception) -> str:
 
 
 def _retry_hint(exc: Exception, body: str) -> float | None:
-    """The provider's own cool-down: headers first, then the body."""
+    """The provider's own cool-down: headers first, then the body.
+
+    ``x-ratelimit-reset-tokens`` comes before ``...-requests``: Groq documents the latter as
+    the *day's* reset (hours away) and the former as the minute's, and the minute is the limit a
+    grounded prompt hits first.
+    """
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None) or {}
     delay = _RETRY_DELAY.search(body)
     prose = _TRY_AGAIN.search(body)
     for hint in (
         headers.get("retry-after"),
+        headers.get("x-ratelimit-reset-tokens"),
         headers.get("x-ratelimit-reset-requests"),
         delay.group(1) if delay else None,
         prose.group(1).rstrip(".") if prose else None,

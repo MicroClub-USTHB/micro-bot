@@ -30,15 +30,24 @@ class Settings(BaseSettings):
     cloudflare_model: str = "@cf/openai/gpt-oss-120b"
     cloudflare_daily_limit: int = Field(default=120, ge=0)
     cloudflare_rpm: int = Field(default=300, ge=0)
-    # Groq: no card, OpenAI-compatible, 30 requests/minute, 1000 requests/day, but the binding
-    # limit is 200k tokens/day at ~2,500 tokens per grounded answer (~80 answers), measured
-    # 2026-10-29 (console.groq.com/docs/rate-limits)
+    # Groq: no card, OpenAI-compatible (console.groq.com/docs/rate-limits, 2026-10-29). With a
+    # grounded answer at ~2,500 tokens the 8000 TPM is what binds, not the 30 RPM: two questions
+    # a minute, so the per-minute guard counts tokens and not only requests. A day is 200k TPD
+    # (~80 answers) before the 1000 RPD.
     groq_api_key: str | None = None
     groq_api_keys: str = ""
+    # Limits are per ORGANIZATION, not per key: several keys of one account share one pool, and
+    # only keys of separate accounts multiply it. Models are separate rows in Groq's own table,
+    # so a second model id is a second 200k TPD, 8k TPM and 1000 RPD on the same key.
     groq_model: str = "openai/gpt-oss-120b"
+    groq_models: str = "openai/gpt-oss-20b"
     groq_daily_limit: int = Field(default=1000, ge=0)
     groq_daily_tokens: int = Field(default=200_000, ge=0)
     groq_rpm: int = Field(default=30, ge=0)
+    groq_tpm: int = Field(default=8_000, ge=0)
+    # "" = the per-model value in llm/providers.py (`_GROQ_EFFORT`): "low", since gpt-oss bills
+    # its thinking as completion tokens and they come out of the same 200k TPD
+    groq_reasoning_effort: str = ""
     # Google Gemini API, OpenAI-compatible. Free tier needs no card and lists Algeria
     # (ai.google.dev/gemini-api/docs/available-regions, 2026-10-18); free content may be used
     # to improve Google's products, so only public documents belong here.
