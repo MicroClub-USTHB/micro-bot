@@ -131,9 +131,10 @@ def test_fill_first_drains_one_credential_before_the_next(tmp_path: Path) -> Non
         tmp_path, gemini_api_keys="k1,k2", llm_providers="gemini", llm_key_strategy="fill-first"
     )
 
-    picked = [chain._pick().provider.api_key for _ in range(3)]
+    picked = [chain._pick().provider.api_key for _ in range(4)]
 
-    assert picked == ["k1", "k1", "k1"]
+    # round-robin would hand the 4th call to k2; fill-first drains k1's day first
+    assert picked == ["k1", "k1", "k1", "k1"]
 
 
 def test_a_spent_credential_moves_inside_the_same_provider_then_gives_up(tmp_path: Path) -> None:
