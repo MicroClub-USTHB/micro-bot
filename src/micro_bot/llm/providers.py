@@ -87,6 +87,18 @@ def daily_capacity(settings: Settings) -> int:
     return sum(p.daily_limit for p in answer_providers(settings))
 
 
+def daily_calls(settings: Settings) -> int:
+    """Requests a day the pools can serve, which is what the shared counter charges.
+
+    One question spends two calls while the rewrite is on, and the rewrite has its own model and
+    pool, so a cap built from the answer pools alone would stop the day at half the questions.
+    """
+    calls = sum(p.daily_limit for p in answer_providers(settings))
+    if settings.rewrite_enabled:
+        calls += sum(p.daily_limit for p in rewrite_providers(settings))
+    return calls
+
+
 def pool_sizes(settings: Settings) -> dict[str, int]:
     """Slots per provider for the startup log: models times credentials on Groq."""
     sizes: dict[str, int] = {}

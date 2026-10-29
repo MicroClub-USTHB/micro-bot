@@ -12,6 +12,7 @@ from micro_bot.llm.providers import (
     ProviderChain,
     _estimate_tokens,
     answer_providers,
+    daily_calls,
     daily_capacity,
     pool_sizes,
     rewrite_providers,
@@ -442,3 +443,12 @@ def test_a_daily_quota_429_cools_until_the_reset_not_for_centuries(tmp_path: Pat
 
     pause = slot.blocked_until - clock.now
     assert 0 <= pause <= 86_400  # a day at most, and it comes back on its own
+
+
+def test_the_global_cap_counts_the_rewrite_the_counter_charges(tmp_path: Path) -> None:
+    """One question spends two calls of the shared counter, so the cap needs both pools."""
+    configuration = settings(tmp_path, gemini_api_key="g")
+
+    assert daily_capacity(configuration) == 500  # answers only
+    assert daily_calls(configuration) == 1000  # + the rewrite model's own 500
+    assert daily_calls(settings(tmp_path, gemini_api_key="g", rewrite_enabled=False)) == 500

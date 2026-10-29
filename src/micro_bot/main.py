@@ -27,6 +27,7 @@ from micro_bot.llm.client import GenerationResult, GenerationUsage, OpenRouterCl
 from micro_bot.llm.providers import (
     ProviderChain,
     answer_providers,
+    daily_calls,
     daily_capacity,
     pool_sizes,
 )
@@ -342,12 +343,11 @@ class ApplicationState:
                 self.settings.chat_rate_limit_window_s,
             )
         if self.quota is None:
-            # LLM_DAILY_LIMIT=0 means "the sum of the configured pools".
+            # LLM_DAILY_LIMIT=0 means "the sum of the configured pools", counted in the calls the
+            # shared counter actually charges: the rewrite and the answer are two of them.
             # With no pool configured there is nothing to protect: the extractive fallback or a
             # test generator serves every call, so the cap is effectively absent.
-            limit = (
-                self.settings.llm_daily_limit or daily_capacity(self.settings) or _UNLIMITED_DAILY
-            )
+            limit = self.settings.llm_daily_limit or daily_calls(self.settings) or _UNLIMITED_DAILY
             self.quota = DailyQuota(self.settings.data_dir, limit, self.settings.llm_reserve)
 
 
@@ -378,7 +378,8 @@ def _generator(settings: Settings) -> GenerationService:
             "llm_providers",
             order=chain.names,
             pools=pool_sizes(settings),
-            daily_capacity=daily_capacity(settings),
+            answers_per_day=daily_capacity(settings),
+            requests_per_day=daily_calls(settings),
         )
         return chain
     _log.warning("llm_disabled", reason="no LLM provider key set: extractive fallback only")
