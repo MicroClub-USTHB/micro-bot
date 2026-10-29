@@ -555,3 +555,105 @@ async def test_an_empty_reply_cools_the_row_and_hands_over(tmp_path: Path) -> No
 
     assert failed.error == "invalid_response"
     assert handed_over.ok  # the second row answers instead of the empty one being retried
+
+
+def host_env(tmp_path: Path, **lines: str) -> Settings:
+    """Settings read the way the host pastes them: one comma-separated line per provider."""
+    path = tmp_path / "host.env"
+    path.write_text("".join(f"{name}={value}\n" for name, value in lines.items()), encoding="utf-8")
+    return Settings(_env_file=path)
+
+
+def chain_for(configuration: Settings, clock: Clock | None = None) -> tuple[ProviderChain, dict]:
+    clients: dict[tuple[str, str], Client] = {}
+
+    def make(provider: Provider) -> Client:
+        client = Client(provider, [])
+        clients[(provider.model, provider.key_id)] = client
+        return client
+
+    chain = ProviderChain(
+        configuration, answer_providers(configuration), clock=clock or Clock(), client_factory=make
+    )
+    return chain, clients
+
+
+async def test_a_pool_pasted_as_one_line_is_one_credential_per_entry(tmp_path: Path) -> None:
+    """GEMINI_API_KEYS=k1,k2,k3,k4 with no spaces: four credentials, each with its own counter."""
+    configuration = host_env(
+        tmp_path,
+        **{
+            "DATA_DIR": str(tmp_path / "data"),
+            "LLM_PROVIDERS": "gemini,groq",
+            "GEMINI_API_KEYS": "g1,g2,g3,g4",
+            "GROQ_API_KEYS": "q1,q2,q3,q4,q5",
+        },
+    )
+    chain, clients = chain_for(configuration)
+
+    await chain.generate("s", "u")
+    await chain.generate("s", "u")
+    await chain.generate("s", "u")
+    await chain.generate("s", "u")
+
+    assert pool_sizes(configuration) == {"gemini": 8, "groq": 10}
+    # the answer model's four keys each served one call, so least-used rotated over the paste
+    answer_calls = [
+        c.calls for (model, _), c in clients.items() if model == "gemini-3.5-flash-lite"
+    ]
+    assert sorted(answer_calls) == [1, 1, 1, 1]
+    counters = (tmp_path / "data" / "llm_providers" / "gemini").glob("*/llm_quota.json")
+    assert len(list(counters)) == 4  # one file per pasted key, none shared
+
+
+def test_rotation_strategies_read_the_pasted_pool(tmp_path: Path) -> None:
+    def picked(strategy: str) -> list[str]:
+        configuration = host_env(
+            tmp_path,
+            **{
+                "DATA_DIR": str(tmp_path / strategy),
+                "LLM_PROVIDERS": "gemini",
+                "LLM_KEY_STRATEGY": strategy,
+                "GEMINI_API_KEYS": "g1,g2,g3,g4",
+            },
+        )
+        chain, _ = chain_for(configuration)
+        return [chain._pick().provider.api_key for _ in range(4)]
+
+    assert picked("round-robin") == ["g1", "g1", "g1", "g2"]  # sticky for three, then moves on
+    assert picked("fill-first") == ["g1", "g1", "g1", "g1"]  # drains one key's day first
+
+
+def test_a_pasted_pool_rotates_around_a_cooled_key_and_each_spent_one(tmp_path: Path) -> None:
+    configuration = host_env(
+        tmp_path,
+        **{
+            "DATA_DIR": str(tmp_path / "cool"),
+            "LLM_PROVIDERS": "gemini",
+            "GEMINI_API_KEYS": "g1,g2,g3,g4",
+        },
+    )
+    chain, _ = chain_for(configuration)
+    cooled = chain._pick()
+
+    chain._settle(cooled, GenerationResult(None, GenerationUsage(1), "rate_limited", 45.0))
+
+    handed_over = chain._pick()
+    assert handed_over is not None  # one 429'd key does not take the pasted pool out
+    assert handed_over.provider.key_id != cooled.provider.key_id
+
+    spent = host_env(
+        tmp_path,
+        **{
+            "DATA_DIR": str(tmp_path / "spent"),
+            "LLM_PROVIDERS": "gemini",
+            "GEMINI_API_KEYS": "g1,g2,g3,g4",
+            "GEMINI_DAILY_LIMIT": "1",
+            "GEMINI_REWRITE_DAILY_LIMIT": "0",
+        },
+    )
+    chain, _ = chain_for(spent)
+    keys_used = [chain._pick().provider.key_id for _ in range(4)]
+
+    assert len(set(keys_used)) == 4  # four pasted keys served four questions
+    assert chain._pick() is None  # and the pool is genuinely empty afterwards
