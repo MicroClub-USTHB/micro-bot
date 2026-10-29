@@ -199,3 +199,17 @@ async def test_a_429_pauses_the_provider_only_briefly(tmp_path: Path) -> None:
 
     assert during.provider == "cloudflare"
     assert after.provider == "gemini"
+
+
+def test_the_suite_ignores_the_developers_dotenv(tmp_path: Path, monkeypatch) -> None:
+    """Guard the conftest fixture: a real .env must never answer for a test.
+
+    Standing in for a developer's checkout (or CI with a stray .env), a key written there used to
+    become a live provider, and the provider-order tests then asserted against whatever the
+    developer happened to have configured.
+    """
+    monkeypatch.delenv("GROQ_API_KEYS", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("GROQ_API_KEYS=leaked,GEMINI_API_KEYS=leaked\n")
+
+    assert Settings().groq_api_keys == ""
