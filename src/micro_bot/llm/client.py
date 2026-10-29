@@ -20,10 +20,12 @@ from micro_bot.config import Settings, get_settings
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # A 429 whose body names a daily budget is the day's pool, not a minute's: the credential is
-# spent until the provider's reset instead of paused for a few seconds.
+# spent until the provider's reset instead of paused for a few seconds. A bare "daily" is not
+# enough evidence — a per-minute 429 that happens to mention daily usage would burn the whole
+# day — so the word has to sit next to a limit word.
 _DAILY_QUOTA = re.compile(
-    r"PerDay|per[-_ ]day|daily|free-models-per-day|\b(?:TPD|RPD)\b|tokens? per day"
-    r"|requests? per day",
+    r"PerDay|per[-_ ]day|free-models-per-day|\b(?:TPD|RPD)\b|tokens? per day"
+    r"|requests? per day|\bdaily\b[^\n]{0,40}\b(?:limit|quota|budget|cap|allocation)\b",
     re.IGNORECASE,
 )
 # "7.5s", "5m", "1h2m3s", "60" (Groq's Retry-After sends relative units)
@@ -285,9 +287,8 @@ def _error_text(exc: Exception) -> str:
 def _retry_hint(exc: Exception, body: str) -> float | None:
     """The provider's own cool-down: headers first, then the body.
 
-    ``x-ratelimit-reset-tokens`` comes before ``...-requests``: Groq documents the latter as
-    the *day's* reset (hours away) and the former as the minute's, and the minute is the limit a
-    grounded prompt hits first.
+    ``x-ratelimit-reset-tokens`` comes before ``...-requests`` because the token cap is the one a
+    grounded prompt reaches first (Groq: 8k TPM against 30 RPM), so its reset is the relevant one.
     """
     response = getattr(exc, "response", None)
     headers = getattr(response, "headers", None) or {}

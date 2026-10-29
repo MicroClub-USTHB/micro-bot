@@ -206,8 +206,29 @@ def test_a_groq_minute_429_takes_the_token_reset_not_the_day_reset() -> None:
 
     result = OpenRouterClient(settings(), client=fake).generate("system", "question")
 
-    # Groq documents ...-reset-requests as the request *day*; the minute is the binding limit here
+    # the token cap is the binding one here, so its reset is the hint worth keeping
     assert (result.error, result.retry_after_s) == ("rate_limited", 7.66)
+
+
+def test_a_per_minute_429_that_mentions_daily_usage_is_not_a_spent_day() -> None:
+    """A bare "daily" once spent the whole credential; the word needs a limit next to it."""
+    body = (
+        "Rate limit reached for model `openai/gpt-oss-120b` on requests per minute (RPM): "
+        "Limit 30, Used 30, Requested 1. See your daily usage at console.groq.com/settings/limits."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "rate_limited"  # paused for the minute, not spent for the day
+
+
+def test_a_daily_limit_in_prose_is_still_the_days_quota() -> None:
+    fake = FakeClient([ProviderError(429, "You have exceeded your daily limit for this model.")])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "quota_exhausted"
 
 
 def test_the_answer_is_capped_in_tokens() -> None:
