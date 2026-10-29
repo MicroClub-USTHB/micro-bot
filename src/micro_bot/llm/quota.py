@@ -13,6 +13,8 @@ from threading import Lock
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import structlog
+
 try:
     import fcntl
 except ImportError:  # pragma: no cover - deployed target is Linux
@@ -20,6 +22,9 @@ except ImportError:  # pragma: no cover - deployed target is Linux
 
 Clock = Callable[[], datetime | float]
 _ONE_DAY = timedelta(days=1)
+_WARNED_ZONES: set[str] = set()
+
+log = structlog.get_logger(__name__)
 
 
 def _zone(name: str) -> ZoneInfo | UTC:
@@ -29,6 +34,11 @@ def _zone(name: str) -> ZoneInfo | UTC:
     try:
         return ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError):
+        # Falling back to UTC silently would hand Gemini "fresh" quota 7-8 h early, which is the
+        # exact bug the reset zone exists to prevent: say so once per zone.
+        if name not in _WARNED_ZONES:
+            _WARNED_ZONES.add(name)
+            log.warning("quota_reset_zone_unavailable", zone=name, fallback="UTC")
         return UTC
 
 
