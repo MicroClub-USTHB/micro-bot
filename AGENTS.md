@@ -68,6 +68,12 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   instructions or the passage layout (I26, checked in `api/chat.py`, no second call); the prompt
   asks for `NOT_FOUND` even when passages hold related facts and on break-in / secrets requests,
   says examples are not facts, and counts a yes/no or a corrected premise as an answer (I27, I28).
+- **Quota max (2026-10-29, branch `quotaoptimisations`):** credential pools per provider
+  (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`) with `LLM_KEY_STRATEGY`, a quota file per credential and
+  per provider reset zone (Gemini: midnight Pacific), Groq as a provider, the rewrite on
+  `gemini-3.1-flash-lite` (own 500/day pool; `gemini-3.6-flash` is only 20/day), 429s split into
+  `quota_exhausted` / `rate_limited` with the provider's own retry hint, `LLM_DAILY_LIMIT=0` =
+  the sum of the pools, `LLM_MAX_OUTPUT_TOKENS`.
 - **Query rewrite (2026-10-15, PR #21, same go-ahead, to review with eequaled):**
   `api/chat.py` makes the rewrite call (`llm/rewrite.py`) before retrieval and sums both calls in
   `usage`; `main.py` adds `ApplicationState.rewriter`; `config.py` has `REWRITE_*` and
@@ -99,13 +105,37 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   ruff (line-length 100, py312), pytest (`testpaths = ["tests"]`, `asyncio_mode = "auto"`,
   `--strict-markers`; markers `ocr`, `tokenizer`, `embedder` for tests needing model files).
 - **LLM:** free tiers that need no credit card, via the `openai` SDK, in `LLM_PROVIDERS` order
-  (`llm/providers.py`, 2026-10-18): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.6-flash` for the rewrite, since the free per-minute cap is per model: 15 for flash-lite, 5 for flash;
-  `reasoning_effort` `none` / `minimal`; Algeria is on Google's available-regions list), Cloudflare Workers
-  AI (`@cf/openai/gpt-oss-120b`), OpenRouter (`google/gemma-4-31b-it:free`). Each provider has
-  its own daily quota (`DATA_DIR/llm_providers/`), a per-minute guard (`*_RPM`) and a cool-down
-  (10 s after a 429, 120 s after a 5xx/timeout); the
-  provider is picked before the call, never retried. Grounded answers to a first question are
-  cached per `corpus_version` (`answer_cache.py`, off in the e2e eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
+  (`llm/providers.py`, 2026-10-29): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.1-flash-lite`
+  for the rewrite, each model its own per-project quota: 15 RPM / 500 RPD; `reasoning_effort` is
+  per model from `_GEMINI_EFFORT`, since 3.x cannot stop thinking and the wrong value is a 400;
+  Algeria is on Google's available-regions list), Groq (`qwen/qwen3.8-27b`, then
+  `openai/gpt-oss-120b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each; qwen answers
+  darija in 0.1-0.5 s and is sent `reasoning_effort: "none"`, since at `low` it spent the answer
+  budget on 200 thinking tokens and returned empty content; the 120b row is the stronger one on
+  French and English, so it is reached last),
+  Cloudflare Workers AI (`@cf/zai-org/glm-4.7-flash`: ~28 neurons per answer of a 10,000/day
+  free pool, thinking off through `chat_template_kwargs`, since Workers AI bills it as output),
+  OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`: the gemma free models answer better Arabic
+  but sat at an upstream 429 for a week, and `openrouter/free` picks a model at random, which would
+  make an eval row non-reproducible). Each **credential and model** has its own daily quota
+  (`DATA_DIR/llm_providers/<provider>/<model>__<key hash>/`), per-minute guard (`*_RPM`,
+  `*_TPM`) and cool-down, and a provider may hold a pool (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`)
+  rotated by `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project and Groq's
+  per organization, so keys of one project or org share a single pool and only multiply across
+  them. Groq's TPM binds long before its
+  RPM (a grounded prompt is ~2.5k tokens), so the minute guard counts tokens too, and a second
+  model id is a second day of quota on the same key (`GROQ_MODELS`, model-major order: qwen
+  serves until its day is spent). The answer and rewrite chains hold the **same pools in the
+  same order** (`_ordered`): each leads with the model picked for it and ends with the other
+  call's models as a last fallback, so a spent answer pool still leaves the rewrite a provider
+  and vice versa, and `daily_calls` counts every pool once (the cap is the pools, not twice the
+  pools). A 429 is classified: a body
+  naming a daily budget (`quotaId` …`PerDay`, Groq's `TPD`/`RPD`) spends the credential until the
+  provider's own reset (midnight Pacific for Gemini), a per-minute one cools for its
+  `Retry-After` (or Groq's `x-ratelimit-reset-tokens`); 5xx/timeout cool
+  with an escalating backoff. The provider is picked before the call, never retried. Grounded
+  answers to a first question are cached per `corpus_version` (`answer_cache.py`, off in the e2e
+  eval). **At most 2 LLM calls per question** since 2026-10-15 (organizers' OK): the query rewrite
   (`llm/rewrite.py`, skipped when it would take the answer's last quota slot) + the answer.
 - **Vector DB:** Qdrant as its own compose container, persistent volume. Hybrid search: dense + BM25
   sparse (fastembed). The expiry filter goes **inside the query**.

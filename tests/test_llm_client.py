@@ -38,8 +38,10 @@ class FakeCompletion:
 
 
 class ProviderError(Exception):
-    def __init__(self, status_code: int) -> None:
+    def __init__(self, status_code: int, text: str = "", headers: dict | None = None) -> None:
+        super().__init__()
         self.status_code = status_code
+        self.response = type("Response", (), {"text": text, "headers": headers or {}})()
 
 
 class FakeCompletions:
@@ -146,3 +148,122 @@ def test_reasoning_is_turned_off_unless_allowed() -> None:
     first, second = fake.chat.completions.calls
     assert first["extra_body"] == {"reasoning": {"enabled": False}}
     assert "extra_body" not in second
+
+
+def test_the_daily_quota_429_is_not_a_minute_429() -> None:
+    body = (
+        '{"error":{"code":429,"status":"RESOURCE_EXHAUSTED","details":[{"@type":'
+        '"type.googleapis.com/google.rpc.QuotaFailure","violations":[{"quotaId":'
+        '"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]},{"@type":'
+        '"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"33s"}]}}'
+    )
+    fake = FakeClient([ProviderError(429, body)])
+    client = OpenRouterClient(settings(), client=fake)
+
+    result = client.generate("system", "question")
+
+    assert result.error == "quota_exhausted"  # the day is gone, not the minute
+    assert result.retry_after_s == 33
+
+
+def test_a_per_minute_429_keeps_the_provider_retry_after() -> None:
+    fake = FakeClient([ProviderError(429, "quota exceeded", {"retry-after": "5m"})])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert (result.error, result.retry_after_s) == ("rate_limited", 300)
+
+
+def test_a_prose_retry_hint_is_read_in_seconds() -> None:
+    fake = FakeClient(
+        [ProviderError(429, "Rate limit reached for model. Please try again in 7.5s.")]
+    )
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert (result.error, result.retry_after_s) == ("rate_limited", 7.5)
+
+
+def test_a_groq_day_429_is_the_day_and_not_the_minute() -> None:
+    body = (
+        "Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01` on tokens "
+        "per day (TPD): Limit 200000, Used 199500, Requested 2500. Please try again in 1h2m3s."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "quota_exhausted"  # the credential is spent until its own reset
+
+
+def test_a_groq_minute_429_takes_the_token_reset_not_the_day_reset() -> None:
+    body = (
+        "Rate limit reached for model `openai/gpt-oss-120b` on tokens per minute (TPM): "
+        "Limit 8000, Used 7900, Requested 2500."
+    )
+    headers = {"x-ratelimit-reset-tokens": "7.66s", "x-ratelimit-reset-requests": "2m59.56s"}
+    fake = FakeClient([ProviderError(429, body, headers)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    # the token cap is the binding one here, so its reset is the hint worth keeping
+    assert (result.error, result.retry_after_s) == ("rate_limited", 7.66)
+
+
+def test_a_retry_hint_with_two_units_is_read_whole() -> None:
+    """Groq says "6m 11.52s"; reading only the first unit under-pauses and buys another 429."""
+    body = (
+        "Rate limit reached for model `qwen/qwen3.8-27b` on tokens per day (TPD): Limit 200000, "
+        "Used 199336, Requested 2500. Please try again in 6m 11.52s."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert (result.error, result.retry_after_s) == ("quota_exhausted", 371.52)
+
+
+def test_a_body_naming_the_minute_as_well_as_the_day_is_the_minute() -> None:
+    """A day spent over a 30 s pause is the expensive mistake; the reverse only costs one 429."""
+    body = (
+        "Quota exceeded for metric 'generate_content_free_tier_requests' on requests per minute "
+        "(RPM) and on tokens per day (TPD): Limit 15, Used 15."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "rate_limited"
+
+
+def test_a_per_minute_429_that_mentions_daily_usage_is_not_a_spent_day() -> None:
+    """A bare "daily" once spent the whole credential; the word needs a limit next to it."""
+    body = (
+        "Rate limit reached for model `openai/gpt-oss-120b` on requests per minute (RPM): "
+        "Limit 30, Used 30, Requested 1. See your daily usage at console.groq.com/settings/limits."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "rate_limited"  # paused for the minute, not spent for the day
+
+
+def test_a_daily_limit_in_prose_is_still_the_days_quota() -> None:
+    fake = FakeClient([ProviderError(429, "You have exceeded your daily limit for this model.")])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "quota_exhausted"
+
+
+def test_the_answer_is_capped_in_tokens() -> None:
+    fake = FakeClient([FakeCompletion("a"), FakeCompletion("b")])
+
+    capped = settings().model_copy(update={"llm_max_output_tokens": 42})
+    OpenRouterClient(capped, client=fake).generate("s", "u")
+    uncapped = settings().model_copy(update={"llm_max_output_tokens": 0})
+    OpenRouterClient(uncapped, client=fake).generate("s", "u")
+
+    assert fake.chat.completions.calls[0]["max_tokens"] == 42  # thinking is billed as output
+    assert "max_tokens" not in fake.chat.completions.calls[1]

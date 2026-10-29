@@ -97,3 +97,88 @@ def test_acquire_keep_leaves_slots_for_the_answer(tmp_path: Path, clock: FakeClo
     assert quota.acquire(keep=1)
     assert not quota.acquire(keep=1)
     assert quota.acquire()
+
+
+def test_the_reserve_never_eats_the_whole_pool(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=1, reserve=5, clock=clock)
+
+    assert quota.acquire() is True  # a cap smaller than the reserve would disable the LLM
+
+
+def test_exhaust_marks_the_day_spent_without_another_request(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=1, clock=clock)
+    assert quota.acquire() is True
+
+    assert quota.exhaust() == 4  # the usable limit, i.e. what the provider will refuse
+    assert quota.allow() is False
+    assert quota.remaining == 0
+    assert DailyQuota(tmp_path, limit=5, reserve=1, clock=clock).allow() is False  # persisted
+
+
+def test_a_token_budget_is_part_of_the_daily_quota(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=100, reserve=0, clock=clock, token_limit=100)
+
+    assert quota.record_tokens(60) == 60
+    assert quota.allow() is True
+    assert quota.record_tokens(40) == 100
+    assert quota.allow() is False  # Groq's TPD binds before its 1000 RPD
+    assert quota.acquire() is False
+
+
+def test_gemini_resets_at_midnight_pacific_not_midnight_utc(
+    tmp_path: Path, clock: FakeClock
+) -> None:
+    clock.value = datetime(2026, 10, 29, 6, 0, tzinfo=UTC)  # 23:00 in Los Angeles, still the 28th
+    quota = DailyQuota(tmp_path, limit=2, reserve=0, clock=clock, reset_tz="America/Los_Angeles")
+    assert quota.acquire() is True
+    assert quota.used == 1
+
+    clock.advance(timedelta(minutes=30))  # 06:30 UTC is past midnight UTC, not past midnight PT
+    assert quota.used == 1
+
+    clock.advance(timedelta(hours=2))  # 08:00 UTC is 01:00 PT: the provider's new day
+    assert quota.used == 0
+
+
+def test_next_reset_is_the_providers_own_midnight(tmp_path: Path, clock: FakeClock) -> None:
+    clock.value = datetime(2026, 10, 29, 6, 0, tzinfo=UTC)
+    quota = DailyQuota(tmp_path, limit=2, reserve=0, clock=clock, reset_tz="America/Los_Angeles")
+
+    assert quota.next_reset() == datetime(2026, 10, 29, 7, 0, tzinfo=UTC).timestamp()
+
+
+def test_reading_the_counter_does_not_write_it(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock)
+
+    assert quota.allow() is True  # an observation, not a reservation
+    assert quota.used == 0
+    assert quota.remaining == 5
+    assert not (tmp_path / "llm_quota.json").exists()  # no file, no lock file for a look
+    assert not (tmp_path / "llm_quota.lock").exists()
+
+    assert quota.acquire() is True
+    assert (tmp_path / "llm_quota.json").exists()
+
+
+def test_reading_after_a_write_sees_the_reserved_slot(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock)
+    quota.acquire()
+
+    assert quota.used == 1  # the atomic replace is what a reader picks up
+    assert quota.remaining == 4
+
+
+def test_seconds_to_reset_is_a_duration_not_an_epoch(tmp_path: Path, clock: FakeClock) -> None:
+    """The chain runs on a monotonic clock, so it can only subtract a duration."""
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock)
+
+    assert quota.seconds_to_reset() == 60  # 23:59 UTC, one minute to the UTC midnight
+
+
+def test_seconds_to_reset_follows_the_providers_own_zone(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock, reset_tz="America/Los_Angeles")
+
+    # 23:59 UTC is 16:59 in Los Angeles, so midnight Pacific is 7h01m away
+    assert quota.seconds_to_reset() == 7 * 3600 + 60
