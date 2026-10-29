@@ -28,7 +28,6 @@ from micro_bot.llm.providers import (
     ProviderChain,
     answer_providers,
     daily_calls,
-    daily_capacity,
     pool_sizes,
 )
 from micro_bot.llm.quota import CircuitBreaker, DailyQuota
@@ -374,12 +373,13 @@ def _generator(settings: Settings) -> GenerationService:
     providers = answer_providers(settings)
     if providers:
         chain = ProviderChain(settings, providers)
+        calls = daily_calls(settings)
         _log.info(
             "llm_providers",
             order=chain.names,
             pools=pool_sizes(settings),
-            answers_per_day=daily_capacity(settings),
-            requests_per_day=daily_calls(settings),
+            requests_per_day=calls,
+            questions_per_day=calls // 2 if settings.rewrite_enabled else calls,
         )
         return chain
     _log.warning("llm_disabled", reason="no LLM provider key set: extractive fallback only")

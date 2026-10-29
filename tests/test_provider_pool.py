@@ -13,7 +13,6 @@ from micro_bot.llm.providers import (
     _estimate_tokens,
     answer_providers,
     daily_calls,
-    daily_capacity,
     pool_sizes,
     rewrite_providers,
 )
@@ -56,11 +55,11 @@ def build(tmp_path: Path, **extra) -> tuple[ProviderChain, dict[str, Client], Cl
     """A chain over the configured pools, with one scripted client per credential."""
     configuration = settings(tmp_path, **extra)
     clock = Clock()
-    clients: dict[str, Client] = {}
+    clients: dict[tuple[str, str], Client] = {}
 
     def make(provider: Provider) -> Client:
         client = Client(provider, [])
-        clients[provider.key_id or provider.name] = client
+        clients[(provider.model, provider.key_id or provider.name)] = client
         return client
 
     chain = ProviderChain(
@@ -70,24 +69,25 @@ def build(tmp_path: Path, **extra) -> tuple[ProviderChain, dict[str, Client], Cl
 
 
 def keys(tmp_path: Path, **extra) -> list[str]:
-    return [p.key_id for p in answer_providers(settings(tmp_path, **extra))]
+    """One id per credential, in chain order: a fallback model repeats the same credentials."""
+    return list(dict.fromkeys(p.key_id for p in answer_providers(settings(tmp_path, **extra))))
 
 
 def test_a_pool_is_one_provider_with_one_slot_per_credential(tmp_path: Path) -> None:
     configuration = settings(tmp_path, gemini_api_key="a", gemini_api_keys="b,c")
 
-    providers = answer_providers(configuration)
+    providers = [p for p in answer_providers(configuration) if p.model == "gemini-3.5-flash-lite"]
 
-    assert [p.name for p in providers] == ["gemini", "gemini", "gemini"]
     assert [p.api_key for p in providers] == ["a", "b", "c"]
     assert len({p.key_id for p in providers}) == 3  # a quota file and a log field per credential
-    assert pool_sizes(configuration) == {"gemini": 3}
+    # Both Gemini models are in the chain, so the pool count is per model and per credential
+    assert pool_sizes(configuration) == {"gemini": 6}
 
 
 def test_the_single_key_and_the_list_merge_without_duplicates(tmp_path: Path) -> None:
     configuration = settings(tmp_path, gemini_api_key="a", gemini_api_keys="a, b ,, b")
 
-    assert [p.api_key for p in answer_providers(configuration)] == ["a", "b"]
+    assert list(dict.fromkeys(p.api_key for p in answer_providers(configuration))) == ["a", "b"]
 
 
 def test_cloudflare_pools_account_and_token_pairs(tmp_path: Path) -> None:
@@ -112,7 +112,7 @@ async def test_least_used_alternates_between_credentials(tmp_path: Path) -> None
     answers = [await chain.generate("s", "u") for _ in range(4)]
 
     assert [a.text for a in answers] == [f"from {key}" for key in pool * 2]
-    assert sorted(client.calls for client in clients.values()) == [2, 2]
+    assert sorted(c.calls for c in clients.values() if c.calls) == [2, 2]  # the fallback sits idle
 
 
 def test_round_robin_sticks_for_three_calls_then_moves_on(tmp_path: Path) -> None:
@@ -139,7 +139,11 @@ def test_fill_first_drains_one_credential_before_the_next(tmp_path: Path) -> Non
 
 def test_a_spent_credential_moves_inside_the_same_provider_then_gives_up(tmp_path: Path) -> None:
     chain, _, _ = build(
-        tmp_path, gemini_api_keys="k1,k2", llm_providers="gemini", gemini_daily_limit=1
+        tmp_path,
+        gemini_api_keys="k1,k2",
+        llm_providers="gemini",
+        gemini_daily_limit=1,
+        gemini_rewrite_daily_limit=0,  # no fallback model here, so the chain can run out
     )
 
     picked = [chain._pick().provider.api_key for _ in range(2)]
@@ -165,7 +169,9 @@ def test_a_daily_quota_429_spends_the_credential_until_the_next_reset(tmp_path: 
 
 def test_a_minute_429_cools_for_the_provider_retry_hint(tmp_path: Path) -> None:
     hint = GenerationResult(None, GenerationUsage(1), "rate_limited", retry_after_s=45)
-    chain, _, clock = build(tmp_path, gemini_api_keys="k1", llm_providers="gemini")
+    chain, _, clock = build(
+        tmp_path, gemini_api_keys="k1", llm_providers="gemini", gemini_rewrite_daily_limit=0
+    )
 
     chain._settle(chain._pick(), hint)
     assert chain._pick() is None  # cooled for 45 s, and it is the only credential
@@ -207,12 +213,12 @@ def test_tokens_are_recorded_and_a_token_budget_skips_the_provider(tmp_path: Pat
 
 
 def test_a_second_model_is_a_second_day_behind_the_first(tmp_path: Path) -> None:
-    """Groq's free limits are a row per model, so qwen answers only once 120b's day is spent."""
+    """Groq's free limits are a row per model, so 120b answers only once qwen's day is spent."""
     chain, _, _ = build(tmp_path, groq_api_key="g", llm_providers="groq", groq_daily_limit=1)
 
     picked = [chain._pick().provider.model for _ in range(2)]
 
-    assert picked == ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
+    assert picked == ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
     assert chain._pick() is None  # both models' days are spent: providers_exhausted
 
 
@@ -221,26 +227,28 @@ def test_groq_is_configured_from_the_same_pool_helper(tmp_path: Path) -> None:
 
     providers = answer_providers(configuration)
 
-    # Model-major: every credential of 120b before any of 20b
+    # Model-major: every credential of qwen before any of 120b
     assert [(p.model, p.api_key) for p in providers] == [
-        ("openai/gpt-oss-120b", "g1"),
-        ("openai/gpt-oss-120b", "g2"),
         ("qwen/qwen3.8-27b", "g1"),
         ("qwen/qwen3.8-27b", "g2"),
+        ("openai/gpt-oss-120b", "g1"),
+        ("openai/gpt-oss-120b", "g2"),
     ]
     assert providers[0].base_url == GROQ_BASE_URL
     assert (providers[0].rpm, providers[0].tpm, providers[0].daily_limit) == (30, 8000, 1000)
     assert providers[0].daily_tokens == 200_000
+    # qwen answers directly: at "low" it spent the output on thinking and returned nothing
+    assert providers[0].extra == {"reasoning_effort": "none"}
     # gpt-oss bills its thinking as completion tokens, which Groq counts against the 200k TPD
-    assert providers[0].extra == {"reasoning_effort": "low"}
+    assert providers[2].extra == {"reasoning_effort": "low"}
 
 
-def test_daily_capacity_sums_every_pool(tmp_path: Path) -> None:
+def test_daily_calls_counts_every_pool_exactly_once(tmp_path: Path) -> None:
     configuration = settings(tmp_path, gemini_api_keys="a,b", groq_api_key="g")
 
-    # Two Gemini credentials count twice, which is why the ToS note keeps them on one project;
-    # Groq's two models are two rows in its own table, so they count twice on a single key
-    assert daily_capacity(configuration) == 500 + 500 + 1000 + 1000
+    # Gemini counts per project and Groq per organization, so a second credential of the same one
+    # adds nothing; two models are two rows in each provider's own table, so those do count twice
+    assert daily_calls(configuration) == 2 * 500 + 2 * 500 + 1000 + 1000
 
 
 def test_the_rewrite_uses_its_own_flash_lite_model_and_pool(tmp_path: Path) -> None:
@@ -303,16 +311,21 @@ def test_four_gemini_keys_are_read_from_the_environment(monkeypatch, tmp_path: P
 
     providers = answer_providers(configuration)
 
-    assert [p.api_key for p in providers] == ["AIza-one", "AIza-two", "AIza-three", "AIza-four"]
+    assert list(dict.fromkeys(p.api_key for p in providers)) == [
+        "AIza-one",
+        "AIza-two",
+        "AIza-three",
+        "AIza-four",
+    ]
     assert len({p.key_id for p in providers}) == 4
-    assert pool_sizes(configuration) == {"gemini": 4}
-    assert daily_capacity(configuration) == 4 * 500
+    assert pool_sizes(configuration) == {"gemini": 8}  # four credentials at each of two models
+    assert daily_calls(configuration) == 8 * 500
 
 
 def test_blank_and_duplicate_entries_in_the_list_are_ignored(monkeypatch, tmp_path: Path) -> None:
     configuration = from_env(monkeypatch, tmp_path, GEMINI_API_KEYS="a,, a ,  ,b,")
 
-    assert [p.api_key for p in answer_providers(configuration)] == ["a", "b"]
+    assert list(dict.fromkeys(p.api_key for p in answer_providers(configuration))) == ["a", "b"]
 
 
 def test_the_singular_key_and_the_environment_list_are_merged(monkeypatch, tmp_path: Path) -> None:
@@ -320,7 +333,10 @@ def test_the_singular_key_and_the_environment_list_are_merged(monkeypatch, tmp_p
         monkeypatch, tmp_path, GEMINI_API_KEY="first", GEMINI_API_KEYS="first,second"
     )
 
-    assert [p.api_key for p in answer_providers(configuration)] == ["first", "second"]
+    assert list(dict.fromkeys(p.api_key for p in answer_providers(configuration))) == [
+        "first",
+        "second",
+    ]
 
 
 async def test_each_of_four_credentials_keeps_its_own_count_file(
@@ -336,7 +352,7 @@ async def test_each_of_four_credentials_keeps_its_own_count_file(
     counters = sorted((tmp_path / "llm_providers" / "gemini").glob("*/llm_quota.json"))
     assert len(counters) == 4
     assert all(json.loads(counter.read_text())["count"] == 1 for counter in counters)
-    assert sorted(client.calls for client in clients.values()) == [1, 1, 1, 1]
+    assert sorted(c.calls for c in clients.values() if c.calls) == [1, 1, 1, 1]
 
 
 async def test_a_pool_of_four_serves_four_answers_then_reports_exhaustion(
@@ -348,6 +364,7 @@ async def test_a_pool_of_four_serves_four_answers_then_reports_exhaustion(
         GEMINI_API_KEYS="k1,k2,k3,k4",
         llm_providers="gemini",
         GEMINI_DAILY_LIMIT="1",
+        GEMINI_REWRITE_DAILY_LIMIT="0",  # only this pool is in play, so it can really run out
     )
 
     answers = [await chain.generate("s", "u") for _ in range(5)]
@@ -375,11 +392,11 @@ def build_from_env(
     """A chain over a Settings read from the environment, with one client per credential."""
     configuration = from_env(monkeypatch, tmp_path, **variables)
     clock = Clock()
-    clients: dict[str, Client] = {}
+    clients: dict[tuple[str, str], Client] = {}
 
     def make(provider: Provider) -> Client:
         client = Client(provider, [])
-        clients[provider.key_id or provider.name] = client
+        clients[(provider.model, provider.key_id or provider.name)] = client
         return client
 
     chain = ProviderChain(
@@ -446,13 +463,14 @@ def test_a_daily_quota_429_cools_until_the_reset_not_for_centuries(tmp_path: Pat
     assert 0 <= pause <= 86_400  # a day at most, and it comes back on its own
 
 
-def test_the_global_cap_counts_the_rewrite_the_counter_charges(tmp_path: Path) -> None:
-    """One question spends two calls of the shared counter, so the cap needs both pools."""
+def test_the_global_cap_is_the_pools_once_not_once_per_call(tmp_path: Path) -> None:
+    """Both calls draw on the same pools, so charging the answer pools and the rewrite pools apart
+    would promise twice the requests the free tiers allow."""
     configuration = settings(tmp_path, gemini_api_key="g")
 
-    assert daily_capacity(configuration) == 500  # answers only
-    assert daily_calls(configuration) == 1000  # + the rewrite model's own 500
-    assert daily_calls(settings(tmp_path, gemini_api_key="g", rewrite_enabled=False)) == 500
+    assert daily_calls(configuration) == 1000  # the answer model's 500 + the rewrite model's 500
+    assert daily_calls(configuration) != 2 * 1000
+    assert daily_calls(settings(tmp_path, gemini_api_key="g", rewrite_enabled=False)) == 1000
 
 
 def test_a_prompt_larger_than_the_minute_cap_is_still_attempted_once(tmp_path: Path) -> None:
@@ -479,3 +497,31 @@ def test_qwen_is_asked_for_no_reasoning_budget(tmp_path: Path) -> None:
     qwen = [p for p in answer_providers(configuration) if p.model.startswith("qwen/")]
 
     assert qwen and qwen[0].extra == {"reasoning_effort": "none"}
+
+
+def test_each_chain_leads_with_its_own_model_and_trails_the_other(tmp_path: Path) -> None:
+    """A spent pool on one call must not leave it without a provider while the other has quota."""
+    configuration = settings(tmp_path, gemini_api_key="k", groq_api_key="g")
+
+    answers = answer_providers(configuration)
+    rewrites = rewrite_providers(configuration)
+
+    assert answers[0].model == "gemini-3.5-flash-lite"
+    assert rewrites[0].model == "gemini-3.1-flash-lite"
+    assert answers[-1].model == "gemini-3.1-flash-lite"  # the rewrite model, as a last resort
+    assert rewrites[-1].model == "gemini-3.5-flash-lite"  # the answer model, as a last resort
+    assert [p.name for p in answers] == [p.name for p in rewrites]
+
+
+async def test_a_spent_answer_pool_is_served_by_the_rewrite_model(tmp_path: Path) -> None:
+    chain, _, _ = build(tmp_path, gemini_api_key="k", llm_providers="gemini", gemini_daily_limit=1)
+
+    await chain.generate("s", "u")
+    await chain.generate("s", "u")
+
+    counters = sorted((tmp_path / "llm_providers" / "gemini").glob("*/llm_quota.json"))
+    assert [counter.parent.name.split("__")[0] for counter in counters] == [
+        "gemini-3.1-flash-lite",
+        "gemini-3.5-flash-lite",
+    ]
+    assert [json.loads(counter.read_text())["count"] for counter in counters] == [1, 1]

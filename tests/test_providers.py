@@ -71,11 +71,12 @@ def test_providers_follow_the_configured_order_and_skip_missing_keys(tmp_path: P
 
     providers = answer_providers(s)
 
-    assert [p.name for p in providers] == ["openrouter", "gemini"]
+    assert [p.name for p in providers] == ["openrouter", "gemini", "gemini"]
     gemini = providers[1]
     assert gemini.base_url == GEMINI_BASE_URL
     assert gemini.model == "gemini-3.5-flash-lite"
     assert gemini.extra == {"reasoning_effort": "minimal"}
+    assert providers[2].model == "gemini-3.1-flash-lite"  # the rewrite model, trailing
 
 
 def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path) -> None:
@@ -141,7 +142,13 @@ async def test_a_failure_is_not_retried_but_cools_the_provider_down(tmp_path: Pa
 
 
 async def test_no_provider_left_means_no_call(tmp_path: Path) -> None:
-    s = settings(tmp_path, gemini_daily_limit=0, cloudflare_daily_limit=0, openrouter_daily_limit=0)
+    s = settings(
+        tmp_path,
+        gemini_daily_limit=0,
+        gemini_rewrite_daily_limit=0,
+        cloudflare_daily_limit=0,
+        openrouter_daily_limit=0,
+    )
     c, clients = chain(tmp_path, s)
 
     result = await c.generate("s", "u")

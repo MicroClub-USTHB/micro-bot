@@ -199,11 +199,11 @@ curl -s -X DELETE localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMI
 | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | none | Workers AI fallback, ~120 answers/day free |
 | `OPENROUTER_API_KEY` | none | Last fallback, 50 requests/day free |
 | `*_API_KEYS` (`GEMINI_API_KEYS`, `GROQ_API_KEYS`, `OPENROUTER_API_KEYS`), `CLOUDFLARE_ACCOUNTS` | empty | Comma-separated credential pool per provider, e.g. `GEMINI_API_KEYS=k1,k2,k3,k4`; each key is its own daily quota and cool-down. Gemini's quota is per project and Groq's per organization, so several keys only help across projects or accounts |
-| `GROQ_MODELS` | `qwen/qwen3.8-27b` | Extra Groq model ids after `GROQ_MODEL`; Groq's limits are a row per model, so each is another 200k tokens/day, and the earlier model serves until its day is spent |
+| `GROQ_MODELS` | `openai/gpt-oss-120b` | Extra Groq model ids after `GROQ_MODEL`; Groq's limits are a row per model, so each is another 200k tokens/day, and the earlier model serves until its day is spent |
 | `LLM_PROVIDERS` | `gemini,groq,cloudflare,openrouter` | Order the providers are tried in |
 | `LLM_KEY_STRATEGY` | `least-used` | Which credential of a provider serves the next call |
 | `API_KEY`, `ADMIN_API_KEY` | none | Bearer key for chat, key for document admin |
-| `GEMINI_MODEL`, `GROQ_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-3.5-flash-lite`, `openai/gpt-oss-120b`, `@cf/zai-org/glm-4.7-flash`, `nvidia/nemotron-3-ultra-550b-a55b:free` | Answer model per provider (Gemini's rewrite uses `gemini-3.1-flash-lite`, a separate quota pool) |
+| `GEMINI_MODEL`, `GROQ_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-3.5-flash-lite`, `qwen/qwen3.8-27b`, `@cf/zai-org/glm-4.7-flash`, `nvidia/nemotron-3-ultra-550b-a55b:free` | Answer model per provider (Gemini's rewrite leads with `gemini-3.1-flash-lite` on its own quota pool; each side's models are the other's fallback) |
 | `LLM_DAILY_LIMIT`, `LLM_RESERVE` | 0 (= the sum of the pools), 5 | Overall daily cap across providers, and the margin held back |
 | `REWRITE_ENABLED` | true | `false` = 1 LLM call per question |
 | `QDRANT_URL` | `http://qdrant:6333` | Vector store |

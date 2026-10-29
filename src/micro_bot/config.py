@@ -45,10 +45,12 @@ class Settings(BaseSettings):
     # Limits are per ORGANIZATION, not per key: several keys of one account share one pool, and
     # only keys of separate accounts multiply it. Models are separate rows in Groq's own table,
     # so a second model id is a second 200k TPD, 8k TPM and 1000 RPD on the same key.
-    groq_model: str = "openai/gpt-oss-120b"
     # qwen thinks only when asked, answers darija/arabizi directly, and answers in 0.1-0.5 s
     # against 120b's 0.2-1.5 s; `_GROQ_EFFORT` sends it `none` so the 200k TPD is all answer.
-    groq_models: str = "qwen/qwen3.8-27b"
+    groq_model: str = "qwen/qwen3.8-27b"
+    # The second row serves once qwen's day is spent. 120b is the stronger model on French and
+    # English, so it is the better half of the pair to reach last rather than first.
+    groq_models: str = "openai/gpt-oss-120b"
     # 0 would mean "never call this provider" (a spent day), not "unlimited": leave it alone
     groq_daily_limit: int = Field(default=1000, ge=0)
     groq_daily_tokens: int = Field(default=200_000, ge=0)

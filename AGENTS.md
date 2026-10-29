@@ -108,10 +108,11 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   (`llm/providers.py`, 2026-10-29): Gemini (`gemini-3.5-flash-lite` for answers, `gemini-3.1-flash-lite`
   for the rewrite, each model its own per-project quota: 15 RPM / 500 RPD; `reasoning_effort` is
   per model from `_GEMINI_EFFORT`, since 3.x cannot stop thinking and the wrong value is a 400;
-  Algeria is on Google's available-regions list), Groq (`openai/gpt-oss-120b`, then
-  `qwen/qwen3.8-27b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each; qwen answers
+  Algeria is on Google's available-regions list), Groq (`qwen/qwen3.8-27b`, then
+  `openai/gpt-oss-120b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each; qwen answers
   darija in 0.1-0.5 s and is sent `reasoning_effort: "none"`, since at `low` it spent the answer
-  budget on 200 thinking tokens and returned empty content),
+  budget on 200 thinking tokens and returned empty content; the 120b row is the stronger one on
+  French and English, so it is reached last),
   Cloudflare Workers AI (`@cf/zai-org/glm-4.7-flash`: ~28 neurons per answer of a 10,000/day
   free pool, thinking off through `chat_template_kwargs`, since Workers AI bills it as output),
   OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`: the gemma free models answer better Arabic
@@ -123,8 +124,12 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   per organization, so keys of one project or org share a single pool and only multiply across
   them. Groq's TPM binds long before its
   RPM (a grounded prompt is ~2.5k tokens), so the minute guard counts tokens too, and a second
-  model id is a second day of quota on the same key (`GROQ_MODELS`, model-major order: 120b
-  serves until its day is spent). A 429 is classified: a body
+  model id is a second day of quota on the same key (`GROQ_MODELS`, model-major order: qwen
+  serves until its day is spent). The answer and rewrite chains hold the **same pools in the
+  same order** (`_ordered`): each leads with the model picked for it and ends with the other
+  call's models as a last fallback, so a spent answer pool still leaves the rewrite a provider
+  and vice versa, and `daily_calls` counts every pool once (the cap is the pools, not twice the
+  pools). A 429 is classified: a body
   naming a daily budget (`quotaId` …`PerDay`, Groq's `TPD`/`RPD`) spends the credential until the
   provider's own reset (midnight Pacific for Gemini), a per-minute one cools for its
   `Retry-After` (or Groq's `x-ratelimit-reset-tokens`); 5xx/timeout cool

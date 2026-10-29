@@ -17,8 +17,10 @@ model, so a second model is a second day of quota behind the first.
 The per-minute guard counts tokens as well as requests, because a grounded prompt is ~2.5k
 tokens and the token cap is the one a RAG assistant reaches first (Groq: 8k TPM against 30 RPM).
 
-The rewrite goes through ``ProviderChain.for_rewrite()``: the same order, but Gemini answers it
-with a cheaper model on its own quota, so the answer model's quota pays only for answers.
+The rewrite goes through ``ProviderChain.for_rewrite()``: the same pools in the same order, led by
+Gemini's cheaper model on its own quota so the answer model's quota pays only for answers. Either
+call falls back to the other's models at the end of the chain, so a spent pool never leaves a call
+without a provider while the other side still has quota.
 """
 
 from __future__ import annotations
@@ -81,29 +83,22 @@ def answer_providers(settings: Settings) -> list[Provider]:
 
 
 def rewrite_providers(settings: Settings) -> list[Provider]:
-    """Same order; Gemini uses its rewrite model and quota."""
+    """The same pools in the same order, led by Gemini's cheaper rewrite model."""
     return _ordered(settings, rewrite=True)
 
 
-def daily_capacity(settings: Settings) -> int:
-    """Total answer capacity of the configured pools (``LLM_DAILY_LIMIT=0`` means this)."""
+def daily_calls(settings: Settings) -> int:
+    """Calls a day the configured pools can serve, which is what the shared counter charges.
+
+    One question spends two of them while the rewrite is on, and both calls draw on the same
+    pools (see ``_ordered``): summing the answer chain and the rewrite chain apart would promise
+    twice the requests the free tiers actually allow.
+    """
     return sum(p.daily_limit for p in answer_providers(settings))
 
 
-def daily_calls(settings: Settings) -> int:
-    """Requests a day the pools can serve, which is what the shared counter charges.
-
-    One question spends two calls while the rewrite is on, and the rewrite has its own model and
-    pool, so a cap built from the answer pools alone would stop the day at half the questions.
-    """
-    calls = sum(p.daily_limit for p in answer_providers(settings))
-    if settings.rewrite_enabled:
-        calls += sum(p.daily_limit for p in rewrite_providers(settings))
-    return calls
-
-
 def pool_sizes(settings: Settings) -> dict[str, int]:
-    """Slots per provider for the startup log: models times credentials on Groq."""
+    """Slots per provider for the startup log: every model times every credential."""
     sizes: dict[str, int] = {}
     for provider in answer_providers(settings):
         sizes[provider.name] = sizes.get(provider.name, 0) + 1
@@ -111,10 +106,28 @@ def pool_sizes(settings: Settings) -> dict[str, int]:
 
 
 def _ordered(settings: Settings, *, rewrite: bool) -> list[Provider]:
-    """Every credential of a provider, grouped in ``LLM_PROVIDERS`` order."""
-    configured = _configured(settings, rewrite=rewrite)
+    """Every credential of a provider, grouped in ``LLM_PROVIDERS`` order.
+
+    Each call leads with the model picked for it and keeps the other call's models as its last
+    fallback, in the same order, so a spent pool on one side does not leave that call without a
+    provider while the other side still has quota.
+    """
     names = [n.strip().lower() for n in settings.llm_providers.split(",") if n.strip()]
-    return [p for name in names for p in configured if p.name == name]
+    configured = _configured(settings, rewrite=rewrite)
+    primary = [p for name in names for p in configured if p.name == name]
+    taken = {_slot_id(p) for p in primary}
+    spare = [
+        p
+        for name in names
+        for p in _configured(settings, rewrite=not rewrite)
+        if p.name == name and _slot_id(p) not in taken
+    ]
+    return primary + spare
+
+
+def _slot_id(provider: Provider) -> tuple[str, str, str]:
+    """One credential at one model: the same pool whichever of the two calls reaches it."""
+    return (provider.name, provider.model, provider.key_id)
 
 
 def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
