@@ -110,8 +110,11 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   per model from `_GEMINI_EFFORT`, since 3.x cannot stop thinking and the wrong value is a 400;
   Algeria is on Google's available-regions list), Groq (`openai/gpt-oss-120b`, then
   `openai/gpt-oss-20b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each),
-  Cloudflare Workers AI (`@cf/openai/gpt-oss-120b`), OpenRouter
-  (`google/gemma-4-31b-it:free`). Each **credential and model** has its own daily quota
+  Cloudflare Workers AI (`@cf/zai-org/glm-4.7-flash`: ~28 neurons per answer of a 10,000/day
+  free pool, thinking off through `chat_template_kwargs`, since Workers AI bills it as output),
+  OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`: the gemma free models answer better Arabic
+  but sat at an upstream 429 for a week, and `openrouter/free` picks a model at random, which would
+  make an eval row non-reproducible). Each **credential and model** has its own daily quota
   (`DATA_DIR/llm_providers/<provider>/<model>__<key hash>/`), per-minute guard (`*_RPM`,
   `*_TPM`) and cool-down, and a provider may hold a pool (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`)
   rotated by `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project and Groq's

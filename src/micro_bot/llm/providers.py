@@ -164,6 +164,15 @@ def _configured(settings: Settings, *, rewrite: bool) -> list[Provider]:
                 model=settings.cloudflare_model,
                 daily_limit=settings.cloudflare_daily_limit,
                 rpm=settings.cloudflare_rpm,
+                # glm-4.7-flash thinks by default and Workers AI bills that thinking as output
+                # (36,400 neurons/M against 5,500 in), so it would spend most of a day's 10,000
+                # neurons on hidden tokens. The toggle is the model's own input schema, not a
+                # reasoning_effort value, so it goes through extra_body.
+                extra=(
+                    {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+                    if settings.llm_disable_reasoning
+                    else {}
+                ),
                 key_id=_key_id(token),
             )
         )

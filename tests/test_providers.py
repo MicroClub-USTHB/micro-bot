@@ -92,7 +92,19 @@ def test_cloudflare_url_carries_the_account_id(tmp_path: Path) -> None:
     cloudflare = answer_providers(settings(tmp_path))[1]
 
     assert cloudflare.base_url == CLOUDFLARE_BASE_URL.format(account_id="acc")
-    assert cloudflare.model == "@cf/openai/gpt-oss-120b"
+    assert cloudflare.model == "@cf/zai-org/glm-4.7-flash"
+
+
+def test_cloudflare_turns_thinking_off_for_glm(tmp_path: Path) -> None:
+    """Thinking is billed as output at 36,400 neurons/M, so leaving it on eats the free day."""
+    cloudflare = answer_providers(settings(tmp_path))[1]
+
+    assert cloudflare.extra == {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+
+
+def test_openrouter_pins_a_free_slug(tmp_path: Path) -> None:
+    """A paid slug would spend credits this deployment does not have; the pool is the free tier."""
+    assert Settings().openrouter_model.endswith(":free")
 
 
 async def test_first_provider_answers_and_is_named(tmp_path: Path) -> None:

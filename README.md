@@ -203,7 +203,7 @@ curl -s -X DELETE localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMI
 | `LLM_PROVIDERS` | `gemini,groq,cloudflare,openrouter` | Order the providers are tried in |
 | `LLM_KEY_STRATEGY` | `least-used` | Which credential of a provider serves the next call |
 | `API_KEY`, `ADMIN_API_KEY` | none | Bearer key for chat, key for document admin |
-| `GEMINI_MODEL`, `GROQ_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-3.5-flash-lite`, `openai/gpt-oss-120b`, `@cf/openai/gpt-oss-120b`, `google/gemma-4-31b-it:free` | Answer model per provider (Gemini's rewrite uses `gemini-3.1-flash-lite`, a separate quota pool) |
+| `GEMINI_MODEL`, `GROQ_MODEL`, `CLOUDFLARE_MODEL`, `OPENROUTER_MODEL` | `gemini-3.5-flash-lite`, `openai/gpt-oss-120b`, `@cf/zai-org/glm-4.7-flash`, `nvidia/nemotron-3-ultra-550b-a55b:free` | Answer model per provider (Gemini's rewrite uses `gemini-3.1-flash-lite`, a separate quota pool) |
 | `LLM_DAILY_LIMIT`, `LLM_RESERVE` | 0 (= the sum of the pools), 5 | Overall daily cap across providers, and the margin held back |
 | `REWRITE_ENABLED` | true | `false` = 1 LLM call per question |
 | `QDRANT_URL` | `http://qdrant:6333` | Vector store |

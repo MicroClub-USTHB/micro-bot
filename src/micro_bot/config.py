@@ -14,20 +14,27 @@ class Settings(BaseSettings):
     # per organization, so a key list only multiplies where the keys come from different ones.
     openrouter_api_key: str | None = None
     openrouter_api_keys: str = ""
-    openrouter_model: str = "google/gemma-4-31b-it:free"
+    # Free models rotate and get pulled (z-ai/glm-4.7 and deepseek-chat-v3 lost their :free slug,
+    # answered 404 on 2026-10-29); this one answered every probe, and keeps its thinking in the
+    # `reasoning` field instead of the content. The gemma-4 free models are the better Arabic
+    # ones but sat at an upstream 429 for a week, so they are the A/B entry, not the default.
+    openrouter_model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
     # Free tier without a card: 50 requests/day, 1000 once 10 credits were ever bought
     # (openrouter.ai/docs/api/reference/limits, 2026-10-18)
     openrouter_daily_limit: int = Field(default=50, ge=0)
     openrouter_rpm: int = Field(default=20, ge=0)  # free models: 20/minute (same docs page)
-    # Cloudflare Workers AI: 10,000 free neurons/day; gpt-oss-120b is ~74 neurons per answer
-    # (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-18), so ~130/day; the
-    # free plan allows 300 requests/minute per account
+    # Cloudflare Workers AI: 10,000 free neurons/day per account, charged per model and per
+    # token (developers.cloudflare.com/workers-ai/platform/pricing, 2026-10-29). glm-4.7-flash
+    # is 5,500 neurons/M in and 36,400/M out, so a 2,500-token prompt with a 400-token answer is
+    # ~28 neurons: ~350 answers/day, against ~94 for gpt-oss-120b (31,818/68,182). Thinking is on
+    # by default and bills as output, so `_configured` turns it off through chat_template_kwargs.
+    # The free plan allows 300 requests/minute per account.
     cloudflare_account_id: str | None = None
     cloudflare_api_token: str | None = None
     # A pool of accounts: "account_id:token,account_id:token" (the free neurons are per account)
     cloudflare_accounts: str = ""
-    cloudflare_model: str = "@cf/openai/gpt-oss-120b"
-    cloudflare_daily_limit: int = Field(default=120, ge=0)
+    cloudflare_model: str = "@cf/zai-org/glm-4.7-flash"
+    cloudflare_daily_limit: int = Field(default=300, ge=0)
     cloudflare_rpm: int = Field(default=300, ge=0)
     # Groq: no card, OpenAI-compatible (console.groq.com/docs/rate-limits, 2026-10-29). With a
     # grounded answer at ~2,500 tokens the 8000 TPM is what binds, not the 30 RPM: two questions
