@@ -51,7 +51,16 @@ log = structlog.get_logger(__name__)
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 CLOUDFLARE_BASE_URL = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-_FAILURES = {"rate_limited", "quota_exhausted", "provider_5xx", "timeout", "provider_error"}
+# An empty reply counts: qwen at reasoning_effort="low" spent its output on thinking and returned
+# no content, and retrying that same row every question burns the day without ever answering.
+_FAILURES = {
+    "rate_limited",
+    "quota_exhausted",
+    "provider_5xx",
+    "timeout",
+    "provider_error",
+    "invalid_response",
+}
 _STICKY_USES = 3  # round-robin keeps one credential for this many calls, then moves on
 
 # The lowest reasoning value each Gemini model accepts; Google's 3.x models cannot stop thinking
@@ -397,11 +406,19 @@ class ProviderChain:
         """Turn a failure into the right cool-down, and a success into a token record."""
         now = self.clock()
         if result.error == "quota_exhausted":
+            # A provider that says when it frees up is believed over a midnight it never promised:
+            # Groq's TPD 429 quotes minutes ("try again in 6m 11.52s"), so parking that row until
+            # UTC midnight throws away the rest of its day. Only a 429 with no hint at all
+            # (Gemini's PerDay ids) spends the credential until the zone's own reset.
+            # The chain clock is monotonic, so the wait is a duration, not an epoch: parking the
+            # slot at next_reset() would block it for centuries.
+            hint = result.retry_after_s
             with self._lock:
-                slot.quota.exhaust()
-                # The chain clock is monotonic, so the wait must be a duration, not an epoch:
-                # parking the slot at next_reset() would block it for centuries.
-                slot.blocked_until = now + slot.quota.seconds_to_reset()
+                if hint:
+                    slot.blocked_until = now + min(hint, slot.quota.seconds_to_reset())
+                else:
+                    slot.quota.exhaust()
+                    slot.blocked_until = now + slot.quota.seconds_to_reset()
                 slot.level += 1
         elif result.error == "rate_limited":
             pause = result.retry_after_s or self.settings.llm_rate_limit_cooldown_s

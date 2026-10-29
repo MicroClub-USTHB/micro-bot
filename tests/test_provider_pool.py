@@ -525,3 +525,33 @@ async def test_a_spent_answer_pool_is_served_by_the_rewrite_model(tmp_path: Path
         "gemini-3.5-flash-lite",
     ]
     assert [json.loads(counter.read_text())["count"] for counter in counters] == [1, 1]
+
+
+def test_a_daily_429_with_a_hint_pauses_for_the_hint_not_the_midnight(tmp_path: Path) -> None:
+    """Groq's TPD 429 says "6m 11.52s": parking that row until midnight loses the rest of a day."""
+    chain, _, clock = build(tmp_path, gemini_api_key="k", llm_providers="gemini")
+    pool = keys(tmp_path, gemini_api_key="k")
+    slot = chain._pick()
+
+    chain._settle(
+        slot, GenerationResult(None, GenerationUsage(1), "quota_exhausted", retry_after_s=371.5)
+    )
+
+    assert 0 <= slot.blocked_until - clock.now <= 372  # six minutes, not the rest of the day
+    counter = tmp_path / "llm_providers" / "gemini" / f"gemini-3.5-flash-lite__{pool[0]}"
+    assert json.loads((counter / "llm_quota.json").read_text())["count"] == 1  # day not spent
+    clock.now += 372
+    assert chain._pick() is slot  # it comes back on its own hint
+
+
+async def test_an_empty_reply_cools_the_row_and_hands_over(tmp_path: Path) -> None:
+    """qwen returned empty content under a tight output cap: a lost answer is not a cheap one."""
+    chain, clients, _ = build(tmp_path, groq_api_key="g", llm_providers="groq")
+    qwen = next(client for (model, _), client in clients.items() if model.startswith("qwen/"))
+    qwen.outcomes.append(GenerationResult(None, GenerationUsage(1), "invalid_response"))
+
+    failed = await chain.generate("s", "u")
+    handed_over = await chain.generate("s", "u")
+
+    assert failed.error == "invalid_response"
+    assert handed_over.ok  # the second row answers instead of the empty one being retried
