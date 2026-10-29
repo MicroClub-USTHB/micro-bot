@@ -138,6 +138,14 @@ class DailyQuota:
         tomorrow = (moment + _ONE_DAY).date()
         return datetime.combine(tomorrow, datetime.min.time(), self.reset_tz).timestamp()
 
+    def seconds_to_reset(self) -> float:
+        """How long until that reset, from this quota's own clock.
+
+        A caller holding a monotonic clock cannot subtract an epoch from it: the two never
+        compare, and a slot parked until 1.79e9 is a slot that never comes back.
+        """
+        return max(0.0, self.next_reset() - self._moment().timestamp())
+
     def _observed(self) -> dict[str, int | str]:
         """Read the counter without the write-back: picking a credential must not spend I/O.
 

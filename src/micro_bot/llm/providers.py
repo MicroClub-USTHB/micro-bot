@@ -357,7 +357,9 @@ class ProviderChain:
         if result.error == "quota_exhausted":
             with self._lock:
                 slot.quota.exhaust()
-                slot.blocked_until = slot.quota.next_reset()
+                # The chain clock is monotonic, so the wait must be a duration, not an epoch:
+                # parking the slot at next_reset() would block it for centuries.
+                slot.blocked_until = now + slot.quota.seconds_to_reset()
                 slot.level += 1
         elif result.error == "rate_limited":
             pause = result.retry_after_s or self.settings.llm_rate_limit_cooldown_s

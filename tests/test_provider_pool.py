@@ -429,3 +429,16 @@ def test_the_output_cap_is_part_of_the_estimate() -> None:
     """Thinking is billed as output, so a reasoning model's cap spends the minute's budget too."""
     assert _estimate_tokens("", "", 0) == 0
     assert _estimate_tokens("x" * 300, "x" * 300, 800) == 200 + 800
+
+
+def test_a_daily_quota_429_cools_until_the_reset_not_for_centuries(tmp_path: Path) -> None:
+    """The chain clock is monotonic; an epoch deadline would park the slot for 20,000 days."""
+    chain, _, clock = build(
+        tmp_path, gemini_api_key="k1", llm_providers="gemini", gemini_daily_limit=10
+    )
+    slot = chain._pick()
+
+    chain._settle(slot, GenerationResult(None, GenerationUsage(1), "quota_exhausted"))
+
+    pause = slot.blocked_until - clock.now
+    assert 0 <= pause <= 86_400  # a day at most, and it comes back on its own

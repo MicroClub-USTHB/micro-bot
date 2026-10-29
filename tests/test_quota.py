@@ -168,3 +168,17 @@ def test_reading_after_a_write_sees_the_reserved_slot(tmp_path: Path, clock: Fak
 
     assert quota.used == 1  # the atomic replace is what a reader picks up
     assert quota.remaining == 4
+
+
+def test_seconds_to_reset_is_a_duration_not_an_epoch(tmp_path: Path, clock: FakeClock) -> None:
+    """The chain runs on a monotonic clock, so it can only subtract a duration."""
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock)
+
+    assert quota.seconds_to_reset() == 60  # 23:59 UTC, one minute to the UTC midnight
+
+
+def test_seconds_to_reset_follows_the_providers_own_zone(tmp_path: Path, clock: FakeClock) -> None:
+    quota = DailyQuota(tmp_path, limit=5, reserve=0, clock=clock, reset_tz="America/Los_Angeles")
+
+    # 23:59 UTC is 16:59 in Los Angeles, so midnight Pacific is 7h01m away
+    assert quota.seconds_to_reset() == 7 * 3600 + 60
