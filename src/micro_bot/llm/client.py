@@ -28,11 +28,21 @@ _DAILY_QUOTA = re.compile(
     r"|requests? per day|\bdaily\b[^\n]{0,40}\b(?:limit|quota|budget|cap|allocation)\b",
     re.IGNORECASE,
 )
+# A body that names the minute's quota is read as a minute even if it also lists the day's: getting
+# that backwards spends a credential for 24 h over a 30 s pause, and the other way round only costs
+# one more 429.
+_MINUTE_QUOTA = re.compile(
+    r"PerMinute|per[-_ ]minute|free-models-per-min|\b(?:TPM|RPM)\b|tokens? per minute"
+    r"|requests? per minute",
+    re.IGNORECASE,
+)
 # "7.5s", "5m", "1h2m3s", "60" (Groq's Retry-After sends relative units)
 _DURATION = re.compile(
-    r"(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$", re.IGNORECASE
+    r"(?:(\d+(?:\.\d+)?)h\s*)?(?:(\d+(?:\.\d+)?)m\s*)?(?:(\d+(?:\.\d+)?)s)?$",
+    re.IGNORECASE,
 )
-_TRY_AGAIN = re.compile(r"try again in\s+([\dhms.]+)", re.IGNORECASE)
+# "try again in 6m 11.52s.": a duration can be several units, so the space between them counts
+_TRY_AGAIN = re.compile(r"try again in\s+((?:\d+(?:\.\d+)?[hms]\s*)+)", re.IGNORECASE)
 _RETRY_DELAY = re.compile(r'"retryDelay"\s*:\s*"([^"]+)"')
 
 
@@ -262,7 +272,8 @@ def _failure(exc: Exception) -> tuple[str, float | None]:
     status_code = _status_code(exc)
     if status_code == 429:
         body = _error_text(exc)
-        kind = "quota_exhausted" if _DAILY_QUOTA.search(body) else "rate_limited"
+        daily = _DAILY_QUOTA.search(body) and not _MINUTE_QUOTA.search(body)
+        kind = "quota_exhausted" if daily else "rate_limited"
         return kind, _retry_hint(exc, body)
     if 500 <= status_code <= 599:
         return "provider_5xx", None

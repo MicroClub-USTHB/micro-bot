@@ -210,6 +210,32 @@ def test_a_groq_minute_429_takes_the_token_reset_not_the_day_reset() -> None:
     assert (result.error, result.retry_after_s) == ("rate_limited", 7.66)
 
 
+def test_a_retry_hint_with_two_units_is_read_whole() -> None:
+    """Groq says "6m 11.52s"; reading only the first unit under-pauses and buys another 429."""
+    body = (
+        "Rate limit reached for model `qwen/qwen3.8-27b` on tokens per day (TPD): Limit 200000, "
+        "Used 199336, Requested 2500. Please try again in 6m 11.52s."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert (result.error, result.retry_after_s) == ("quota_exhausted", 371.52)
+
+
+def test_a_body_naming_the_minute_as_well_as_the_day_is_the_minute() -> None:
+    """A day spent over a 30 s pause is the expensive mistake; the reverse only costs one 429."""
+    body = (
+        "Quota exceeded for metric 'generate_content_free_tier_requests' on requests per minute "
+        "(RPM) and on tokens per day (TPD): Limit 15, Used 15."
+    )
+    fake = FakeClient([ProviderError(429, body)])
+
+    result = OpenRouterClient(settings(), client=fake).generate("system", "question")
+
+    assert result.error == "rate_limited"
+
+
 def test_a_per_minute_429_that_mentions_daily_usage_is_not_a_spent_day() -> None:
     """A bare "daily" once spent the whole credential; the word needs a limit next to it."""
     body = (
