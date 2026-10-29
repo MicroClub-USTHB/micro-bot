@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     # so a second model id is a second 200k TPD, 8k TPM and 1000 RPD on the same key.
     groq_model: str = "openai/gpt-oss-120b"
     groq_models: str = "openai/gpt-oss-20b"
+    # 0 would mean "never call this provider" (a spent day), not "unlimited": leave it alone
     groq_daily_limit: int = Field(default=1000, ge=0)
     groq_daily_tokens: int = Field(default=200_000, ge=0)
     groq_rpm: int = Field(default=30, ge=0)
