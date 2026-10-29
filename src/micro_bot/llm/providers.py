@@ -359,8 +359,11 @@ class ProviderChain:
         if rpm and len(recent) >= rpm:
             return False  # its per-minute cap would answer 429: try another credential
         tpm = slot.provider.tpm
-        if tpm and sum(tokens for _, tokens in recent) + cost > tpm:
-            return False  # the token cap, which a grounded prompt hits long before the request cap
+        if tpm and recent and sum(tokens for _, tokens in recent) + cost > tpm:
+            # Only refuse when the minute is already carrying traffic. A single call bigger than
+            # the whole cap would otherwise disable the provider for every prompt of that size,
+            # silently: let it be attempted, and a 429 at least leaves a trace.
+            return False
         return not (slot.quota.remaining == 0 or slot.quota.tokens_spent)
 
     def _settle(self, slot: _Slot, result: GenerationResult) -> GenerationResult:

@@ -452,3 +452,13 @@ def test_the_global_cap_counts_the_rewrite_the_counter_charges(tmp_path: Path) -
     assert daily_capacity(configuration) == 500  # answers only
     assert daily_calls(configuration) == 1000  # + the rewrite model's own 500
     assert daily_calls(settings(tmp_path, gemini_api_key="g", rewrite_enabled=False)) == 500
+
+
+def test_a_prompt_larger_than_the_minute_cap_is_still_attempted_once(tmp_path: Path) -> None:
+    """Refusing it outright would silently drop the provider for every prompt of that size."""
+    chain, _, _ = build(
+        tmp_path, groq_api_key="g", llm_providers="groq", groq_models="", groq_tpm=1000
+    )
+
+    assert chain._pick(5_000) is not None  # over the cap, but the window is empty: try it
+    assert chain._pick(5_000) is None  # never twice in the minute
