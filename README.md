@@ -196,7 +196,7 @@ curl -s -X DELETE localhost:8000/api/v1/documents/$DOC_ID -H "X-Admin-Key: $ADMI
 |---|---|---|
 | `GEMINI_API_KEY` | none | Main LLM (free, no card). Set `GEMINI_DAILY_LIMIT` to your AI Studio quota |
 | `GROQ_API_KEY` | none | Second pool: 30/min, 1000/day, 200k tokens/day free |
-| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | none | Workers AI fallback, ~120 answers/day free |
+| `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` | none | Workers AI fallback, ~350 answers/day free |
 | `OPENROUTER_API_KEY` | none | Last fallback, 50 requests/day free |
 | `*_API_KEYS` (`GEMINI_API_KEYS`, `GROQ_API_KEYS`, `OPENROUTER_API_KEYS`), `CLOUDFLARE_ACCOUNTS` | empty | Comma-separated credential pool per provider, e.g. `GEMINI_API_KEYS=k1,k2,k3,k4`; each key is its own daily quota and cool-down. Gemini's quota is per project and Groq's per organization, so several keys only help across projects or accounts |
 | `GROQ_MODELS` | `openai/gpt-oss-120b` | Extra Groq model ids after `GROQ_MODEL`; Groq's limits are a row per model, so each is another 200k tokens/day, and the earlier model serves until its day is spent |

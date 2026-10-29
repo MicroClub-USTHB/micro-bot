@@ -72,8 +72,9 @@ class Settings(BaseSettings):
     # "" = the per-model value in llm/providers.py (`_GEMINI_EFFORT`): 3.x cannot stop thinking,
     # `minimal` is its floor, and the wrong value is a 400 (flash-lite rejects "none").
     gemini_reasoning_effort: str = ""
-    # The rewrite on 3.1-flash-lite: its own per-model pool, so rewrites never spend the answer
-    # model's 500/day, and at 15 RPM instead of the 3.6-flash's 5 (20 RPD made 3.6 a cliff).
+    # The rewrite on 3.1-flash-lite: its own per-model pool, so a rewrite leads with 500/day of
+    # its own and reaches the answer model only as a last resort, at 15 RPM instead of the
+    # 3.6-flash's 5 (20 RPD made 3.6 a cliff).
     gemini_rewrite_model: str = "gemini-3.1-flash-lite"
     gemini_rewrite_reasoning_effort: str = ""
     # Google shows free quotas only in AI Studio: set these to your project's RPD. When the

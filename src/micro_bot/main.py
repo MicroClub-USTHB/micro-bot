@@ -377,7 +377,7 @@ def _generator(settings: Settings) -> GenerationService:
         _log.info(
             "llm_providers",
             order=chain.names,
-            pools=pool_sizes(settings),
+            slots=pool_sizes(settings),  # per model and credential, not per credential
             requests_per_day=calls,
             questions_per_day=calls // 2 if settings.rewrite_enabled else calls,
         )
