@@ -190,7 +190,9 @@ def _gemini_effort(settings: Settings, *, rewrite: bool) -> str:
     configured = (
         settings.gemini_rewrite_reasoning_effort if rewrite else settings.gemini_reasoning_effort
     ).strip()
-    return configured or _GEMINI_EFFORT.get(model, "minimal")
+    # An unknown model gets no parameter rather than a guess: the flash-lite models reject "none"
+    # and the flash models reject "minimal", so a wrong default is a 400 on every single answer.
+    return configured or _GEMINI_EFFORT.get(model, "")
 
 
 def _keys(*values: str | None) -> list[str]:

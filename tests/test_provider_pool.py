@@ -462,3 +462,10 @@ def test_a_prompt_larger_than_the_minute_cap_is_still_attempted_once(tmp_path: P
 
     assert chain._pick(5_000) is not None  # over the cap, but the window is empty: try it
     assert chain._pick(5_000) is None  # never twice in the minute
+
+
+def test_an_unknown_gemini_model_gets_no_reasoning_parameter(tmp_path: Path) -> None:
+    """flash-lite rejects "none" and flash rejects "minimal": guessing is a 400 on every answer."""
+    configuration = settings(tmp_path, gemini_api_key="g", gemini_model="gemini-4.0-flash-lite")
+
+    assert answer_providers(configuration)[0].extra == {}
