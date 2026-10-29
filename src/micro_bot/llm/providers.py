@@ -69,6 +69,9 @@ _GROQ_EFFORT = {
     "openai/gpt-oss-120b": "low",
     "openai/gpt-oss-20b": "low",
     "openai/gpt-oss-safeguard-20b": "low",
+    # qwen3.8 answers directly at "none"; at "low" it spent 200 reasoning tokens and returned
+    # empty content under a small output cap, which is a lost answer, not a cheap one.
+    "qwen/qwen3.8-27b": "none",
 }
 
 

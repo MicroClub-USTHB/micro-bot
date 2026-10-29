@@ -109,7 +109,9 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   for the rewrite, each model its own per-project quota: 15 RPM / 500 RPD; `reasoning_effort` is
   per model from `_GEMINI_EFFORT`, since 3.x cannot stop thinking and the wrong value is a 400;
   Algeria is on Google's available-regions list), Groq (`openai/gpt-oss-120b`, then
-  `openai/gpt-oss-20b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each),
+  `qwen/qwen3.8-27b` as a second row, 30 RPM / 1000 RPD / 8k TPM / 200k TPD each; qwen answers
+  darija in 0.1-0.5 s and is sent `reasoning_effort: "none"`, since at `low` it spent the answer
+  budget on 200 thinking tokens and returned empty content),
   Cloudflare Workers AI (`@cf/zai-org/glm-4.7-flash`: ~28 neurons per answer of a 10,000/day
   free pool, thinking off through `chat_template_kwargs`, since Workers AI bills it as output),
   OpenRouter (`nvidia/nemotron-3-ultra-550b-a55b:free`: the gemma free models answer better Arabic

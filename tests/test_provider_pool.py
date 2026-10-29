@@ -207,12 +207,12 @@ def test_tokens_are_recorded_and_a_token_budget_skips_the_provider(tmp_path: Pat
 
 
 def test_a_second_model_is_a_second_day_behind_the_first(tmp_path: Path) -> None:
-    """Groq's free limits are a row per model, so 20b answers only once 120b's day is spent."""
+    """Groq's free limits are a row per model, so qwen answers only once 120b's day is spent."""
     chain, _, _ = build(tmp_path, groq_api_key="g", llm_providers="groq", groq_daily_limit=1)
 
     picked = [chain._pick().provider.model for _ in range(2)]
 
-    assert picked == ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+    assert picked == ["openai/gpt-oss-120b", "qwen/qwen3.8-27b"]
     assert chain._pick() is None  # both models' days are spent: providers_exhausted
 
 
@@ -225,8 +225,8 @@ def test_groq_is_configured_from_the_same_pool_helper(tmp_path: Path) -> None:
     assert [(p.model, p.api_key) for p in providers] == [
         ("openai/gpt-oss-120b", "g1"),
         ("openai/gpt-oss-120b", "g2"),
-        ("openai/gpt-oss-20b", "g1"),
-        ("openai/gpt-oss-20b", "g2"),
+        ("qwen/qwen3.8-27b", "g1"),
+        ("qwen/qwen3.8-27b", "g2"),
     ]
     assert providers[0].base_url == GROQ_BASE_URL
     assert (providers[0].rpm, providers[0].tpm, providers[0].daily_limit) == (30, 8000, 1000)
@@ -470,3 +470,12 @@ def test_an_unknown_gemini_model_gets_no_reasoning_parameter(tmp_path: Path) -> 
     configuration = settings(tmp_path, gemini_api_key="g", gemini_model="gemini-4.0-flash-lite")
 
     assert answer_providers(configuration)[0].extra == {}
+
+
+def test_qwen_is_asked_for_no_reasoning_budget(tmp_path: Path) -> None:
+    """At "low" qwen spent 200 thinking tokens and returned empty content under the output cap."""
+    configuration = settings(tmp_path, groq_api_key="g", llm_providers="groq")
+
+    qwen = [p for p in answer_providers(configuration) if p.model.startswith("qwen/")]
+
+    assert qwen and qwen[0].extra == {"reasoning_effort": "none"}
