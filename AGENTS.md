@@ -114,9 +114,9 @@ Two people, each owning a slice. Do not edit the other's files without asking.
   (`google/gemma-4-31b-it:free`). Each **credential and model** has its own daily quota
   (`DATA_DIR/llm_providers/<provider>/<model>__<key hash>/`), per-minute guard (`*_RPM`,
   `*_TPM`) and cool-down, and a provider may hold a pool (`*_API_KEYS`, `CLOUDFLARE_ACCOUNTS`)
-  rotated by `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project, so extra
-  Gemini keys only help across projects, which Google treats as a ToS violation, and Groq's is
-  per organization, so extra keys only help across accounts. Groq's TPM binds long before its
+  rotated by `LLM_KEY_STRATEGY` (`least-used` default); Gemini's quota is per project and Groq's
+  per organization, so keys of one project or org share a single pool and only multiply across
+  them. Groq's TPM binds long before its
   RPM (a grounded prompt is ~2.5k tokens), so the minute guard counts tokens too, and a second
   model id is a second day of quota on the same key (`GROQ_MODELS`, model-major order: 120b
   serves until its day is spent). A 429 is classified: a body

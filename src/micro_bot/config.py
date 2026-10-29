@@ -10,9 +10,8 @@ class Settings(BaseSettings):
 
     # Key pools: a comma-separated list gives each credential its own daily
     # quota, per-minute window and cool-down. The singular GEMINI_API_KEY / OPENROUTER_API_KEY
-    # still work and are merged with the list. One Google project is the policy limit: extra
-    # Gemini keys only help when they belong to other projects, which Google enforces as a
-    # sybil/ToS violation, so that pool stays at one key by default.
+    # still work and are merged with the list. Gemini counts its free quota per project and Groq
+    # per organization, so a key list only multiplies where the keys come from different ones.
     openrouter_api_key: str | None = None
     openrouter_api_keys: str = ""
     openrouter_model: str = "google/gemma-4-31b-it:free"
