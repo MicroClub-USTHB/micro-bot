@@ -71,11 +71,12 @@ def test_providers_follow_the_configured_order_and_skip_missing_keys(tmp_path: P
 
     providers = answer_providers(s)
 
-    assert [p.name for p in providers] == ["openrouter", "gemini"]
+    assert [p.name for p in providers] == ["openrouter", "gemini", "gemini"]
     gemini = providers[1]
     assert gemini.base_url == GEMINI_BASE_URL
     assert gemini.model == "gemini-3.5-flash-lite"
     assert gemini.extra == {"reasoning_effort": "minimal"}
+    assert providers[2].model == "gemini-3.1-flash-lite"  # the rewrite model, trailing
 
 
 def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path) -> None:
@@ -83,16 +84,28 @@ def test_rewrite_uses_the_cheaper_gemini_model_and_its_own_limit(tmp_path: Path)
 
     gemini = rewrite_providers(s)[0]
 
-    assert gemini.model == "gemini-3.6-flash" and gemini.daily_limit == 7
-    assert gemini.extra == {"reasoning_effort": "none"}
-    assert gemini.rpm == 4
+    assert gemini.model == "gemini-3.1-flash-lite" and gemini.daily_limit == 7
+    assert gemini.extra == {"reasoning_effort": "minimal"}
+    assert gemini.rpm == 15
 
 
 def test_cloudflare_url_carries_the_account_id(tmp_path: Path) -> None:
     cloudflare = answer_providers(settings(tmp_path))[1]
 
     assert cloudflare.base_url == CLOUDFLARE_BASE_URL.format(account_id="acc")
-    assert cloudflare.model == "@cf/openai/gpt-oss-120b"
+    assert cloudflare.model == "@cf/zai-org/glm-4.7-flash"
+
+
+def test_cloudflare_turns_thinking_off_for_glm(tmp_path: Path) -> None:
+    """Thinking is billed as output at 36,400 neurons/M, so leaving it on eats the free day."""
+    cloudflare = answer_providers(settings(tmp_path))[1]
+
+    assert cloudflare.extra == {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+
+
+def test_openrouter_pins_a_free_slug(tmp_path: Path) -> None:
+    """A paid slug would spend credits this deployment does not have; the pool is the free tier."""
+    assert Settings().openrouter_model.endswith(":free")
 
 
 async def test_first_provider_answers_and_is_named(tmp_path: Path) -> None:
@@ -129,7 +142,13 @@ async def test_a_failure_is_not_retried_but_cools_the_provider_down(tmp_path: Pa
 
 
 async def test_no_provider_left_means_no_call(tmp_path: Path) -> None:
-    s = settings(tmp_path, gemini_daily_limit=0, cloudflare_daily_limit=0, openrouter_daily_limit=0)
+    s = settings(
+        tmp_path,
+        gemini_daily_limit=0,
+        gemini_rewrite_daily_limit=0,
+        cloudflare_daily_limit=0,
+        openrouter_daily_limit=0,
+    )
     c, clients = chain(tmp_path, s)
 
     result = await c.generate("s", "u")
@@ -161,7 +180,7 @@ async def test_rewrite_chain_is_reused_and_uses_the_rewrite_model(tmp_path: Path
     rewrite = c.for_rewrite()
 
     assert c.for_rewrite() is rewrite
-    assert (await rewrite.generate("s", "u")).text == "from gemini-3.6-flash"
+    assert (await rewrite.generate("s", "u")).text == "from gemini-3.1-flash-lite"
 
 
 async def test_per_minute_cap_moves_on_before_a_429(tmp_path: Path) -> None:
@@ -199,3 +218,17 @@ async def test_a_429_pauses_the_provider_only_briefly(tmp_path: Path) -> None:
 
     assert during.provider == "cloudflare"
     assert after.provider == "gemini"
+
+
+def test_the_suite_ignores_the_developers_dotenv(tmp_path: Path, monkeypatch) -> None:
+    """Guard the conftest fixture: a real .env must never answer for a test.
+
+    Standing in for a developer's checkout (or CI with a stray .env), a key written there used to
+    become a live provider, and the provider-order tests then asserted against whatever the
+    developer happened to have configured.
+    """
+    monkeypatch.delenv("GROQ_API_KEYS", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("GROQ_API_KEYS=leaked,GEMINI_API_KEYS=leaked\n")
+
+    assert Settings().groq_api_keys == ""

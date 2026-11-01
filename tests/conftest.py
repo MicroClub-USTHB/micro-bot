@@ -29,6 +29,22 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(pytest.mark.reranker)
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _settings_never_read_dotenv():
+    """Keep the suite hermetic: a real key in the developer's .env must not change a test.
+
+    ``Settings`` reads ``.env`` from the working directory, which is exactly what a deployment
+    wants and exactly what a test must not see: with the real pools present, provider-order
+    tests answered from a live key instead of their scripted one.
+    """
+    from micro_bot.config import Settings
+
+    original = Settings.model_config.get("env_file")
+    Settings.model_config["env_file"] = None
+    yield
+    Settings.model_config["env_file"] = original
+
+
 @pytest.fixture(autouse=True)
 def _reset_structlog():
     # configure_logging() rewrites the global structlog configuration (JSON processors, stdlib
